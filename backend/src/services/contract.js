@@ -89,18 +89,9 @@ async function updateCity({ tokenId, followers, tweetCount, following, engagemen
 
 async function getHandleByTokenId(tokenId) {
   const contract = getContract();
-  const provider = contract.runner.provider;
-  const latestBlock = await provider.getBlockNumber();
-  const deployBlock = Number(process.env.CONTRACT_DEPLOY_BLOCK || Math.max(0, latestBlock - 9000));
-  const chunkSize = 9000;
-  const filter = contract.filters.CityMinted(BigInt(tokenId));
-
-  for (let from = deployBlock; from <= latestBlock; from += chunkSize) {
-    const to = Math.min(from + chunkSize - 1, latestBlock);
-    const events = await contract.queryFilter(filter, from, to);
-    if (events.length > 0) return events[0].args.twitterHandle;
-  }
-  return "";
+  // New contract has tokenToHandle reverse mapping — direct O(1) lookup
+  const handle = await contract.tokenToHandle(tokenId);
+  return handle || "";
 }
 
 async function getCityData(tokenId) {

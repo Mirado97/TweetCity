@@ -1,11 +1,14 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
-import "@openzeppelin/contracts/access/Ownable.sol";
+import "@openzeppelin/contracts-upgradeable/token/ERC721/ERC721Upgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 
 /// @notice Dynamic NFT that represents a Twitter account as an evolving city on Mantle.
-contract TweetCity is ERC721, Ownable {
+/// @custom:oz-upgrades-unsafe-allow constructor
+contract TweetCity is Initializable, ERC721Upgradeable, OwnableUpgradeable, UUPSUpgradeable {
 
     // ─── Structs ────────────────────────────────────────────────────────────
 
@@ -13,10 +16,10 @@ contract TweetCity is ERC721, Ownable {
         uint32  followers;
         uint32  tweetCount;
         uint32  following;
-        uint32  engagement;   // likes + retweets (last snapshot)
-        uint8   level;        // 1=Village 2=Town 3=City 4=Metropolis (5=Megacity: visual overlay only)
+        uint32  engagement;
+        uint8   level;        // 1=Village 2=Town 3=City 4=Metropolis 5=Megacity
         uint64  updatedAt;
-        string  ipfsCID;      // IPFS CID of full metadata JSON (updated only on level-up)
+        string  ipfsCID;
     }
 
     struct Snapshot {
@@ -32,7 +35,8 @@ contract TweetCity is ERC721, Ownable {
 
     mapping(uint256 => CityMetrics)   public  cities;
     mapping(uint256 => Snapshot[])    private _history;
-    mapping(string  => uint256)       public  handleToTokenId;  // twitterHandle → tokenId
+    mapping(string  => uint256)       public  handleToTokenId;
+    mapping(uint256 => string)        public  tokenToHandle;   // reverse: tokenId → twitterHandle
     mapping(uint256 => uint256)       public  cityLikes;
     mapping(address => mapping(uint256 => bool)) public hasLiked;
 
@@ -53,16 +57,23 @@ contract TweetCity is ERC721, Ownable {
         _;
     }
 
-    // ─── Constructor ────────────────────────────────────────────────────────
+    // ─── Constructor (disables initializers for proxy safety) ───────────────
 
-    constructor(address _oracle) ERC721("TweetCity", "TCITY") Ownable(msg.sender) {
+    constructor() {
+        _disableInitializers();
+    }
+
+    // ─── Initializer (replaces constructor for proxy) ───────────────────────
+
+    function initialize(address _oracle) public initializer {
+        __ERC721_init("TweetCity", "TCITY");
+        __Ownable_init(msg.sender);
         require(_oracle != address(0), "TweetCity: zero oracle address");
         oracle = _oracle;
     }
 
     // ─── Oracle functions ────────────────────────────────────────────────────
 
-    /// @notice Mint a new city NFT for a Twitter account.
     function mintCity(
         address         to,
         string calldata twitterHandle,
@@ -97,13 +108,12 @@ contract TweetCity is ERC721, Ownable {
         }));
 
         handleToTokenId[twitterHandle] = tokenId;
+        tokenToHandle[tokenId] = twitterHandle;
         _safeMint(to, tokenId);
 
         emit CityMinted(tokenId, twitterHandle, to, level);
     }
 
-    /// @notice Update city metrics after a "Sync City" call.
-    /// @param ipfsCID Pass non-empty string ONLY on level-up to save Pinata quota.
     function updateCity(
         uint256         tokenId,
         uint32          followers,
@@ -124,7 +134,6 @@ contract TweetCity is ERC721, Ownable {
         cities[tokenId].level      = newLevel;
         cities[tokenId].updatedAt  = uint64(block.timestamp);
 
-        // Only update IPFS metadata on level-up to preserve Pinata free-tier quota.
         if (bytes(ipfsCID).length > 0) {
             cities[tokenId].ipfsCID = ipfsCID;
         }
@@ -145,7 +154,6 @@ contract TweetCity is ERC721, Ownable {
 
     // ─── Public functions ────────────────────────────────────────────────────
 
-    /// @notice Like another user's city. Caller must own at least one city (anti-spam).
     function likeCity(uint256 tokenId) external {
         require(_ownerOf(tokenId) != address(0), "TweetCity: token does not exist");
         require(balanceOf(msg.sender) > 0, "TweetCity: must own a city to like");
@@ -185,13 +193,17 @@ contract TweetCity is ERC721, Ownable {
         oracle = newOracle;
     }
 
+    // ─── UUPS upgrade authorization ──────────────────────────────────────────
+
+    function _authorizeUpgrade(address newImplementation) internal override onlyOwner {}
+
     // ─── Internal ────────────────────────────────────────────────────────────
 
     function _calcLevel(uint32 followers) internal pure returns (uint8) {
-        if (followers >= 100_000) return 5; // Megacity (Metropolis + legendary aura overlay)
-        if (followers >= 10_000)  return 4; // Metropolis
-        if (followers >= 1_000)   return 3; // City
-        if (followers >= 100)     return 2; // Town
-        return 1;                           // Village
+        if (followers >= 100_000) return 5;
+        if (followers >= 10_000)  return 4;
+        if (followers >= 1_000)   return 3;
+        if (followers >= 100)     return 2;
+        return 1;
     }
 }

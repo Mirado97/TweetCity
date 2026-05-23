@@ -1,5 +1,5 @@
 require("dotenv").config();
-const { ethers } = require("hardhat");
+const { ethers, upgrades } = require("hardhat");
 
 async function main() {
   const [deployer] = await ethers.getSigners();
@@ -7,18 +7,25 @@ async function main() {
   console.log("Deploying with:", deployer.address);
   console.log("Balance:", ethers.formatEther(await ethers.provider.getBalance(deployer.address)), "MNT");
 
-  // Oracle wallet = same as deployer for now; replace with a dedicated key in prod
   const oracleAddress = process.env.ORACLE_ADDRESS || deployer.address;
+  console.log("Oracle:", oracleAddress);
 
   const TweetCity = await ethers.getContractFactory("TweetCity");
-  const contract = await TweetCity.deploy(oracleAddress);
-  await contract.waitForDeployment();
 
-  const address = await contract.getAddress();
-  console.log("TweetCity deployed to:", address);
-  console.log("Oracle set to:", oracleAddress);
-  console.log("\nAdd to .env:");
-  console.log(`CONTRACT_ADDRESS=${address}`);
+  console.log("\nDeploying UUPS proxy...");
+  const proxy = await upgrades.deployProxy(TweetCity, [oracleAddress], {
+    kind: "uups",
+    initializer: "initialize",
+  });
+  await proxy.waitForDeployment();
+
+  const proxyAddress = await proxy.getAddress();
+  const implAddress = await upgrades.erc1967.getImplementationAddress(proxyAddress);
+
+  console.log("\n✅ Proxy (permanent address):", proxyAddress);
+  console.log("   Implementation:           ", implAddress);
+  console.log("\nUpdate backend/.env:");
+  console.log(`CONTRACT_ADDRESS=${proxyAddress}`);
 }
 
 main().catch((err) => {
