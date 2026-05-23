@@ -122,15 +122,21 @@ export default function MintPage({ address, onConnect, onMinted }) {
       {step === "tweet" && (
         <div className="step-card">
           <div className="step-num">3 / 3</div>
-          <h2>Share & Verify</h2>
-          <p>Post this tweet from <strong>@{handle}</strong> to verify your account:</p>
+          <h2>Verify Ownership</h2>
+          <div className="verify-steps">
+            <div className="vstep"><span className="vnum">1</span> Log in to Twitter as <strong>@{handle}</strong> — <a href="https://twitter.com/login" target="_blank" rel="noreferrer" className="handle-link">open Twitter →</a></div>
+            <div className="vstep"><span className="vnum">2</span> Post this exact text from that account:</div>
+          </div>
           <div className="verify-text">{verifyText}</div>
+          <div className="verify-steps">
+            <div className="vstep"><span className="vnum">3</span> Come back here and click "I've Posted — Mint Now"</div>
+          </div>
           <p className="verify-hint">Your wallet address is not exposed — just a unique code linking your Twitter to this mint.</p>
           <div className="btn-row">
             <a className="btn-primary"
               href={`https://twitter.com/intent/tweet?text=${encodeURIComponent(verifyText)}`}
               target="_blank" rel="noreferrer">
-              Post Tweet
+              Open Compose (as @{handle})
             </a>
             <button className="btn-secondary" onClick={mint} disabled={loading}>
               {loading ? "Verifying..." : "I've Posted — Mint Now"}
