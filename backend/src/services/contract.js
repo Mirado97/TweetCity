@@ -21,7 +21,6 @@ function getContract() {
 
 function serializeCity(city) {
   return {
-    twitterHandle: city.twitterHandle,
     followers:     Number(city.followers),
     tweetCount:    Number(city.tweetCount),
     following:     Number(city.following),
@@ -63,15 +62,23 @@ async function updateCity({ tokenId, followers, tweetCount, following, engagemen
   };
 }
 
+async function getHandleByTokenId(tokenId) {
+  const contract = getContract();
+  const filter = contract.filters.CityMinted(tokenId);
+  const events = await contract.queryFilter(filter);
+  return events.length > 0 ? events[0].args.twitterHandle : "";
+}
+
 async function getCityData(tokenId) {
   const contract = getContract();
-  const [city, history, likes] = await Promise.all([
+  const [city, history, likes, twitterHandle] = await Promise.all([
     contract.cities(tokenId),
     contract.getHistory(tokenId),
     contract.cityLikes(tokenId),
+    getHandleByTokenId(tokenId),
   ]);
   return {
-    city: serializeCity(city),
+    city: { ...serializeCity(city), twitterHandle },
     history: history.map((h) => serializeCity(h)),
     likes: likes.toString(),
   };
