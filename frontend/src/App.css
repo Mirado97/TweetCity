@@ -212,6 +212,8 @@ body {
   padding: 12px 14px 12px 0;
 }
 
+.verify-hint { font-size: 0.8rem; color: var(--text2); font-style: italic; }
+
 .verify-text {
   background: rgba(204, 0, 255, 0.08);
   border: 1px solid var(--border);

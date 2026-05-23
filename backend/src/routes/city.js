@@ -1,6 +1,14 @@
 const express = require("express");
 const router = express.Router();
 const { ethers } = require("ethers");
+const { createHash } = require("crypto");
+
+function makeVerifyCode(walletAddress, twitterHandle) {
+  return createHash("sha256")
+    .update(walletAddress.toLowerCase() + twitterHandle.toLowerCase())
+    .digest("hex")
+    .slice(0, 6);
+}
 
 const getTwitterProvider = require("../services/twitter");
 const { analyzeCityPersonality, generateLevelUpNarrative } = require("../services/claude");
@@ -19,8 +27,9 @@ router.post("/verify-tweet", (req, res) => {
     return res.status(400).json({ error: "Invalid wallet address" });
   }
 
-  const verifyText = `TweetCity verify: ${walletAddress.toLowerCase()} #TweetCity`;
-  res.json({ verifyText });
+  const code = makeVerifyCode(walletAddress, twitterHandle);
+  const verifyText = `Minting my city on TweetCity! Code: TC-${code} #TweetCity #Mantle`;
+  res.json({ verifyText, code });
 });
 
 // POST /api/mint
@@ -36,15 +45,18 @@ router.post("/mint", mintLimiter, async (req, res) => {
 
   try {
     const twitter = getTwitterProvider();
-    const verifyText = `TweetCity verify: ${walletAddress.toLowerCase()} #TweetCity`;
+    const code = makeVerifyCode(walletAddress, twitterHandle);
+    const verifyText = `Minting my city on TweetCity! Code: TC-${code} #TweetCity #Mantle`;
 
-    // Step 1: Verify Tweet Proof
-    const proofTweet = await twitter.findTweet(twitterHandle, verifyText);
-    if (!proofTweet) {
-      return res.status(403).json({
-        error: "Tweet Proof not found. Please post the verification tweet first.",
-        verifyText,
-      });
+    // Step 1: Verify Tweet Proof (skip if SKIP_TWEET_VERIFY=true in .env)
+    if (process.env.SKIP_TWEET_VERIFY !== "true") {
+      const proofTweet = await twitter.findTweet(twitterHandle, `TC-${code}`);
+      if (!proofTweet) {
+        return res.status(403).json({
+          error: "Tweet Proof not found. Please post the verification tweet first.",
+          verifyText,
+        });
+      }
     }
 
     // Step 2: Fetch metrics + tweets

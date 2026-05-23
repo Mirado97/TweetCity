@@ -101,15 +101,16 @@ export default function MintPage({ address, onConnect }) {
       {step === "tweet" && (
         <div className="step-card">
           <div className="step-num">3 / 3</div>
-          <h2>Post Verification Tweet</h2>
-          <p>Post this tweet from <strong>@{handle}</strong> to prove account ownership:</p>
+          <h2>Share & Verify</h2>
+          <p>Post this tweet from <strong>@{handle}</strong> to verify your account:</p>
           <div className="verify-text">{verifyText}</div>
+          <p className="verify-hint">Your wallet address is not included — just a unique code that links your Twitter to this mint.</p>
           <div className="btn-row">
             <a className="btn-primary" href={tweetUrl()} target="_blank" rel="noreferrer">
               Post Tweet
             </a>
             <button className="btn-secondary" onClick={mint} disabled={loading}>
-              {loading ? "Checking..." : "I've Posted — Mint Now"}
+              {loading ? "Verifying..." : "I've Posted — Mint Now"}
             </button>
           </div>
           {error && <div className="error">{error}</div>}
