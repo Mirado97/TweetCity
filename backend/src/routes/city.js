@@ -13,7 +13,7 @@ function makeVerifyCode(walletAddress, twitterHandle) {
 const getTwitterProvider = require("../services/twitter");
 const { analyzeCityPersonality, generateLevelUpNarrative } = require("../services/claude");
 const { uploadMetadata } = require("../services/ipfs");
-const { mintCity, updateCity, getCityData, getLeaderboard } = require("../services/contract");
+const { mintCity, updateCity, getCityData, getLeaderboard, getTokenIdByHandle } = require("../services/contract");
 const { checkSyncCooldown, mintLimiter } = require("../middleware/rateLimit");
 
 // POST /api/verify-tweet
@@ -90,7 +90,13 @@ router.post("/mint", mintLimiter, async (req, res) => {
     };
     const ipfsCID = await uploadMetadata(metadata);
 
-    // Step 5: Mint NFT on Mantle
+    // Step 5: Check if already minted, if so return existing city
+    const existingTokenId = await getTokenIdByHandle(twitterHandle);
+    if (existingTokenId !== 0) {
+      return res.json({ tokenId: String(existingTokenId), txHash: null, ipfsCID, cityData: metadata, alreadyMinted: true });
+    }
+
+    // Step 6: Mint NFT on Mantle
     const { tokenId, txHash } = await mintCity({
       to: walletAddress,
       twitterHandle,

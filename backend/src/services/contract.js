@@ -77,6 +77,12 @@ async function getCityData(tokenId) {
   };
 }
 
+async function getTokenIdByHandle(twitterHandle) {
+  const contract = getContract();
+  const tokenId = await contract.handleToTokenId(twitterHandle);
+  return Number(tokenId); // 0 means not minted
+}
+
 async function getLeaderboard(limit = 10) {
   const contract = getContract();
   const total = Number(await contract.totalSupply());
@@ -94,4 +100,4 @@ async function getLeaderboard(limit = 10) {
     .slice(0, limit);
 }
 
-module.exports = { mintCity, updateCity, getCityData, getLeaderboard };
+module.exports = { mintCity, updateCity, getCityData, getLeaderboard, getTokenIdByHandle };
