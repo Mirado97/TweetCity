@@ -60,18 +60,39 @@ class ApifyProvider extends ITwitterProvider {
 
   async getUserMetrics(handle) {
     const cookie = process.env.TWITTER_COOKIE;
+
+    // Use search mode (same as getUserTweets) — reliable with cookie.
+    // Extract author profile data from the first tweet object.
+    if (cookie) {
+      const items = await this._runSync("automation-lab~twitter-scraper", {
+        mode: "search",
+        searchTerms: [`from:${handle}`],
+        maxResults: 5,
+        searchMode: "Latest",
+        twitterCookie: cookie,
+      });
+      const t = items[0];
+      if (process.env.APIFY_DEBUG && t) console.log("[ApifyProvider] raw tweet keys:", Object.keys(t));
+      if (t) {
+        // Try all known field name patterns used by this actor version
+        const followers  = t.authorFollowersCount ?? t.author?.followers    ?? t.author?.followersCount ?? 0;
+        const following  = t.authorFollowingCount ?? t.author?.following    ?? t.author?.friendsCount   ?? 0;
+        const tweetCount = t.authorTweetsCount    ?? t.author?.tweetsCount  ?? t.author?.statusesCount  ?? 0;
+        return { followers, tweetCount, following, username: handle };
+      }
+    }
+
+    // Fallback: profiles mode (no cookie or no tweets found)
     const input = { usernames: [handle], maxItems: 1, mode: "profiles" };
     if (cookie) input.twitterCookie = cookie;
     const items = await this._runSync("automation-lab~twitter-scraper", input);
     const user = items[0];
     if (!user) throw new Error(`User @${handle} not found via Apify`);
-    if (process.env.APIFY_DEBUG) console.log("[ApifyProvider] raw user keys:", Object.keys(user));
     return {
-      followers: user.followers ?? 0,
-      tweetCount: user.tweetsCount ?? 0,
-      following: user.following ?? 0,
-      name: user.name,
-      username: user.username ?? handle,
+      followers:  user.followers  ?? user.followersCount ?? 0,
+      tweetCount: user.tweetsCount ?? user.statusesCount ?? 0,
+      following:  user.following  ?? user.friendsCount   ?? 0,
+      username:   user.username   ?? handle,
     };
   }
 
