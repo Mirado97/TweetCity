@@ -1,7 +1,15 @@
 const { ethers } = require("ethers");
 const TweetCityABI = require("../../abi/TweetCity.json");
 
+const ERC8004_ADDRESS = "0x8004A818BFB912233c491871b3d84c89A494BD9e";
+const ERC8004_ABI = [
+  "function register(string agentURI) returns (uint256 agentId)",
+  "function setAgentURI(uint256 agentId, string newURI)",
+  "event Registered(uint256 indexed agentId, string agentURI, address indexed owner)",
+];
+
 let _contract = null;
+let _erc8004 = null;
 
 function getContract() {
   if (_contract) return _contract;
@@ -16,7 +24,24 @@ function getContract() {
   const provider = new ethers.JsonRpcProvider(rpc);
   const wallet = new ethers.Wallet(key, provider);
   _contract = new ethers.Contract(addr, TweetCityABI, wallet);
+  _erc8004 = new ethers.Contract(ERC8004_ADDRESS, ERC8004_ABI, wallet);
   return _contract;
+}
+
+async function registerERC8004Agent(ipfsCID) {
+  if (!_erc8004) getContract(); // ensure initialized
+  const agentURI = `https://ipfs.io/ipfs/${ipfsCID}`;
+  try {
+    const tx = await _erc8004.register(agentURI);
+    const receipt = await tx.wait();
+    const event = receipt.logs
+      .map((log) => { try { return _erc8004.interface.parseLog(log); } catch { return null; } })
+      .find((e) => e?.name === "Registered");
+    return event ? Number(event.args.agentId) : null;
+  } catch (err) {
+    console.warn("[ERC8004] register failed (non-fatal):", err.message);
+    return null;
+  }
 }
 
 function serializeCity(city) {
@@ -115,4 +140,4 @@ async function getLeaderboard(limit = 10) {
     .slice(0, limit);
 }
 
-module.exports = { mintCity, updateCity, getCityData, getLeaderboard, getTokenIdByHandle, getHandleByTokenId };
+module.exports = { mintCity, updateCity, getCityData, getLeaderboard, getTokenIdByHandle, getHandleByTokenId, registerERC8004Agent };

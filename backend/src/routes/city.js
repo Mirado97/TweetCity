@@ -13,7 +13,7 @@ function makeVerifyCode(walletAddress, twitterHandle) {
 const getTwitterProvider = require("../services/twitter");
 const { analyzeCityPersonality, generateLevelUpNarrative } = require("../services/claude");
 const { uploadMetadata } = require("../services/ipfs");
-const { mintCity, updateCity, getCityData, getLeaderboard, getTokenIdByHandle, getHandleByTokenId } = require("../services/contract");
+const { mintCity, updateCity, getCityData, getLeaderboard, getTokenIdByHandle, getHandleByTokenId, registerERC8004Agent } = require("../services/contract");
 const { checkSyncCooldown, mintLimiter } = require("../middleware/rateLimit");
 
 // POST /api/verify-tweet
@@ -108,7 +108,11 @@ router.post("/mint", mintLimiter, async (req, res) => {
       ipfsCID,
     });
 
-    res.json({ tokenId, txHash, ipfsCID, cityData: metadata });
+    // Step 6: Register city as ERC-8004 agent (non-blocking, failure is non-fatal)
+    const agentId = await registerERC8004Agent(ipfsCID);
+    if (agentId) console.log(`[ERC8004] City ${tokenId} registered as agent #${agentId}`);
+
+    res.json({ tokenId, txHash, ipfsCID, agentId, cityData: metadata });
   } catch (err) {
     console.error("[mint]", err);
     res.status(500).json({ error: err.message });
