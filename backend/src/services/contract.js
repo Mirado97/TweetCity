@@ -64,21 +64,29 @@ async function updateCity({ tokenId, followers, tweetCount, following, engagemen
 
 async function getHandleByTokenId(tokenId) {
   const contract = getContract();
-  const filter = contract.filters.CityMinted(tokenId);
-  const events = await contract.queryFilter(filter);
-  return events.length > 0 ? events[0].args.twitterHandle : "";
+  const provider = contract.runner.provider;
+  const latestBlock = await provider.getBlockNumber();
+  const deployBlock = Number(process.env.CONTRACT_DEPLOY_BLOCK || Math.max(0, latestBlock - 9000));
+  const chunkSize = 9000;
+  const filter = contract.filters.CityMinted(BigInt(tokenId));
+
+  for (let from = deployBlock; from <= latestBlock; from += chunkSize) {
+    const to = Math.min(from + chunkSize - 1, latestBlock);
+    const events = await contract.queryFilter(filter, from, to);
+    if (events.length > 0) return events[0].args.twitterHandle;
+  }
+  return "";
 }
 
 async function getCityData(tokenId) {
   const contract = getContract();
-  const [city, history, likes, twitterHandle] = await Promise.all([
+  const [city, history, likes] = await Promise.all([
     contract.cities(tokenId),
     contract.getHistory(tokenId),
     contract.cityLikes(tokenId),
-    getHandleByTokenId(tokenId),
   ]);
   return {
-    city: { ...serializeCity(city), twitterHandle },
+    city: serializeCity(city),
     history: history.map((h) => serializeCity(h)),
     likes: likes.toString(),
   };
@@ -107,4 +115,4 @@ async function getLeaderboard(limit = 10) {
     .slice(0, limit);
 }
 
-module.exports = { mintCity, updateCity, getCityData, getLeaderboard, getTokenIdByHandle };
+module.exports = { mintCity, updateCity, getCityData, getLeaderboard, getTokenIdByHandle, getHandleByTokenId };

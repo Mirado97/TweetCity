@@ -13,7 +13,7 @@ function makeVerifyCode(walletAddress, twitterHandle) {
 const getTwitterProvider = require("../services/twitter");
 const { analyzeCityPersonality, generateLevelUpNarrative } = require("../services/claude");
 const { uploadMetadata } = require("../services/ipfs");
-const { mintCity, updateCity, getCityData, getLeaderboard, getTokenIdByHandle } = require("../services/contract");
+const { mintCity, updateCity, getCityData, getLeaderboard, getTokenIdByHandle, getHandleByTokenId } = require("../services/contract");
 const { checkSyncCooldown, mintLimiter } = require("../middleware/rateLimit");
 
 // POST /api/verify-tweet
@@ -203,7 +203,10 @@ router.get("/city/:tokenId", async (req, res) => {
       } catch {}
     }
 
-    res.json({ ...data, ipfsData });
+    // Resolve twitterHandle: IPFS first (fast), then on-chain event (chunked)
+    const twitterHandle = ipfsData?.twitterHandle || await getHandleByTokenId(req.params.tokenId);
+
+    res.json({ ...data, city: { ...data.city, twitterHandle }, ipfsData });
   } catch (err) {
     res.status(404).json({ error: err.message });
   }
