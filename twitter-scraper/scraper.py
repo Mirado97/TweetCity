@@ -9,14 +9,16 @@ import os
 from pathlib import Path
 from twikit import Client
 
-# Load backend .env if running standalone (subprocess inherits env from Node)
+# Load backend .env (subprocess inherits env from Node, manual runs load from file)
 _env_file = Path(__file__).parent.parent / "backend" / ".env"
 if _env_file.exists():
-    for line in _env_file.read_text().splitlines():
+    for line in _env_file.read_text(encoding="utf-8-sig").splitlines():
         line = line.strip()
         if line and not line.startswith("#") and "=" in line:
             k, _, v = line.partition("=")
-            os.environ.setdefault(k.strip(), v.strip())
+            k = k.strip()
+            v = v.strip().strip('"').strip("'")  # remove surrounding quotes
+            os.environ.setdefault(k, v)
 
 TWITTER_USERNAME = os.environ.get("TWIKIT_USERNAME")
 TWITTER_EMAIL    = os.environ.get("TWIKIT_EMAIL")
@@ -26,16 +28,20 @@ COOKIES_FILE     = os.path.join(os.path.dirname(__file__), "cookies.json")
 
 
 async def get_client() -> Client:
-    client = Client("en-US", proxy=TWIKIT_PROXY)
+    proxy = os.environ.get("TWIKIT_PROXY")
+    print(f"[scraper] proxy={'SET' if proxy else 'NOT SET'}", file=sys.stderr)
+
+    client = Client("en-US", proxy=proxy)
+
     if os.path.exists(COOKIES_FILE):
+        print("[scraper] loading cookies...", file=sys.stderr)
         client.load_cookies(COOKIES_FILE)
     else:
-        await client.login(
-            auth_info_1=TWITTER_USERNAME,
-            auth_info_2=TWITTER_EMAIL,
-            password=TWITTER_PASSWORD,
+        raise RuntimeError(
+            f"cookies.json not found at {COOKIES_FILE}. "
+            "Export cookies from your browser (see README) and save to twitter-scraper/cookies.json"
         )
-        client.save_cookies(COOKIES_FILE)
+
     return client
 
 
@@ -95,8 +101,8 @@ async def main(payload: dict) -> dict:
 
 
 if __name__ == "__main__":
-    # Read from stdin to avoid shell escaping issues on all platforms
-    raw = sys.stdin.read().strip()
+    # Read from stdin (utf-8-sig handles PowerShell BOM)
+    raw = sys.stdin.buffer.read().decode("utf-8-sig").strip()
     if not raw:
         print(json.dumps({"ok": False, "error": "Empty stdin"}))
         sys.exit(1)
