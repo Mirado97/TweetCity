@@ -1,10 +1,9 @@
 const Anthropic = require("@anthropic-ai/sdk");
 
-const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-
-const SYSTEM_PROMPT = `You are an AI urban architect. Given a Twitter user's metrics and recent tweets,
-you design a unique fantasy city that reflects their personality and online presence.
-Always respond with valid JSON only — no markdown, no explanation.`;
+const client = new Anthropic({
+  apiKey: process.env.ANTHROPIC_API_KEY,
+  ...(process.env.ANTHROPIC_BASE_URL ? { baseURL: process.env.ANTHROPIC_BASE_URL } : {}),
+});
 
 async function analyzeCityPersonality(tweets, metrics) {
   const tweetTexts = tweets.map((t) => t.text).join("\n");
@@ -12,34 +11,19 @@ async function analyzeCityPersonality(tweets, metrics) {
   const response = await client.messages.create({
     model: "claude-haiku-4-5-20251001",
     max_tokens: 1024,
-    system: SYSTEM_PROMPT,
     messages: [
       {
         role: "user",
-        content: `Analyze this Twitter user and design their city.
+        content: `I am building a generative NFT app. Given Twitter user metrics and tweet text samples, classify the user's communication style and output a JSON config for rendering their NFT visualization.
 
-METRICS:
-- Followers: ${metrics.followers}
-- Tweets posted: ${metrics.tweetCount}
-- Following: ${metrics.following}
-- Avg engagement (likes+retweets): ${metrics.avgEngagement || 0}
+Data:
+followers=${metrics.followers}, tweets=${metrics.tweetCount}, following=${metrics.following}, avgEngagement=${metrics.avgEngagement || 0}
 
-RECENT TWEETS (last ${tweets.length}):
+Tweet samples (for tone analysis):
 ${tweetTexts}
 
-Return JSON with exactly these fields:
-{
-  "style": "one of: Cyberpunk | Eco-Futurism | Medieval | Brutalist | Minimalist | Baroque | Bio-Punk",
-  "cityName": "unique 2-3 word city name",
-  "motto": "short latin motto",
-  "lore": "2-3 sentences describing the city history in fantasy atlas style",
-  "dominantThemes": ["theme1", "theme2"],
-  "colorPalette": {
-    "primary": "#hexcolor",
-    "secondary": "#hexcolor",
-    "accent": "#hexcolor"
-  }
-}`,
+Output a JSON object (no prose, just the object):
+{"style":"<Cyberpunk|Eco-Futurism|Medieval|Brutalist|Minimalist|Baroque|Bio-Punk>","cityName":"<2-3 words>","motto":"<latin phrase>","lore":"<2-3 sentences>","dominantThemes":["<theme1>","<theme2>"],"colorPalette":{"primary":"<#hex>","secondary":"<#hex>","accent":"<#hex>"}}`,
       },
     ],
   });
@@ -64,12 +48,13 @@ async function generateLevelUpNarrative(cityName, oldLevel, newLevel, metrics) {
     messages: [
       {
         role: "user",
-        content: `The city of "${cityName}" has just leveled up from ${levelNames[oldLevel]} to ${levelNames[newLevel]}!
-Current population (followers): ${metrics.followers}
+        content: `Write a 2-3 sentence fantasy city herald proclamation for a city NFT project.
 
-Write a 2-3 sentence mayor's proclamation announcing this historic moment.
-Style: fantasy city herald announcement, dramatic and celebratory.
-No hashtags. No emojis. Just the proclamation text.`,
+City name: "${cityName}"
+Level change: ${levelNames[oldLevel]} → ${levelNames[newLevel]}
+Population (followers): ${metrics.followers}
+
+The proclamation should be dramatic and celebratory, written in a fantasy medieval style. No hashtags, no emojis.`,
       },
     ],
   });

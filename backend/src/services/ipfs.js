@@ -1,15 +1,24 @@
-const PinataSDK = require("@pinata/sdk");
-
-const pinata = new PinataSDK({
-  pinataApiKey: process.env.PINATA_API_KEY,
-  pinataSecretApiKey: process.env.PINATA_SECRET_KEY,
-});
-
 async function uploadMetadata(metadata) {
-  const result = await pinata.pinJSONToIPFS(metadata, {
-    pinataMetadata: { name: `TweetCity-${metadata.twitterHandle}-${Date.now()}` },
+  const res = await fetch("https://api.pinata.cloud/pinning/pinJSONToIPFS", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      pinata_api_key: process.env.PINATA_API_KEY,
+      pinata_secret_api_key: process.env.PINATA_SECRET_KEY,
+    },
+    body: JSON.stringify({
+      pinataContent: metadata,
+      pinataMetadata: { name: `TweetCity-${metadata.twitterHandle || "city"}-${Date.now()}` },
+    }),
   });
-  return result.IpfsHash; // CID
+
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Pinata error ${res.status}: ${text.slice(0, 200)}`);
+  }
+
+  const data = await res.json();
+  return data.IpfsHash;
 }
 
 module.exports = { uploadMetadata };
