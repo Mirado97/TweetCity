@@ -1,0 +1,197 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.24;
+
+import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
+import "@openzeppelin/contracts/access/Ownable.sol";
+
+/// @notice Dynamic NFT that represents a Twitter account as an evolving city on Mantle.
+contract TweetCity is ERC721, Ownable {
+
+    // ─── Structs ────────────────────────────────────────────────────────────
+
+    struct CityMetrics {
+        uint32  followers;
+        uint32  tweetCount;
+        uint32  following;
+        uint32  engagement;   // likes + retweets (last snapshot)
+        uint8   level;        // 1=Village 2=Town 3=City 4=Metropolis (5=Megacity: visual overlay only)
+        uint64  updatedAt;
+        string  ipfsCID;      // IPFS CID of full metadata JSON (updated only on level-up)
+    }
+
+    struct Snapshot {
+        uint32 followers;
+        uint32 tweetCount;
+        uint32 engagement;
+        uint64 timestamp;
+    }
+
+    // ─── Storage ────────────────────────────────────────────────────────────
+
+    uint256 private _nextTokenId;
+
+    mapping(uint256 => CityMetrics)   public  cities;
+    mapping(uint256 => Snapshot[])    private _history;
+    mapping(string  => uint256)       public  handleToTokenId;  // twitterHandle → tokenId
+    mapping(uint256 => uint256)       public  cityLikes;
+    mapping(address => mapping(uint256 => bool)) public hasLiked;
+
+    address public oracle;
+
+    // ─── Events ─────────────────────────────────────────────────────────────
+
+    event CityMinted(uint256 indexed tokenId, string twitterHandle, address owner, uint8 level);
+    event CityUpdated(uint256 indexed tokenId, uint32 followers, uint8 level);
+    event CityLevelUp(uint256 indexed tokenId, uint8 oldLevel, uint8 newLevel);
+    event CityLiked(uint256 indexed tokenId, address visitor);
+    event OracleChanged(address oldOracle, address newOracle);
+
+    // ─── Modifiers ──────────────────────────────────────────────────────────
+
+    modifier onlyOracle() {
+        require(msg.sender == oracle, "TweetCity: caller is not oracle");
+        _;
+    }
+
+    // ─── Constructor ────────────────────────────────────────────────────────
+
+    constructor(address _oracle) ERC721("TweetCity", "TCITY") Ownable(msg.sender) {
+        require(_oracle != address(0), "TweetCity: zero oracle address");
+        oracle = _oracle;
+    }
+
+    // ─── Oracle functions ────────────────────────────────────────────────────
+
+    /// @notice Mint a new city NFT for a Twitter account.
+    function mintCity(
+        address         to,
+        string calldata twitterHandle,
+        uint32          followers,
+        uint32          tweetCount,
+        uint32          following,
+        uint32          engagement,
+        string calldata ipfsCID
+    ) external onlyOracle {
+        require(bytes(twitterHandle).length > 0, "TweetCity: empty handle");
+        require(handleToTokenId[twitterHandle] == 0, "TweetCity: handle already minted");
+        require(to != address(0), "TweetCity: zero address");
+
+        uint256 tokenId = ++_nextTokenId;
+        uint8 level = _calcLevel(followers);
+
+        cities[tokenId] = CityMetrics({
+            followers:  followers,
+            tweetCount: tweetCount,
+            following:  following,
+            engagement: engagement,
+            level:      level,
+            updatedAt:  uint64(block.timestamp),
+            ipfsCID:    ipfsCID
+        });
+
+        _history[tokenId].push(Snapshot({
+            followers:  followers,
+            tweetCount: tweetCount,
+            engagement: engagement,
+            timestamp:  uint64(block.timestamp)
+        }));
+
+        handleToTokenId[twitterHandle] = tokenId;
+        _safeMint(to, tokenId);
+
+        emit CityMinted(tokenId, twitterHandle, to, level);
+    }
+
+    /// @notice Update city metrics after a "Sync City" call.
+    /// @param ipfsCID Pass non-empty string ONLY on level-up to save Pinata quota.
+    function updateCity(
+        uint256         tokenId,
+        uint32          followers,
+        uint32          tweetCount,
+        uint32          following,
+        uint32          engagement,
+        string calldata ipfsCID
+    ) external onlyOracle {
+        require(_ownerOf(tokenId) != address(0), "TweetCity: token does not exist");
+
+        uint8 oldLevel = cities[tokenId].level;
+        uint8 newLevel = _calcLevel(followers);
+
+        cities[tokenId].followers  = followers;
+        cities[tokenId].tweetCount = tweetCount;
+        cities[tokenId].following  = following;
+        cities[tokenId].engagement = engagement;
+        cities[tokenId].level      = newLevel;
+        cities[tokenId].updatedAt  = uint64(block.timestamp);
+
+        // Only update IPFS metadata on level-up to preserve Pinata free-tier quota.
+        if (bytes(ipfsCID).length > 0) {
+            cities[tokenId].ipfsCID = ipfsCID;
+        }
+
+        _history[tokenId].push(Snapshot({
+            followers:  followers,
+            tweetCount: tweetCount,
+            engagement: engagement,
+            timestamp:  uint64(block.timestamp)
+        }));
+
+        emit CityUpdated(tokenId, followers, newLevel);
+
+        if (newLevel > oldLevel) {
+            emit CityLevelUp(tokenId, oldLevel, newLevel);
+        }
+    }
+
+    // ─── Public functions ────────────────────────────────────────────────────
+
+    /// @notice Like another user's city. Caller must own at least one city (anti-spam).
+    function likeCity(uint256 tokenId) external {
+        require(_ownerOf(tokenId) != address(0), "TweetCity: token does not exist");
+        require(balanceOf(msg.sender) > 0, "TweetCity: must own a city to like");
+        require(!hasLiked[msg.sender][tokenId], "TweetCity: already liked");
+
+        hasLiked[msg.sender][tokenId] = true;
+        cityLikes[tokenId]++;
+
+        emit CityLiked(tokenId, msg.sender);
+    }
+
+    // ─── View functions ──────────────────────────────────────────────────────
+
+    function tokenURI(uint256 tokenId) public view override returns (string memory) {
+        require(_ownerOf(tokenId) != address(0), "TweetCity: token does not exist");
+        return string(abi.encodePacked("ipfs://", cities[tokenId].ipfsCID));
+    }
+
+    function getHistory(uint256 tokenId) external view returns (Snapshot[] memory) {
+        require(_ownerOf(tokenId) != address(0), "TweetCity: token does not exist");
+        return _history[tokenId];
+    }
+
+    function getHistoryLength(uint256 tokenId) external view returns (uint256) {
+        return _history[tokenId].length;
+    }
+
+    function totalSupply() external view returns (uint256) {
+        return _nextTokenId;
+    }
+
+    // ─── Admin ───────────────────────────────────────────────────────────────
+
+    function setOracle(address newOracle) external onlyOwner {
+        require(newOracle != address(0), "TweetCity: zero address");
+        emit OracleChanged(oracle, newOracle);
+        oracle = newOracle;
+    }
+
+    // ─── Internal ────────────────────────────────────────────────────────────
+
+    function _calcLevel(uint32 followers) internal pure returns (uint8) {
+        if (followers >= 100_000) return 5; // Megacity (Metropolis + legendary aura overlay)
+        if (followers >= 10_000)  return 4; // Metropolis
+        if (followers >= 1_000)   return 3; // City
+        if (followers >= 100)     return 2; // Town
+        return 1;                           // Village
+    }
+}
