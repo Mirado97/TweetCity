@@ -95,12 +95,14 @@ async def main(payload: dict) -> dict:
 
 
 if __name__ == "__main__":
-    if len(sys.argv) < 2:
-        print(json.dumps({"ok": False, "error": "No payload argument"}))
+    # Read from stdin to avoid shell escaping issues on all platforms
+    raw = sys.stdin.read().strip()
+    if not raw:
+        print(json.dumps({"ok": False, "error": "Empty stdin"}))
         sys.exit(1)
 
     try:
-        payload = json.loads(sys.argv[1])
+        payload = json.loads(raw)
     except json.JSONDecodeError as e:
         print(json.dumps({"ok": False, "error": f"Invalid JSON: {e}"}))
         sys.exit(1)

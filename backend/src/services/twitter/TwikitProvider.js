@@ -8,7 +8,7 @@ const SCRAPER_PATH = path.join(__dirname, "../../../../twitter-scraper/scraper.p
 async function callScraper(command, args) {
   return new Promise((resolve, reject) => {
     const payload = JSON.stringify({ command, args });
-    const proc = spawn("python", [SCRAPER_PATH, payload], { timeout: 30000 });
+    const proc = spawn("python", [SCRAPER_PATH], { timeout: 30000 });
 
     let stdout = "";
     let stderr = "";
@@ -26,6 +26,10 @@ async function callScraper(command, args) {
         reject(new Error(`Invalid JSON from scraper: ${stdout}`));
       }
     });
+
+    // Write payload to stdin and close it
+    proc.stdin.write(payload);
+    proc.stdin.end();
   });
 }
 
