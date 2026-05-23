@@ -173,7 +173,18 @@ router.post("/sync", checkSyncCooldown, async (req, res) => {
 router.get("/city/:tokenId", async (req, res) => {
   try {
     const data = await getCityData(req.params.tokenId);
-    res.json(data);
+
+    // Fetch IPFS metadata if CID is set
+    let ipfsData = null;
+    const cid = data.city?.ipfsCID;
+    if (cid && cid.length > 0) {
+      try {
+        const ipfsRes = await fetch(`https://ipfs.io/ipfs/${cid}`);
+        if (ipfsRes.ok) ipfsData = await ipfsRes.json();
+      } catch {}
+    }
+
+    res.json({ ...data, ipfsData });
   } catch (err) {
     res.status(404).json({ error: err.message });
   }

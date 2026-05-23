@@ -20,44 +20,74 @@ class ApifyProvider extends ITwitterProvider {
     return key;
   }
 
-  async _run(actorId, input) {
+  async _runSync(actorId, input) {
     const token = this._nextKey();
-    const runRes = await fetch(
+    const res = await fetch(
       `https://api.apify.com/v2/acts/${actorId}/run-sync-get-dataset-items?token=${token}`,
       { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input) }
     );
-    if (!runRes.ok) throw new Error(`Apify error: ${runRes.status}`);
-    return runRes.json();
+    if (!res.ok) throw new Error(`Apify error: ${res.status}`);
+    return res.json();
+  }
+
+  async _runAsync(actorId, input) {
+    const token = this._nextKey();
+    const startRes = await fetch(
+      `https://api.apify.com/v2/acts/${actorId}/runs?token=${token}`,
+      { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input) }
+    );
+    if (!startRes.ok) throw new Error(`Apify start error: ${startRes.status}`);
+    const { data: run } = await startRes.json();
+    const runId = run.id;
+    const datasetId = run.defaultDatasetId;
+
+    // Poll until done (max 90s)
+    for (let i = 0; i < 18; i++) {
+      await new Promise((r) => setTimeout(r, 5000));
+      const statusRes = await fetch(`https://api.apify.com/v2/actor-runs/${runId}?token=${token}`);
+      const { data: status } = await statusRes.json();
+      if (status.status === "SUCCEEDED") break;
+      if (status.status === "FAILED" || status.status === "ABORTED")
+        throw new Error(`Apify run ${status.status}`);
+    }
+
+    const itemsRes = await fetch(
+      `https://api.apify.com/v2/datasets/${datasetId}/items?token=${token}&limit=200`
+    );
+    if (!itemsRes.ok) throw new Error(`Apify dataset error: ${itemsRes.status}`);
+    return itemsRes.json();
   }
 
   async getUserMetrics(handle) {
-    const items = await this._run("automation-lab~twitter-scraper", {
+    const items = await this._runSync("automation-lab~twitter-scraper", {
       usernames: [handle],
       maxItems: 1,
-      scrapeType: "user",
+      mode: "profiles",
     });
     const user = items[0];
     if (!user) throw new Error(`User @${handle} not found via Apify`);
+    if (process.env.APIFY_DEBUG) console.log("[ApifyProvider] raw user keys:", Object.keys(user));
     return {
-      followers: user.followersCount ?? user.followers_count ?? user.followers ?? 0,
-      tweetCount: user.statusesCount ?? user.statuses_count ?? user.tweetCount ?? 0,
-      following: user.followingCount ?? user.friends_count ?? user.following ?? 0,
+      followers: user.followers ?? 0,
+      tweetCount: user.tweetsCount ?? 0,
+      following: user.following ?? 0,
       name: user.name,
-      username: user.username ?? user.screen_name ?? handle,
+      username: user.username ?? handle,
     };
   }
 
   async getUserTweets(handle, count = 50) {
-    const items = await this._run("automation-lab~twitter-scraper", {
+    const items = await this._runAsync("automation-lab~twitter-scraper", {
       usernames: [handle],
-      maxItems: count,
-      scrapeType: "tweets",
+      maxResults: count,
+      mode: "user-tweets",
     });
+    if (process.env.APIFY_DEBUG && items[0]) console.log("[ApifyProvider] raw tweet keys:", Object.keys(items[0]));
     return items.map((t) => ({
-      text: t.text ?? t.full_text ?? "",
-      likes: t.likeCount ?? t.favorite_count ?? 0,
-      retweets: t.retweetCount ?? t.retweet_count ?? 0,
-      createdAt: t.createdAt ?? t.created_at ?? "",
+      text: t.text ?? "",
+      likes: t.likeCount ?? 0,
+      retweets: t.retweetCount ?? 0,
+      createdAt: t.createdAt ?? "",
     }));
   }
 
