@@ -59,11 +59,10 @@ class ApifyProvider extends ITwitterProvider {
   }
 
   async getUserMetrics(handle) {
-    const items = await this._runSync("automation-lab~twitter-scraper", {
-      usernames: [handle],
-      maxItems: 1,
-      mode: "profiles",
-    });
+    const cookie = process.env.TWITTER_COOKIE;
+    const input = { usernames: [handle], maxItems: 1, mode: "profiles" };
+    if (cookie) input.twitterCookie = cookie;
+    const items = await this._runSync("automation-lab~twitter-scraper", input);
     const user = items[0];
     if (!user) throw new Error(`User @${handle} not found via Apify`);
     if (process.env.APIFY_DEBUG) console.log("[ApifyProvider] raw user keys:", Object.keys(user));
@@ -77,23 +76,53 @@ class ApifyProvider extends ITwitterProvider {
   }
 
   async getUserTweets(handle, count = 50) {
-    const items = await this._runAsync("automation-lab~twitter-scraper", {
-      usernames: [handle],
-      maxResults: count,
-      mode: "user-tweets",
-    });
+    const cookie = process.env.TWITTER_COOKIE;
+    const input = cookie
+      ? // Search mode with cookie — works even for restricted accounts
+        {
+          mode: "search",
+          searchTerms: [`from:${handle}`],
+          maxResults: count,
+          searchMode: "Latest",
+          twitterCookie: cookie,
+        }
+      : // Fallback: async user-tweets (may fail for restricted accounts)
+        { mode: "user-tweets", usernames: [handle], maxResults: count };
+
+    const items = cookie
+      ? await this._runSync("automation-lab~twitter-scraper", input)
+      : await this._runAsync("automation-lab~twitter-scraper", input);
+
     if (process.env.APIFY_DEBUG && items[0]) console.log("[ApifyProvider] raw tweet keys:", Object.keys(items[0]));
-    return items.map((t) => ({
-      text: t.text ?? "",
-      likes: t.likeCount ?? 0,
-      retweets: t.retweetCount ?? 0,
-      createdAt: t.createdAt ?? "",
-    }));
+
+    return items
+      .filter((t) => !t.isRetweet && !t.isReply)
+      .map((t) => ({
+        text: t.text ?? "",
+        likes: t.likeCount ?? 0,
+        retweets: t.retweetCount ?? 0,
+        createdAt: t.createdAt ?? "",
+      }));
   }
 
   async findTweet(handle, searchText) {
-    const tweets = await this.getUserTweets(handle, 20);
-    return tweets.find((t) => t.text.includes(searchText)) || null;
+    const cookie = process.env.TWITTER_COOKIE;
+    if (!cookie) {
+      // No cookie: try timeline only
+      const tweets = await this.getUserTweets(handle, 20);
+      return tweets.find((t) => t.text.includes(searchText)) || null;
+    }
+
+    // With cookie: search directly for the verification text
+    const items = await this._runSync("automation-lab~twitter-scraper", {
+      mode: "search",
+      searchTerms: [`from:${handle} ${searchText.slice(0, 60)}`],
+      maxResults: 5,
+      searchMode: "Latest",
+      twitterCookie: cookie,
+    });
+    const hit = items.find((t) => t.text && t.text.includes(searchText));
+    return hit ? { text: hit.text, likes: hit.likeCount ?? 0, retweets: hit.retweetCount ?? 0 } : null;
   }
 }
 
