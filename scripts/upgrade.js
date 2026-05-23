@@ -2,8 +2,10 @@ require("dotenv").config();
 const { ethers, upgrades } = require("hardhat");
 
 async function main() {
-  const proxyAddress = process.env.CONTRACT_ADDRESS;
-  if (!proxyAddress) throw new Error("CONTRACT_ADDRESS not set in .env");
+  // Read proxy address from OZ manifest (chainId 5003 = Mantle Sepolia)
+  const manifest = require("../.openzeppelin/unknown-5003.json");
+  const proxyAddress = manifest.proxies[manifest.proxies.length - 1].address;
+  if (!proxyAddress) throw new Error("No proxy address found in .openzeppelin manifest");
 
   const [deployer] = await ethers.getSigners();
   console.log("Upgrading with:", deployer.address);

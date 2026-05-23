@@ -74,10 +74,10 @@ class ApifyProvider extends ITwitterProvider {
       const t = items[0];
       if (process.env.APIFY_DEBUG && t) console.log("[ApifyProvider] raw tweet keys:", Object.keys(t));
       if (t) {
-        // Try all known field name patterns used by this actor version
-        const followers  = t.authorFollowersCount ?? t.author?.followers    ?? t.author?.followersCount ?? 0;
-        const following  = t.authorFollowingCount ?? t.author?.following    ?? t.author?.friendsCount   ?? 0;
-        const tweetCount = t.authorTweetsCount    ?? t.author?.tweetsCount  ?? t.author?.statusesCount  ?? 0;
+        // Field names confirmed from automation-lab~twitter-scraper search mode output
+        const followers  = Number(t.authorFollowers  ?? 0);
+        const following  = Number(t.authorFollowing  ?? 0);
+        const tweetCount = Number(t.authorTweetCount ?? t.authorTweetsCount ?? 0);
         return { followers, tweetCount, following, username: handle };
       }
     }

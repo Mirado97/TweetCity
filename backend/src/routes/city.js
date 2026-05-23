@@ -108,9 +108,8 @@ router.post("/mint", mintLimiter, async (req, res) => {
       ipfsCID,
     });
 
-    // Step 6: Register city as ERC-8004 agent (non-blocking, failure is non-fatal)
-    const agentId = await registerERC8004Agent(ipfsCID);
-    if (agentId) console.log(`[ERC8004] City ${tokenId} registered as agent #${agentId}`);
+    // Step 6: Register city as ERC-8004 agent, store agentId on-chain
+    const agentId = await registerERC8004Agent(ipfsCID, tokenId);
 
     res.json({ tokenId, txHash, ipfsCID, agentId, cityData: metadata });
   } catch (err) {
@@ -197,14 +196,21 @@ router.get("/city/:tokenId", async (req, res) => {
   try {
     const data = await getCityData(req.params.tokenId);
 
-    // Fetch IPFS metadata if CID is set
+    // Fetch IPFS metadata — try multiple gateways
     let ipfsData = null;
     const cid = data.city?.ipfsCID;
     if (cid && cid.length > 0) {
-      try {
-        const ipfsRes = await fetch(`https://ipfs.io/ipfs/${cid}`);
-        if (ipfsRes.ok) ipfsData = await ipfsRes.json();
-      } catch {}
+      const gateways = [
+        `https://gateway.pinata.cloud/ipfs/${cid}`,
+        `https://cloudflare-ipfs.com/ipfs/${cid}`,
+        `https://ipfs.io/ipfs/${cid}`,
+      ];
+      for (const url of gateways) {
+        try {
+          const ipfsRes = await fetch(url, { signal: AbortSignal.timeout(5000) });
+          if (ipfsRes.ok) { ipfsData = await ipfsRes.json(); break; }
+        } catch {}
+      }
     }
 
     // Resolve twitterHandle: IPFS first (fast), then on-chain event (chunked)

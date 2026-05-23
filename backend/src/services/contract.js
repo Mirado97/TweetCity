@@ -29,8 +29,9 @@ function getContract() {
   return _contract;
 }
 
-async function registerERC8004Agent(ipfsCID) {
-  if (!_erc8004) getContract(); // ensure initialized
+async function registerERC8004Agent(ipfsCID, tokenId) {
+  if (!_erc8004) getContract();
+  const contract = getContract();
   const agentURI = `https://ipfs.io/ipfs/${ipfsCID}`;
   try {
     const tx = await _erc8004.register(agentURI);
@@ -38,7 +39,19 @@ async function registerERC8004Agent(ipfsCID) {
     const event = receipt.logs
       .map((log) => { try { return _erc8004.interface.parseLog(log); } catch { return null; } })
       .find((e) => e?.name === "Registered");
-    return event ? Number(event.args.agentId) : null;
+    const agentId = event ? Number(event.args.agentId) : null;
+
+    // Store agentId on-chain in TweetCity contract (like GenesisNFT pattern)
+    if (agentId && tokenId) {
+      try {
+        const tx2 = await contract.setTokenAgentId(tokenId, agentId);
+        await tx2.wait();
+        console.log(`[ERC8004] City ${tokenId} registered as agent #${agentId}`);
+      } catch (e) {
+        console.warn("[ERC8004] setTokenAgentId failed:", e.message);
+      }
+    }
+    return agentId;
   } catch (err) {
     console.warn("[ERC8004] register failed (non-fatal):", err.message);
     return null;

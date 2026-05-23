@@ -42,9 +42,14 @@ contract TweetCity is Initializable, ERC721Upgradeable, OwnableUpgradeable, UUPS
 
     address public oracle;
 
+    // ERC-8004 Agent Identity Registry
+    address public agentIdentityRegistry;
+    mapping(uint256 => uint256) public tokenAgentId; // tokenId → ERC-8004 agentId
+
     // ─── Events ─────────────────────────────────────────────────────────────
 
     event CityMinted(uint256 indexed tokenId, string twitterHandle, address owner, uint8 level);
+    event AgentRegistered(uint256 indexed tokenId, uint256 indexed agentId);
     event CityUpdated(uint256 indexed tokenId, uint32 followers, uint8 level);
     event CityLevelUp(uint256 indexed tokenId, uint8 oldLevel, uint8 newLevel);
     event CityLiked(uint256 indexed tokenId, address visitor);
@@ -186,6 +191,15 @@ contract TweetCity is Initializable, ERC721Upgradeable, OwnableUpgradeable, UUPS
     }
 
     // ─── Admin ───────────────────────────────────────────────────────────────
+
+    function setAgentIdentityRegistry(address registry) external onlyOwner {
+        agentIdentityRegistry = registry;
+    }
+
+    function setTokenAgentId(uint256 tokenId, uint256 agentId) external onlyOwner {
+        tokenAgentId[tokenId] = agentId;
+        emit AgentRegistered(tokenId, agentId);
+    }
 
     function setOracle(address newOracle) external onlyOwner {
         require(newOracle != address(0), "TweetCity: zero address");
