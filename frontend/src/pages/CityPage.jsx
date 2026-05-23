@@ -142,13 +142,24 @@ export default function CityPage({ tokenId, signer, address }) {
         <button className="btn-secondary" onClick={likeCity} disabled={liking || !signer}>
           {liking ? "..." : `Like (${likeCount})`}
         </button>
-        <button className="btn-secondary" onClick={() => {
-          const url = window.location.href;
-          navigator.clipboard.writeText(`My TweetCity: ${rendererCity.cityName} (Lvl ${level} ${LEVEL_NAMES[level]}) ${url} #TweetCity`);
-          alert("Copied!");
-        }}>
-          Share
-        </button>
+        <a className="btn-secondary" target="_blank" rel="noreferrer"
+          href={(() => {
+            const name = rendererCity.cityName;
+            const lvl = LEVEL_NAMES[level];
+            const style = city.ipfsData?.city?.style || "";
+            const handle = twitterHandle ? `@${twitterHandle}` : "";
+            const variants = [
+              `My Twitter became a ${style} ${lvl} called ${name} on Mantle! ${handle} Every tweet builds the city 🏙 Join TweetCity!`,
+              `${name} is live on Mantle! A ${style} ${lvl} NFT shaped by my Twitter activity 🌆 Followers = Population. Mint yours!`,
+              `I turned my tweets into a ${lvl} city on-chain 🏗 ${name} (${style}) on Mantle. What would YOUR city look like? Join TweetCity!`,
+              `${name} rises from the blockchain! 🌃 My ${style} city on @MantleNetwork. The more I tweet, the bigger it gets!`,
+              `Just synced my TweetCity — ${name} is a ${style} ${lvl} on Mantle 🔥 Real Twitter metrics, real NFT. Come mint yours!`,
+            ];
+            const text = variants[tokenId % variants.length];
+            return `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}&hashtags=TweetCity,Mantle,NFT`;
+          })()}>
+          Share on Twitter
+        </a>
       </div>
     </div>
   );

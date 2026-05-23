@@ -1,11 +1,34 @@
 const { ethers } = require("ethers");
 const TweetCityABI = require("../../abi/TweetCity.json");
 
-const provider = new ethers.JsonRpcProvider(process.env.MANTLE_TESTNET_RPC);
-const oracleWallet = new ethers.Wallet(process.env.ORACLE_PRIVATE_KEY, provider);
+let _contract = null;
 
 function getContract() {
-  return new ethers.Contract(process.env.CONTRACT_ADDRESS, TweetCityABI, oracleWallet);
+  if (_contract) return _contract;
+
+  const key = process.env.ORACLE_PRIVATE_KEY;
+  const rpc = process.env.MANTLE_TESTNET_RPC;
+  const addr = process.env.CONTRACT_ADDRESS;
+
+  if (!key || key.includes("your_oracle")) throw new Error("ORACLE_PRIVATE_KEY not set in .env");
+  if (!addr || addr.length < 10) throw new Error("CONTRACT_ADDRESS not set in .env");
+
+  const provider = new ethers.JsonRpcProvider(rpc);
+  const wallet = new ethers.Wallet(key, provider);
+  _contract = new ethers.Contract(addr, TweetCityABI, wallet);
+  return _contract;
+}
+
+function serializeCity(city) {
+  return {
+    twitterHandle: city.twitterHandle,
+    followers:     Number(city.followers),
+    tweetCount:    Number(city.tweetCount),
+    following:     Number(city.following),
+    engagement:    Number(city.engagement),
+    level:         Number(city.level),
+    ipfsCID:       city.ipfsCID,
+  };
 }
 
 async function mintCity({ to, twitterHandle, followers, tweetCount, following, engagement, ipfsCID }) {
@@ -35,8 +58,8 @@ async function updateCity({ tokenId, followers, tweetCount, following, engagemen
   return {
     txHash: receipt.hash,
     levelUp: !!levelUpEvent,
-    oldLevel: levelUpEvent?.args?.oldLevel,
-    newLevel: levelUpEvent?.args?.newLevel,
+    oldLevel: levelUpEvent?.args?.oldLevel ? Number(levelUpEvent.args.oldLevel) : null,
+    newLevel: levelUpEvent?.args?.newLevel ? Number(levelUpEvent.args.newLevel) : null,
   };
 }
 
@@ -47,7 +70,11 @@ async function getCityData(tokenId) {
     contract.getHistory(tokenId),
     contract.cityLikes(tokenId),
   ]);
-  return { city, history, likes: likes.toString() };
+  return {
+    city: serializeCity(city),
+    history: history.map((h) => serializeCity(h)),
+    likes: likes.toString(),
+  };
 }
 
 async function getLeaderboard(limit = 10) {
@@ -57,13 +84,13 @@ async function getLeaderboard(limit = 10) {
 
   for (let id = 1; id <= total; id++) {
     const city = await contract.cities(id);
-    if (city.followers > 0) {
-      cities.push({ tokenId: id, ...city });
+    if (city.followers > 0n) {
+      cities.push({ tokenId: id, ...serializeCity(city) });
     }
   }
 
   return cities
-    .sort((a, b) => Number(b.followers) - Number(a.followers))
+    .sort((a, b) => b.followers - a.followers)
     .slice(0, limit);
 }
 
