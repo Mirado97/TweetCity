@@ -1,16 +1,29 @@
 const ITwitterProvider = require("./ITwitterProvider");
 
-// Fallback if Twikit breaks. Requires APIFY_API_TOKEN in env.
 class ApifyProvider extends ITwitterProvider {
   constructor() {
     super();
-    this.token = process.env.APIFY_API_TOKEN;
-    if (!this.token) throw new Error("APIFY_API_TOKEN not set");
+    // Collect all keys: APIFY_API_TOKEN_1, APIFY_API_TOKEN_2, ... or single APIFY_API_TOKEN
+    this.keys = [
+      process.env.APIFY_API_TOKEN_1,
+      process.env.APIFY_API_TOKEN_2,
+      process.env.APIFY_API_TOKEN,
+    ].filter(Boolean);
+
+    if (this.keys.length === 0) throw new Error("No Apify API keys set");
+    this._keyIndex = 0;
+  }
+
+  _nextKey() {
+    const key = this.keys[this._keyIndex % this.keys.length];
+    this._keyIndex++;
+    return key;
   }
 
   async _run(actorId, input) {
+    const token = this._nextKey();
     const runRes = await fetch(
-      `https://api.apify.com/v2/acts/${actorId}/run-sync-get-dataset-items?token=${this.token}`,
+      `https://api.apify.com/v2/acts/${actorId}/run-sync-get-dataset-items?token=${token}`,
       { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input) }
     );
     if (!runRes.ok) throw new Error(`Apify error: ${runRes.status}`);
