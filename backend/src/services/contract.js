@@ -1,5 +1,6 @@
 const { ethers } = require("ethers");
-const TweetCityABI = require("../../abi/TweetCity.json");
+const _abiFile = require("../../abi/TweetCity.json");
+const TweetCityABI = Array.isArray(_abiFile) ? _abiFile : _abiFile.abi;
 
 const ERC8004_ADDRESS = "0x8004A818BFB912233c491871b3d84c89A494BD9e";
 const ERC8004_ABI = [
