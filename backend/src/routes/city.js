@@ -44,6 +44,13 @@ router.post("/mint", mintLimiter, async (req, res) => {
   }
 
   try {
+    // Step 0: Check if already minted — skip all expensive steps
+    const existingTokenId = await getTokenIdByHandle(twitterHandle);
+    if (existingTokenId !== 0) {
+      const existing = await getCityData(existingTokenId);
+      return res.json({ tokenId: String(existingTokenId), txHash: null, ipfsCID: existing.city.ipfsCID, cityData: null, alreadyMinted: true });
+    }
+
     const twitter = getTwitterProvider();
     const code = makeVerifyCode(walletAddress, twitterHandle);
     const verifyText = `Minting my city on TweetCity! Code: TC-${code} #TweetCity #Mantle`;
@@ -90,13 +97,7 @@ router.post("/mint", mintLimiter, async (req, res) => {
     };
     const ipfsCID = await uploadMetadata(metadata);
 
-    // Step 5: Check if already minted, if so return existing city
-    const existingTokenId = await getTokenIdByHandle(twitterHandle);
-    if (existingTokenId !== 0) {
-      return res.json({ tokenId: String(existingTokenId), txHash: null, ipfsCID, cityData: metadata, alreadyMinted: true });
-    }
-
-    // Step 6: Mint NFT on Mantle
+    // Step 5: Mint NFT on Mantle
     const { tokenId, txHash } = await mintCity({
       to: walletAddress,
       twitterHandle,

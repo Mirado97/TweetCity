@@ -62,6 +62,10 @@ export default function MintPage({ address, onConnect, onMinted }) {
       });
       const data = await res.json();
       if (data.error) throw new Error(data.error);
+      if (data.alreadyMinted) {
+        onMinted?.(data.tokenId);
+        return;
+      }
       setResult(data);
       setStep("done");
       onMinted?.(data.tokenId);
