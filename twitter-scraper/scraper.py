@@ -6,16 +6,27 @@ import sys
 import json
 import asyncio
 import os
+from pathlib import Path
 from twikit import Client
+
+# Load backend .env if running standalone (subprocess inherits env from Node)
+_env_file = Path(__file__).parent.parent / "backend" / ".env"
+if _env_file.exists():
+    for line in _env_file.read_text().splitlines():
+        line = line.strip()
+        if line and not line.startswith("#") and "=" in line:
+            k, _, v = line.partition("=")
+            os.environ.setdefault(k.strip(), v.strip())
 
 TWITTER_USERNAME = os.environ.get("TWIKIT_USERNAME")
 TWITTER_EMAIL    = os.environ.get("TWIKIT_EMAIL")
 TWITTER_PASSWORD = os.environ.get("TWIKIT_PASSWORD")
+TWIKIT_PROXY     = os.environ.get("TWIKIT_PROXY")  # e.g. http://user:pass@host:port
 COOKIES_FILE     = os.path.join(os.path.dirname(__file__), "cookies.json")
 
 
 async def get_client() -> Client:
-    client = Client("en-US")
+    client = Client("en-US", proxy=TWIKIT_PROXY)
     if os.path.exists(COOKIES_FILE):
         client.load_cookies(COOKIES_FILE)
     else:
