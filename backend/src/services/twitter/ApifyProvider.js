@@ -31,29 +31,33 @@ class ApifyProvider extends ITwitterProvider {
   }
 
   async getUserMetrics(handle) {
-    const items = await this._run("apidojo~tweet-scraper", {
-      twitterHandles: [handle], maxItems: 1, includeUserInfo: true,
+    const items = await this._run("automation-lab~twitter-scraper", {
+      usernames: [handle],
+      maxItems: 1,
+      scrapeType: "user",
     });
-    const user = items[0]?.author;
+    const user = items[0];
     if (!user) throw new Error(`User @${handle} not found via Apify`);
     return {
-      followers: user.followers,
-      tweetCount: user.statusesCount,
-      following: user.following,
+      followers: user.followersCount ?? user.followers_count ?? user.followers ?? 0,
+      tweetCount: user.statusesCount ?? user.statuses_count ?? user.tweetCount ?? 0,
+      following: user.followingCount ?? user.friends_count ?? user.following ?? 0,
       name: user.name,
-      username: user.userName,
+      username: user.username ?? user.screen_name ?? handle,
     };
   }
 
   async getUserTweets(handle, count = 50) {
-    const items = await this._run("apidojo~tweet-scraper", {
-      twitterHandles: [handle], maxItems: count,
+    const items = await this._run("automation-lab~twitter-scraper", {
+      usernames: [handle],
+      maxItems: count,
+      scrapeType: "tweets",
     });
     return items.map((t) => ({
-      text: t.text,
-      likes: t.likeCount,
-      retweets: t.retweetCount,
-      createdAt: t.createdAt,
+      text: t.text ?? t.full_text ?? "",
+      likes: t.likeCount ?? t.favorite_count ?? 0,
+      retweets: t.retweetCount ?? t.retweet_count ?? 0,
+      createdAt: t.createdAt ?? t.created_at ?? "",
     }));
   }
 
