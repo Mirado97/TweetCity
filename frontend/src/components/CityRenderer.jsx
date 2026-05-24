@@ -271,12 +271,20 @@ function CityScene({ metrics, style, colorPalette, level, tokenId }) {
 
     // Roads between blocks
     const totalSize = (2 * Math.max(gridR, 1) + 1) * BLOCK + 2 * Math.max(gridR, 1) * ROAD + 10;
+    const roadCenters = []; // track road center coords for collision checks
     const roads = [];
     for (let i = -Math.max(gridR, 1); i < Math.max(gridR, 1); i++) {
       const t = (i + 0.5) * STEP;
+      roadCenters.push(t);
       roads.push({ x: t, z: 0, len: totalSize, horiz: false });
       roads.push({ x: 0, z: t, len: totalSize, horiz: true });
     }
+
+    // Rule: nothing stands on roads. A point is on a road if it falls within
+    // ROAD/2 of any road center on either axis.
+    const isOnRoad = (x, z) =>
+      roadCenters.some(rc => Math.abs(x - rc) <= ROAD / 2 + 0.3) ||
+      roadCenters.some(rc => Math.abs(z - rc) <= ROAD / 2 + 0.3);
 
     // --- FOLLOWING → trees (more social = greener city) ---
     const treeRng = mkRng(seed + 1);
@@ -295,15 +303,19 @@ function CityScene({ metrics, style, colorPalette, level, tokenId }) {
       }
     }
 
-    // --- TWEET COUNT → lanterns (more activity = more lit streets) ---
+    // --- TWEET COUNT → lanterns on sidewalk, never on roads ---
     const lanternRng = mkRng(seed + 2);
     const lanterns = [];
     const lCount = Math.min(4 + Math.floor(tweetCount / 200), 24);
-    for (let i = 0; i < lCount; i++) {
-      const side = lanternRng() > 0.5 ? 1 : -1;
-      const along = (lanternRng() - 0.5) * (STEP * 1.5);
-      if (lanternRng() > 0.5) lanterns.push([(STEP / 2 + 1.8) * side, 0, along]);
-      else                     lanterns.push([along, 0, (STEP / 2 + 1.8) * side]);
+    for (let attempt = 0; lanterns.length < lCount && attempt < 400; attempt++) {
+      // Pick a road, stand on its sidewalk (ROAD/2 + 1.5 units from center)
+      const rc = roadCenters[Math.floor(lanternRng() * roadCenters.length)];
+      const sidewalk = ROAD / 2 + 1.5 + lanternRng() * 0.8;
+      const along = (lanternRng() - 0.5) * totalSize * 0.7;
+      const horiz = lanternRng() > 0.5;
+      const lx = horiz ? along : rc + (lanternRng() > 0.5 ? sidewalk : -sidewalk);
+      const lz = horiz ? rc + (lanternRng() > 0.5 ? sidewalk : -sidewalk) : along;
+      if (!isOnRoad(lx, lz)) lanterns.push([lx, 0, lz]);
     }
 
     return { buildings, roads, trees, lanterns, totalSize };
