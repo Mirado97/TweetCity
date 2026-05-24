@@ -251,11 +251,13 @@ function CityScene({ metrics, style, colorPalette, level, tokenId }) {
       let idx = 0;
       for (let br = 0; br < bRows && idx < count; br++) {
         for (let bc = 0; bc < bCols && idx < count; bc++, idx++) {
-          const px = bx - (BLOCK - 2) / 2 + bc * bCell + bCell / 2 + (rng() - 0.5) * 1.2;
-          const pz = bz - (BLOCK - 2) / 2 + br * bCell + bCell / 2 + (rng() - 0.5) * 1.2;
+          const px = bx - (BLOCK - 2) / 2 + bc * bCell + bCell / 2 + (rng() - 0.5) * 0.8;
+          const pz = bz - (BLOCK - 2) / 2 + br * bCell + bCell / 2 + (rng() - 0.5) * 0.8;
           const h = minH + rng() * (maxH - minH);
-          const w = 2.8 + rng() * 2.4;
-          const d = 2.8 + rng() * 2.4;
+          // Width scales down as density increases so buildings don't clump
+          const maxW = perBlockBase <= 2 ? 4.2 : perBlockBase <= 4 ? 3.0 : 2.2;
+          const w = maxW * 0.55 + rng() * maxW * 0.45;
+          const d = maxW * 0.55 + rng() * maxW * 0.45;
           const color = rng() > 0.45 ? primary : secondary;
           buildings.push({ pos: [px, pz], w, d, h, color, accent, prestige });
         }
