@@ -24,6 +24,9 @@ module.exports = {
       accounts: [DEPLOYER_PRIVATE_KEY],
     },
   },
+  sourcify: {
+    enabled: true,
+  },
   etherscan: {
     apiKey: {
       mantleTestnet: process.env.MANTLE_EXPLORER_API_KEY || "placeholder",
