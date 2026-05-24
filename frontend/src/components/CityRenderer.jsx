@@ -4,128 +4,177 @@ import { OrbitControls, Stars } from "@react-three/drei";
 
 function mkRng(seed) {
   let s = ((seed >>> 0) || 1337);
-  return () => {
-    s = (Math.imul(s, 1664525) + 1013904223) >>> 0;
-    return s / 0xffffffff;
-  };
+  return () => { s = (Math.imul(s, 1664525) + 1013904223) >>> 0; return s / 0xffffffff; };
 }
 
 const STYLE_CFG = {
-  Cyberpunk:      { sky: "#04000f", ground: "#1a0035", fog: "#08001a", road: "#0d0d2e", stars: true,  ambI: 0.5, dirI: 1.0 },
-  "Eco-Futurism": { sky: "#001a05", ground: "#3a8a3a", fog: "#004d15", road: "#2a5a2a", stars: false, ambI: 1.0, dirI: 1.3 },
-  Medieval:       { sky: "#1a0d00", ground: "#5a3200", fog: "#3d1f00", road: "#3a2000", stars: true,  ambI: 0.6, dirI: 1.0 },
-  Brutalist:      { sky: "#111",    ground: "#3a3a3a", fog: "#222",    road: "#222",    stars: false, ambI: 0.7, dirI: 1.0 },
-  Minimalist:     { sky: "#eeeeee", ground: "#cccccc", fog: "#dddddd", road: "#aaaaaa", stars: false, ambI: 1.2, dirI: 1.0 },
-  Baroque:        { sky: "#08000f", ground: "#3d0060", fog: "#1a001f", road: "#200040", stars: true,  ambI: 0.5, dirI: 1.0 },
-  "Bio-Punk":     { sky: "#000d03", ground: "#1f4d1f", fog: "#001a08", road: "#0f2a0f", stars: true,  ambI: 0.5, dirI: 0.9 },
+  Cyberpunk:      { sky: "#04000f", ground: "#18002e", road: "#0d0d2e", park: "#0d1a0d", stars: true,  ambI: 0.5, dirI: 1.0, winEmI: 0.5 },
+  "Eco-Futurism": { sky: "#001a05", ground: "#2a7a2a", road: "#3a4a3a", park: "#2d8a2d", stars: false, ambI: 1.0, dirI: 1.3, winEmI: 0.1 },
+  Medieval:       { sky: "#180a00", ground: "#4a2e00", road: "#2a1a00", park: "#2a4a00", stars: true,  ambI: 0.6, dirI: 1.0, winEmI: 0.4 },
+  Brutalist:      { sky: "#111",    ground: "#2a2a2a", road: "#1a1a1a", park: "#1a2a1a", stars: false, ambI: 0.7, dirI: 1.0, winEmI: 0.1 },
+  Minimalist:     { sky: "#e0e8f0", ground: "#c0ccd8", road: "#8899aa", park: "#88aa88", stars: false, ambI: 1.2, dirI: 1.1, winEmI: 0.05 },
+  Baroque:        { sky: "#080010", ground: "#280040", road: "#18002a", park: "#1a0030", stars: true,  ambI: 0.5, dirI: 1.0, winEmI: 0.4 },
+  "Bio-Punk":     { sky: "#000d03", ground: "#1a3d10", road: "#0d1a0d", park: "#1a4a10", stars: true,  ambI: 0.5, dirI: 0.9, winEmI: 0.3 },
 };
 
+const BLOCK = 16;   // city block size
+const ROAD  = 4;    // road width
+const STEP  = BLOCK + ROAD;
+
+// Ground plane
 function Ground({ size, color }) {
   return (
-    <mesh rotation={[-Math.PI / 2, 0, 0]}>
+    <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.05, 0]}>
       <planeGeometry args={[size, size]} />
-      <meshStandardMaterial color={color} roughness={0.85} />
+      <meshStandardMaterial color={color} roughness={0.9} />
     </mesh>
   );
 }
 
-// Proper skyscraper: wide base body + narrower crown + optional antenna
-function Skyscraper({ pos, w, d, h, color, crownColor, accentColor, emissiveI = 0.05 }) {
-  const crownH = h * 0.18;
-  const crownW = w * 0.6;
-  const crownD = d * 0.6;
-  const hasAntenna = h > 8;
+// Road strip
+function Road({ x, z, len, horiz, color }) {
+  return (
+    <mesh position={[x, 0.01, z]} rotation={[-Math.PI / 2, 0, horiz ? 0 : Math.PI / 2]}>
+      <planeGeometry args={[len, ROAD]} />
+      <meshStandardMaterial color={color} roughness={1} />
+    </mesh>
+  );
+}
+
+// Building with window strips — proper skyscraper look
+function Building({ pos, w, d, h, color, winColor, accent, winEmI, style }) {
+  const floors = Math.max(2, Math.floor(h / 2.2));
+  const floorH = h / floors;
 
   return (
     <group position={[pos[0], 0, pos[1]]}>
       {/* Main body */}
       <mesh position={[0, h / 2, 0]}>
         <boxGeometry args={[w, h, d]} />
-        <meshStandardMaterial color={color} emissive={accentColor} emissiveIntensity={emissiveI} roughness={0.6} metalness={0.2} />
+        <meshStandardMaterial color={color} roughness={0.55} metalness={0.25} />
       </mesh>
-      {/* Crown setback */}
-      <mesh position={[0, h + crownH / 2, 0]}>
-        <boxGeometry args={[crownW, crownH, crownD]} />
-        <meshStandardMaterial color={crownColor} emissive={accentColor} emissiveIntensity={emissiveI * 1.5} roughness={0.5} metalness={0.3} />
+      {/* Window bands every floor */}
+      {Array.from({ length: floors - 1 }, (_, i) => {
+        const y = floorH * (i + 1);
+        return (
+          <mesh key={i} position={[0, y, 0]}>
+            <boxGeometry args={[w + 0.04, floorH * 0.55, d + 0.04]} />
+            <meshStandardMaterial color={winColor} emissive={accent} emissiveIntensity={winEmI} roughness={0.3} metalness={0.5} transparent opacity={0.85} />
+          </mesh>
+        );
+      })}
+      {/* Crown */}
+      <mesh position={[0, h + 0.6, 0]}>
+        <boxGeometry args={[w * 0.65, 1.2, d * 0.65]} />
+        <meshStandardMaterial color={winColor} roughness={0.4} metalness={0.4} />
       </mesh>
-      {/* Antenna */}
-      {hasAntenna && (
-        <mesh position={[0, h + crownH + 0.8, 0]}>
-          <cylinderGeometry args={[0.04, 0.04, 1.6, 4]} />
-          <meshStandardMaterial color={accentColor} emissive={accentColor} emissiveIntensity={1} />
-        </mesh>
-      )}
     </group>
   );
 }
 
-// Eco / Bio: round tower
-function RoundTower({ pos, r, h, color, accentColor }) {
+// Round eco-tower with dome
+function EcoTower({ pos, r, h, color, accent }) {
+  const floors = Math.max(2, Math.floor(h / 2));
   return (
     <group position={[pos[0], 0, pos[1]]}>
       <mesh position={[0, h / 2, 0]}>
-        <cylinderGeometry args={[r * 0.85, r, h, 10]} />
-        <meshStandardMaterial color={color} emissive={accentColor} emissiveIntensity={0.04} roughness={0.5} />
+        <cylinderGeometry args={[r * 0.88, r, h, 10]} />
+        <meshStandardMaterial color={color} roughness={0.5} />
       </mesh>
-      {/* dome cap */}
+      {Array.from({ length: floors - 1 }, (_, i) => (
+        <mesh key={i} position={[0, (h / floors) * (i + 1), 0]}>
+          <cylinderGeometry args={[r * 0.9, r * 0.9, 0.35, 10]} />
+          <meshStandardMaterial color="#88cc88" emissive={accent} emissiveIntensity={0.08} transparent opacity={0.8} />
+        </mesh>
+      ))}
       <mesh position={[0, h, 0]}>
-        <sphereGeometry args={[r * 0.85, 8, 6, 0, Math.PI * 2, 0, Math.PI / 2]} />
-        <meshStandardMaterial color={accentColor} roughness={0.4} />
+        <sphereGeometry args={[r * 0.88, 9, 7, 0, Math.PI * 2, 0, Math.PI / 2]} />
+        <meshStandardMaterial color={accent} roughness={0.35} metalness={0.3} />
       </mesh>
     </group>
   );
 }
 
-// Medieval: stone tower + conical roof
-function MedievalTower({ pos, w, h, color, roofColor }) {
+// Medieval stone tower + conical roof
+function MedTower({ pos, w, h, color, accent }) {
   return (
     <group position={[pos[0], 0, pos[1]]}>
       <mesh position={[0, h / 2, 0]}>
         <boxGeometry args={[w, h, w]} />
         <meshStandardMaterial color={color} roughness={0.95} />
       </mesh>
-      <mesh position={[0, h + w * 0.5, 0]}>
-        <coneGeometry args={[w * 0.72, w, 4]} />
-        <meshStandardMaterial color={roofColor} roughness={0.8} />
+      {/* Battlements */}
+      {[[-w*0.3, -w*0.3],[w*0.3,-w*0.3],[-w*0.3,w*0.3],[w*0.3,w*0.3]].map(([bx,bz], i) => (
+        <mesh key={i} position={[bx, h + 0.4, bz]}>
+          <boxGeometry args={[w * 0.28, 0.8, w * 0.28]} />
+          <meshStandardMaterial color={color} roughness={0.95} />
+        </mesh>
+      ))}
+      <mesh position={[0, h + 1.2, 0]}>
+        <coneGeometry args={[w * 0.65, w * 1.1, 4]} />
+        <meshStandardMaterial color={accent} roughness={0.8} />
       </mesh>
     </group>
   );
 }
 
-function Road({ x, z, len, horiz, color }) {
+// Park tile (flat green)
+function ParkTile({ cx, cz, size, color }) {
   return (
-    <mesh position={[x, 0.02, z]} rotation={[-Math.PI / 2, 0, horiz ? 0 : Math.PI / 2]}>
-      <planeGeometry args={[len, 2.5]} />
-      <meshStandardMaterial color={color} roughness={1} />
+    <mesh position={[cx, 0.02, cz]} rotation={[-Math.PI / 2, 0, 0]}>
+      <planeGeometry args={[size, size]} />
+      <meshStandardMaterial color={color} roughness={0.9} />
     </mesh>
   );
 }
 
-function Tree({ pos, scale = 1 }) {
+// Fountain
+function Fountain({ pos }) {
   return (
-    <group position={pos} scale={scale}>
-      <mesh position={[0, 0.9, 0]}>
-        <cylinderGeometry args={[0.18, 0.28, 1.8, 6]} />
-        <meshStandardMaterial color="#5a3800" roughness={1} />
+    <group position={pos}>
+      <mesh position={[0, 0.2, 0]}>
+        <cylinderGeometry args={[2.2, 2.5, 0.4, 16]} />
+        <meshStandardMaterial color="#aabbcc" roughness={0.3} />
       </mesh>
-      <mesh position={[0, 2.8, 0]}>
-        <sphereGeometry args={[0.9, 7, 6]} />
-        <meshStandardMaterial color="#2d8a30" roughness={0.9} />
+      <mesh position={[0, 0.7, 0]}>
+        <cylinderGeometry args={[0.2, 0.3, 1.0, 8]} />
+        <meshStandardMaterial color="#ccddee" roughness={0.4} />
+      </mesh>
+      <mesh position={[0, 1.4, 0]}>
+        <sphereGeometry args={[0.55, 8, 8]} />
+        <meshStandardMaterial color="#aaccee" emissive="#6699bb" emissiveIntensity={0.4} roughness={0.2} />
       </mesh>
     </group>
   );
 }
 
+// Tree
+function Tree({ pos, s = 1 }) {
+  return (
+    <group position={pos} scale={s}>
+      <mesh position={[0, 0.8, 0]}>
+        <cylinderGeometry args={[0.15, 0.22, 1.6, 6]} />
+        <meshStandardMaterial color="#5a3800" roughness={1} />
+      </mesh>
+      <mesh position={[0, 2.4, 0]}>
+        <sphereGeometry args={[0.85, 7, 6]} />
+        <meshStandardMaterial color="#2d8a2d" roughness={0.9} />
+      </mesh>
+    </group>
+  );
+}
+
+// Street lantern
 function Lantern({ pos }) {
   return (
     <group position={pos}>
-      <mesh position={[0, 2, 0]}>
-        <cylinderGeometry args={[0.06, 0.06, 4, 5]} />
-        <meshStandardMaterial color="#666" roughness={0.8} />
+      <mesh position={[0, 2.2, 0]}>
+        <cylinderGeometry args={[0.07, 0.07, 4.4, 5]} />
+        <meshStandardMaterial color="#555" roughness={0.8} />
       </mesh>
-      <mesh position={[0, 4.1, 0]}>
-        <sphereGeometry args={[0.22, 6, 6]} />
-        <meshStandardMaterial color="#ffffdd" emissive="#ffffaa" emissiveIntensity={2} />
+      <mesh position={[0, 4.5, 0]}>
+        <sphereGeometry args={[0.25, 6, 6]} />
+        <meshStandardMaterial color="#ffffdd" emissive="#ffeeaa" emissiveIntensity={2.5} />
       </mesh>
     </group>
   );
@@ -139,109 +188,136 @@ function CityScene({ metrics, style, colorPalette, level, tokenId }) {
   const isEco  = style === "Eco-Futurism";
   const isBio  = style === "Bio-Punk";
   const isMed  = style === "Medieval";
-  const isCyber = style === "Cyberpunk";
+
+  // Window color: lighter tint of primary
+  const winColor = style === "Minimalist" ? "#aaddff"
+    : style === "Cyberpunk" ? "#002244"
+    : style === "Medieval"  ? "#3a2800"
+    : style === "Baroque"   ? "#1a0030"
+    : "#223344";
 
   const data = useMemo(() => {
     const seed = (((tokenId | 0) * 9973) + (followers | 0)) >>> 0;
-    const rng = mkRng(seed);
+    const rng  = mkRng(seed);
 
-    const numBuildings = Math.max(10, Math.min(Math.floor(followers / 10), 120));
-    const cols = Math.ceil(Math.sqrt(numBuildings)) + 2;
-    const cellSize = 5.5;
-    const groundSize = cols * cellSize + 14;
+    // 3×3 grid of city blocks, center = park
+    // Block offsets: -STEP, 0, +STEP on X and Z
+    const blockOffsets = [];
+    for (let row = -1; row <= 1; row++)
+      for (let col = -1; col <= 1; col++)
+        if (!(row === 0 && col === 0))  // skip center — it's the park
+          blockOffsets.push({ bx: col * STEP, bz: row * STEP });
 
-    // Grid cells with slight jitter
-    const cells = [];
-    for (let r = 0; r < cols; r++)
-      for (let c = 0; c < cols; c++)
-        cells.push([
-          (c - cols / 2) * cellSize + (rng() - 0.5) * 1.2,
-          (r - cols / 2) * cellSize + (rng() - 0.5) * 1.2,
-        ]);
-    for (let i = cells.length - 1; i > 0; i--) {
-      const j = Math.floor(rng() * (i + 1));
-      [cells[i], cells[j]] = [cells[j], cells[i]];
-    }
+    const numBuildings = Math.max(12, Math.min(Math.floor(followers / 10), 100));
+    const perBlock = Math.max(2, Math.ceil(numBuildings / blockOffsets.length));
 
-    // Building heights based on level
-    const minH = 3 + level * 1.5;
-    const maxH = 6 + level * (isCyber ? 7 : isMed ? 4 : 5);
+    const minH = 4 + level * 1.8;
+    const maxH = 9 + level * (isEco || isMed ? 3.5 : 5.5);
 
-    const buildings = cells.slice(0, numBuildings).map((pos) => {
-      const h = minH + rng() * (maxH - minH);
-      const color = rng() > 0.45 ? primary : secondary;
-
-      if (isEco || isBio) {
-        return { type: "round", pos, r: 1.2 + rng() * 0.8, h, color, accentColor: accent };
+    const buildings = [];
+    blockOffsets.forEach(({ bx, bz }) => {
+      const count = perBlock + (rng() > 0.6 ? 1 : 0);
+      // Arrange buildings inside block on a mini-grid
+      const bCols = Math.ceil(Math.sqrt(count));
+      const bRows = Math.ceil(count / bCols);
+      const bCell = (BLOCK - 2) / Math.max(bCols, bRows);
+      let idx = 0;
+      for (let br = 0; br < bRows && idx < count; br++) {
+        for (let bc = 0; bc < bCols && idx < count; bc++, idx++) {
+          const px = bx - (BLOCK - 2) / 2 + bc * bCell + bCell / 2 + (rng() - 0.5) * 1.2;
+          const pz = bz - (BLOCK - 2) / 2 + br * bCell + bCell / 2 + (rng() - 0.5) * 1.2;
+          const h = minH + rng() * (maxH - minH);
+          const w = 2.8 + rng() * 2.4;
+          const d = 2.8 + rng() * 2.4;
+          const color = rng() > 0.45 ? primary : secondary;
+          buildings.push({ pos: [px, pz], w, d, h, color, accent });
+        }
       }
-      if (isMed) {
-        const w = 2.0 + rng() * 1.5;
-        return { type: "med", pos, w, h: h * 0.75, color, roofColor: accent };
-      }
-      // Box skyscraper (Cyberpunk, Baroque, Brutalist, Minimalist)
-      const w = isCyber ? 1.8 + rng() * 1.5 : 2.5 + rng() * 2.0;
-      const d = isCyber ? 1.8 + rng() * 1.5 : 2.5 + rng() * 2.0;
-      const crownColor = rng() > 0.5 ? secondary : primary;
-      const emissiveI = isCyber ? 0.25 + rng() * 0.35 : 0.05;
-      return { type: "sky", pos, w, d, h, color, crownColor, accentColor: accent, emissiveI };
     });
 
-    // Roads
-    const numRoads = Math.max(2, Math.min(Math.floor(tweetCount / 300) + 2, 7));
+    // Road grid: 2 horizontal + 2 vertical between blocks
+    const totalSize = 3 * BLOCK + 2 * ROAD + 10;
     const roads = [];
-    for (let i = 0; i < numRoads; i++) {
-      const t = (i / Math.max(numRoads - 1, 1) - 0.5) * (groundSize - 8);
-      roads.push({ x: t, z: 0, len: groundSize, horiz: true });
-      roads.push({ x: 0, z: t, len: groundSize, horiz: false });
+    [-STEP / 2, STEP / 2].forEach(t => {
+      roads.push({ x: t, z: 0, len: totalSize, horiz: false });
+      roads.push({ x: 0, z: t, len: totalSize, horiz: true });
+    });
+
+    // Trees around park and along roads
+    const treeRng = mkRng(seed + 1);
+    const trees = [];
+    // Park perimeter trees
+    const numParkTrees = 16 + Math.floor(engagement * 0.3);
+    for (let i = 0; i < Math.min(numParkTrees, 32); i++) {
+      const angle = (i / numParkTrees) * Math.PI * 2 + treeRng() * 0.4;
+      const r = 5 + treeRng() * 2.5;
+      trees.push({ pos: [Math.cos(angle) * r, 0, Math.sin(angle) * r], s: 0.7 + treeRng() * 0.5 });
+    }
+    // Extra trees for eco/bio
+    if (isEco || isBio) {
+      for (let i = 0; i < 30; i++) {
+        const tx = (treeRng() - 0.5) * totalSize * 0.85;
+        const tz = (treeRng() - 0.5) * totalSize * 0.85;
+        trees.push({ pos: [tx, 0, tz], s: 0.5 + treeRng() * 0.6 });
+      }
     }
 
-    // Trees
-    const wantTrees = isEco || isBio || engagement > 0;
-    const numTrees = wantTrees
-      ? Math.min(Math.floor(engagement * 0.5) + (isEco ? 40 : isBio ? 20 : 10), 60)
-      : 0;
-    const treeRng = mkRng(seed + 1);
-    const trees = Array.from({ length: numTrees }, () => ({
-      pos: [(treeRng() - 0.5) * (groundSize - 6), 0, (treeRng() - 0.5) * (groundSize - 6)],
-      scale: 0.6 + treeRng() * 0.8,
-    }));
-
-    // Lanterns
+    // Lanterns along roads
     const lanternRng = mkRng(seed + 2);
-    const numLanterns = Math.min(numBuildings, 25);
-    const lanterns = Array.from({ length: numLanterns }, () => [
-      (lanternRng() - 0.5) * (groundSize - 5),
-      0,
-      (lanternRng() - 0.5) * (groundSize - 5),
-    ]);
+    const lanterns = [];
+    const lCount = 6 + Math.floor(tweetCount / 400);
+    for (let i = 0; i < Math.min(lCount, 20); i++) {
+      const side = lanternRng() > 0.5 ? 1 : -1;
+      const along = (lanternRng() - 0.5) * (STEP * 1.5);
+      if (lanternRng() > 0.5) lanterns.push([(STEP / 2 + 1.8) * side, 0, along]);
+      else                     lanterns.push([along, 0, (STEP / 2 + 1.8) * side]);
+    }
 
-    return { buildings, roads, trees, lanterns, groundSize };
+    return { buildings, roads, trees, lanterns, totalSize };
   }, [followers, tweetCount, engagement, tokenId, level, style, primary, secondary, accent]);
 
   return (
     <>
       <color attach="background" args={[cfg.sky]} />
-      <fog attach="fog" args={[cfg.fog, 60, 140]} />
+      <fog attach="fog" args={[cfg.sky, 70, 160]} />
 
       <ambientLight intensity={cfg.ambI} />
-      <directionalLight position={[20, 30, 15]} intensity={cfg.dirI} />
-      <directionalLight position={[-10, 15, -10]} intensity={cfg.dirI * 0.4} color={accent} />
-      <hemisphereLight args={[cfg.sky, cfg.ground, 0.7]} />
-      <pointLight position={[0, 10, 0]} color={accent} intensity={1.2} distance={50} decay={1.5} />
+      <directionalLight position={[25, 35, 20]} intensity={cfg.dirI} />
+      <directionalLight position={[-15, 20, -10]} intensity={cfg.dirI * 0.35} color={accent} />
+      <hemisphereLight args={[cfg.sky, cfg.ground, 0.6]} />
+      <pointLight position={[0, 12, 0]} color={accent} intensity={1.5} distance={60} decay={1.5} />
 
-      {cfg.stars && <Stars radius={100} depth={50} count={1000} factor={2} fade />}
+      {cfg.stars && <Stars radius={120} depth={50} count={1200} factor={2} fade />}
 
-      <Ground size={data.groundSize + 20} color={cfg.ground} />
+      {/* Ground */}
+      <Ground size={data.totalSize + 30} color={cfg.ground} />
 
+      {/* Roads */}
       {data.roads.map((r, i) => <Road key={i} {...r} color={cfg.road} />)}
 
+      {/* Central park */}
+      <ParkTile cx={0} cz={0} size={BLOCK} color={cfg.park} />
+      <Fountain pos={[0, 0, 0]} />
+
+      {/* Buildings */}
       {data.buildings.map((b, i) => {
-        if (b.type === "round") return <RoundTower key={i} {...b} />;
-        if (b.type === "med")   return <MedievalTower key={i} {...b} />;
-        return <Skyscraper key={i} {...b} />;
+        if (isEco || isBio)
+          return <EcoTower key={i} pos={b.pos} r={(b.w / 2)} h={b.h} color={b.color} accent={accent} />;
+        if (isMed)
+          return <MedTower key={i} pos={b.pos} w={b.w * 0.75} h={b.h} color={b.color} accent={accent} />;
+        return (
+          <Building key={i} {...b}
+            winColor={winColor}
+            winEmI={cfg.winEmI}
+            style={style}
+          />
+        );
       })}
 
-      {data.trees.map((t, i) => <Tree key={i} pos={t.pos} scale={t.scale} />)}
+      {/* Trees */}
+      {data.trees.map((t, i) => <Tree key={i} pos={t.pos} s={t.s} />)}
+
+      {/* Lanterns */}
       {data.lanterns.map((pos, i) => <Lantern key={i} pos={pos} />)}
     </>
   );
@@ -253,11 +329,8 @@ export default function CityRenderer({ city, tokenId }) {
   const {
     level = 1,
     style = "Cyberpunk",
-    colorPalette = { primary: "#334466", secondary: "#223355", accent: "#ff00ff" },
-    followers = 0,
-    tweetCount = 0,
-    following = 0,
-    engagement = 0,
+    colorPalette = { primary: "#2255aa", secondary: "#1a3377", accent: "#00ccff" },
+    followers = 0, tweetCount = 0, following = 0, engagement = 0,
   } = city || {};
 
   const metrics = { followers, tweetCount, following, engagement };
@@ -269,10 +342,10 @@ export default function CityRenderer({ city, tokenId }) {
         style={{ width: 600, height: 320, borderRadius: 12, overflow: "hidden", cursor: "pointer", position: "relative" }}
         onClick={() => setOpen(true)}
       >
-        <Canvas camera={{ position: [22, 18, 22], fov: 50 }}>
+        <Canvas camera={{ position: [28, 22, 28], fov: 45 }}>
           <Suspense fallback={null}>
             <CityScene {...sceneProps} />
-            <OrbitControls enableZoom={false} enablePan={false} enableRotate={false} autoRotate autoRotateSpeed={0.7} />
+            <OrbitControls enableZoom={false} enablePan={false} enableRotate={false} autoRotate autoRotateSpeed={0.6} />
           </Suspense>
         </Canvas>
         <div style={{ position: "absolute", bottom: 10, right: 12, color: "rgba(255,255,255,0.55)", fontSize: 11, fontFamily: "monospace", pointerEvents: "none" }}>
@@ -287,12 +360,12 @@ export default function CityRenderer({ city, tokenId }) {
         >
           <div
             style={{ width: "90vw", height: "85vh", borderRadius: 16, overflow: "hidden", position: "relative" }}
-            onClick={(e) => e.stopPropagation()}
+            onClick={e => e.stopPropagation()}
           >
-            <Canvas camera={{ position: [25, 20, 25], fov: 45 }}>
+            <Canvas camera={{ position: [30, 24, 30], fov: 42 }}>
               <Suspense fallback={null}>
                 <CityScene {...sceneProps} />
-                <OrbitControls enablePan={false} minDistance={5} maxDistance={100} maxPolarAngle={Math.PI / 2 - 0.05} autoRotate autoRotateSpeed={0.4} />
+                <OrbitControls enablePan={false} minDistance={8} maxDistance={120} maxPolarAngle={Math.PI / 2 - 0.04} autoRotate autoRotateSpeed={0.35} />
               </Suspense>
             </Canvas>
             <button
