@@ -128,18 +128,15 @@ router.post("/sync", checkSyncCooldown, async (req, res) => {
 
   try {
     const twitter = getTwitterProvider();
-    console.log("[sync] step1: fetching metrics+tweets");
     const [metrics, tweets] = await Promise.all([
       twitter.getUserMetrics(twitterHandle),
       twitter.getUserTweets(twitterHandle, 50),
     ]);
-    console.log("[sync] step1 done: followers=" + metrics.followers + " tweets=" + tweets.length);
 
     const avgEngagement = tweets.length
       ? Math.round(tweets.reduce((s, t) => s + t.likes + t.retweets, 0) / tweets.length)
       : 0;
 
-    console.log("[sync] step2: getCityData");
     const oldData = await getCityData(tokenId);
     const oldLevel = Number(oldData.city.level);
     const newLevel = calcLevel(metrics.followers);
@@ -173,7 +170,6 @@ router.post("/sync", checkSyncCooldown, async (req, res) => {
       ipfsCID = await uploadMetadata(metadata);
     }
 
-    console.log("[sync] step3: updateCity ipfsCID=" + (ipfsCID || "(empty)"));
     const result = await updateCity({
       tokenId,
       followers: metrics.followers,
@@ -182,16 +178,11 @@ router.post("/sync", checkSyncCooldown, async (req, res) => {
       engagement: avgEngagement,
       ipfsCID,
     });
-    console.log("[sync] step3 done: txHash=" + result.txHash);
 
     // ERC-8004: oracle validates city metrics on-chain (ValidationRegistry)
-    console.log("[sync] step4: getTokenAgentId");
     const cityAgentId = await getTokenAgentId(tokenId).catch(() => 0);
-    console.log("[sync] step4 done: cityAgentId=" + cityAgentId);
     if (cityAgentId) {
-      console.log("[sync] step5: recordValidation");
       await recordValidation(tokenId, cityAgentId, metrics.followers, metrics.tweetCount, metrics.following);
-      console.log("[sync] step5 done");
     }
 
     req.setSyncCooldown?.();

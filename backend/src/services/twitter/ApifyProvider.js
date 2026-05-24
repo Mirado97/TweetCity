@@ -61,8 +61,28 @@ class ApifyProvider extends ITwitterProvider {
   async getUserMetrics(handle) {
     const cookie = process.env.TWITTER_COOKIE;
 
-    // Use search mode (same as getUserTweets) — reliable with cookie.
-    // Extract author profile data from the first tweet object.
+    // Profiles mode gives complete user data (followers, following, tweetCount).
+    // Search mode only returns authorFollowers — use it as fallback.
+    const input = { usernames: [handle], maxItems: 1, mode: "profiles" };
+    if (cookie) input.twitterCookie = cookie;
+
+    try {
+      const items = await this._runSync("automation-lab~twitter-scraper", input);
+      const user = items[0];
+      if (process.env.APIFY_DEBUG && user) console.log("[ApifyProvider] profile keys:", Object.keys(user));
+      if (user) {
+        return {
+          followers:  Number(user.followers  ?? user.followersCount ?? 0),
+          tweetCount: Number(user.tweetsCount ?? user.statusesCount ?? user.tweetCount ?? 0),
+          following:  Number(user.following   ?? user.friendsCount  ?? user.followingCount ?? 0),
+          username:   user.username ?? handle,
+        };
+      }
+    } catch (e) {
+      console.warn("[ApifyProvider] profiles mode failed, falling back to search:", e.message);
+    }
+
+    // Fallback: extract author data from first tweet in search mode
     if (cookie) {
       const items = await this._runSync("automation-lab~twitter-scraper", {
         mode: "search",
@@ -72,28 +92,18 @@ class ApifyProvider extends ITwitterProvider {
         twitterCookie: cookie,
       });
       const t = items[0];
-      if (process.env.APIFY_DEBUG && t) console.log("[ApifyProvider] raw tweet keys:", Object.keys(t));
+      if (process.env.APIFY_DEBUG && t) console.log("[ApifyProvider] search tweet keys:", Object.keys(t));
       if (t) {
-        // Field names confirmed from automation-lab~twitter-scraper search mode output
-        const followers  = Number(t.authorFollowers  ?? 0);
-        const following  = Number(t.authorFollowing  ?? 0);
-        const tweetCount = Number(t.authorTweetCount ?? t.authorTweetsCount ?? 0);
-        return { followers, tweetCount, following, username: handle };
+        return {
+          followers:  Number(t.authorFollowers ?? 0),
+          tweetCount: 0,
+          following:  0,
+          username:   handle,
+        };
       }
     }
 
-    // Fallback: profiles mode (no cookie or no tweets found)
-    const input = { usernames: [handle], maxItems: 1, mode: "profiles" };
-    if (cookie) input.twitterCookie = cookie;
-    const items = await this._runSync("automation-lab~twitter-scraper", input);
-    const user = items[0];
-    if (!user) throw new Error(`User @${handle} not found via Apify`);
-    return {
-      followers:  user.followers  ?? user.followersCount ?? 0,
-      tweetCount: user.tweetsCount ?? user.statusesCount ?? 0,
-      following:  user.following  ?? user.friendsCount   ?? 0,
-      username:   user.username   ?? handle,
-    };
+    throw new Error(`User @${handle} not found via Apify`);
   }
 
   async getUserTweets(handle, count = 50) {
