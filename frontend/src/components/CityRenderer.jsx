@@ -8,13 +8,13 @@ function mkRng(seed) {
 }
 
 const STYLE_CFG = {
-  Cyberpunk:      { sky: "#04000f", ground: "#18002e", road: "#0d0d2e", park: "#0d1a0d", stars: true,  ambI: 0.5, dirI: 1.0, winEmI: 0.5 },
-  "Eco-Futurism": { sky: "#001a05", ground: "#2a7a2a", road: "#3a4a3a", park: "#2d8a2d", stars: false, ambI: 1.0, dirI: 1.3, winEmI: 0.1 },
-  Medieval:       { sky: "#180a00", ground: "#4a2e00", road: "#2a1a00", park: "#2a4a00", stars: true,  ambI: 0.6, dirI: 1.0, winEmI: 0.4 },
-  Brutalist:      { sky: "#111",    ground: "#2a2a2a", road: "#1a1a1a", park: "#1a2a1a", stars: false, ambI: 0.7, dirI: 1.0, winEmI: 0.1 },
+  Cyberpunk:      { sky: "#04000f", ground: "#2a0050", road: "#0d0d2e", park: "#0d1a0d", stars: true,  ambI: 0.9, dirI: 1.0, winEmI: 0.5 },
+  "Eco-Futurism": { sky: "#001a05", ground: "#44aa44", road: "#3a4a3a", park: "#33aa33", stars: false, ambI: 1.1, dirI: 1.3, winEmI: 0.1 },
+  Medieval:       { sky: "#180a00", ground: "#7a5000", road: "#2a1a00", park: "#3a6a00", stars: true,  ambI: 1.0, dirI: 1.0, winEmI: 0.4 },
+  Brutalist:      { sky: "#111",    ground: "#3a3a3a", road: "#1a1a1a", park: "#2a3a2a", stars: false, ambI: 1.0, dirI: 1.0, winEmI: 0.1 },
   Minimalist:     { sky: "#e0e8f0", ground: "#c0ccd8", road: "#8899aa", park: "#88aa88", stars: false, ambI: 1.2, dirI: 1.1, winEmI: 0.05 },
-  Baroque:        { sky: "#080010", ground: "#280040", road: "#18002a", park: "#1a0030", stars: true,  ambI: 0.5, dirI: 1.0, winEmI: 0.4 },
-  "Bio-Punk":     { sky: "#000d03", ground: "#1a3d10", road: "#0d1a0d", park: "#1a4a10", stars: true,  ambI: 0.5, dirI: 0.9, winEmI: 0.3 },
+  Baroque:        { sky: "#080010", ground: "#500070", road: "#18002a", park: "#200040", stars: true,  ambI: 0.9, dirI: 1.0, winEmI: 0.4 },
+  "Bio-Punk":     { sky: "#000d03", ground: "#3a7a28", road: "#1a2a1a", park: "#2a6a20", stars: true,  ambI: 1.0, dirI: 0.9, winEmI: 0.3 },
 };
 
 const BLOCK = 16;   // city block size
@@ -58,7 +58,7 @@ function Building({ pos, w, d, h, color, winColor, accent, winEmI, style }) {
         const y = floorH * (i + 1);
         return (
           <mesh key={i} position={[0, y, 0]}>
-            <boxGeometry args={[w + 0.04, floorH * 0.55, d + 0.04]} />
+            <boxGeometry args={[w + 0.04, 0.18, d + 0.04]} />
             <meshStandardMaterial color={winColor} emissive={accent} emissiveIntensity={winEmI} roughness={0.3} metalness={0.5} transparent opacity={0.85} />
           </mesh>
         );
