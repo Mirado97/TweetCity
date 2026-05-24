@@ -195,7 +195,7 @@ function CityScene({ metrics, style, colorPalette, level, tokenId }) {
 
   const groundColor = "#3a8a30";
   const parkColor   = "#4aaa3a";
-  const roadColor   = cfg.road;
+  const roadColor   = "#1e1e1e"; // asphalt — always dark gray, never invisible
 
   const isEco  = style === "Eco-Futurism";
   const isBio  = style === "Bio-Punk";
@@ -217,7 +217,7 @@ function CityScene({ metrics, style, colorPalette, level, tokenId }) {
     const gridR = followers >= 20000 ? 2 : followers >= 1000 ? 1 : 0;
 
     // --- TWEET COUNT → buildings per block ---
-    const perBlockBase = tweetCount >= 10000 ? 8 : tweetCount >= 1000 ? 6 : tweetCount >= 100 ? 4 : 2;
+    const perBlockBase = tweetCount >= 10000 ? 6 : tweetCount >= 1000 ? 4 : tweetCount >= 100 ? 3 : 2;
 
     // --- ENGAGEMENT → building height (skyscraper vs shack) ---
     const minH = 3;
@@ -227,13 +227,14 @@ function CityScene({ metrics, style, colorPalette, level, tokenId }) {
     const ratio = following > 0 ? followers / following : followers > 0 ? 5 : 1;
     const prestige = Math.min(Math.max(ratio / 20, 0.08), 0.8);
 
-    // Block offsets based on gridR
+    // Block offsets — always use STEP-aligned centers so buildings never land on roads.
+    // Roads are at ±(i+0.5)*STEP, blocks are at ±STEP, ±2*STEP etc — always clear.
     const blockOffsets = [];
     if (gridR === 0) {
-      // Tiny: 4 quarter-blocks around center
+      // Tiny city: just 4 corner blocks (same positions as gridR=1 corners)
       for (const row of [-1, 1])
         for (const col of [-1, 1])
-          blockOffsets.push({ bx: col * (STEP / 2), bz: row * (STEP / 2) });
+          blockOffsets.push({ bx: col * STEP, bz: row * STEP });
     } else {
       for (let row = -gridR; row <= gridR; row++)
         for (let col = -gridR; col <= gridR; col++)
@@ -241,23 +242,27 @@ function CityScene({ metrics, style, colorPalette, level, tokenId }) {
             blockOffsets.push({ bx: col * STEP, bz: row * STEP });
     }
 
-    // Buildings
+    // Safe zone inside each block: shrink by 4 units on each side so buildings
+    // never spill onto adjacent roads (rule: buildings don't stand on roads).
+    const safeHalf = (BLOCK - 6) / 2; // = 5 units from block center
+
+    // Building width inversely proportional to density
+    const maxBW = perBlockBase <= 2 ? 3.8 : perBlockBase <= 4 ? 2.8 : 2.0;
+
+    // Buildings placed randomly inside safe zone with minimum spacing enforced
     const buildings = [];
     blockOffsets.forEach(({ bx, bz }) => {
-      const count = perBlockBase + (rng() > 0.6 ? 1 : 0);
-      const bCols = Math.ceil(Math.sqrt(count));
-      const bRows = Math.ceil(count / bCols);
-      const bCell = (BLOCK - 2) / Math.max(bCols, bRows);
-      let idx = 0;
-      for (let br = 0; br < bRows && idx < count; br++) {
-        for (let bc = 0; bc < bCols && idx < count; bc++, idx++) {
-          const px = bx - (BLOCK - 2) / 2 + bc * bCell + bCell / 2 + (rng() - 0.5) * 0.8;
-          const pz = bz - (BLOCK - 2) / 2 + br * bCell + bCell / 2 + (rng() - 0.5) * 0.8;
+      const count = perBlockBase + (rng() > 0.7 ? 1 : 0);
+      const placed = [];
+      for (let attempt = 0; placed.length < count && attempt < count * 15; attempt++) {
+        const px = bx + (rng() - 0.5) * 2 * safeHalf;
+        const pz = bz + (rng() - 0.5) * 2 * safeHalf;
+        const minDist = maxBW * 1.1;
+        if (placed.every(p => Math.hypot(p[0] - px, p[1] - pz) >= minDist)) {
+          placed.push([px, pz]);
           const h = minH + rng() * (maxH - minH);
-          // Width scales down as density increases so buildings don't clump
-          const maxW = perBlockBase <= 2 ? 4.2 : perBlockBase <= 4 ? 3.0 : 2.2;
-          const w = maxW * 0.55 + rng() * maxW * 0.45;
-          const d = maxW * 0.55 + rng() * maxW * 0.45;
+          const w = maxBW * 0.55 + rng() * maxBW * 0.45;
+          const d = maxBW * 0.55 + rng() * maxBW * 0.45;
           const color = rng() > 0.45 ? primary : secondary;
           buildings.push({ pos: [px, pz], w, d, h, color, accent, prestige });
         }
