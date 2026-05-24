@@ -7,6 +7,14 @@ function mkRng(seed) {
   return () => { s = (Math.imul(s, 1664525) + 1013904223) >>> 0; return s / 0xffffffff; };
 }
 
+// Blend two hex colors: t=0 → colorA, t=1 → colorB
+function blendHex(a, b, t) {
+  const parse = h => [parseInt(h.slice(1,3),16), parseInt(h.slice(3,5),16), parseInt(h.slice(5,7),16)];
+  const [ar,ag,ab] = parse(a); const [br,bg,bb] = parse(b);
+  const r = Math.round(ar + (br-ar)*t), g = Math.round(ag + (bg-ag)*t), bv = Math.round(ab + (bb-ab)*t);
+  return `#${r.toString(16).padStart(2,'0')}${g.toString(16).padStart(2,'0')}${bv.toString(16).padStart(2,'0')}`;
+}
+
 const STYLE_CFG = {
   Cyberpunk:      { sky: "#04000f", ground: "#2a0050", road: "#0d0d2e", park: "#0d1a0d", stars: true,  ambI: 0.9, dirI: 1.0, winEmI: 0.5 },
   "Eco-Futurism": { sky: "#001a05", ground: "#44aa44", road: "#3a4a3a", park: "#33aa33", stars: false, ambI: 1.1, dirI: 1.3, winEmI: 0.1 },
@@ -185,6 +193,11 @@ function CityScene({ metrics, style, colorPalette, level, tokenId }) {
   const cfg = STYLE_CFG[style] || STYLE_CFG.Cyberpunk;
   const { primary, secondary, accent } = colorPalette;
 
+  // Tint ground/park/road toward the city's primary color so ground always complements buildings
+  const groundColor = blendHex(cfg.ground, primary, 0.35);
+  const parkColor   = blendHex(cfg.park,   primary, 0.35);
+  const roadColor   = blendHex(cfg.road,   primary, 0.15);
+
   const isEco  = style === "Eco-Futurism";
   const isBio  = style === "Bio-Punk";
   const isMed  = style === "Medieval";
@@ -284,19 +297,19 @@ function CityScene({ metrics, style, colorPalette, level, tokenId }) {
       <ambientLight intensity={cfg.ambI} />
       <directionalLight position={[25, 35, 20]} intensity={cfg.dirI} />
       <directionalLight position={[-15, 20, -10]} intensity={cfg.dirI * 0.35} color={accent} />
-      <hemisphereLight args={[cfg.sky, cfg.ground, 0.6]} />
+      <hemisphereLight args={[cfg.sky, groundColor, 0.6]} />
       <pointLight position={[0, 12, 0]} color={accent} intensity={1.5} distance={60} decay={1.5} />
 
       {cfg.stars && <Stars radius={120} depth={50} count={1200} factor={2} fade />}
 
       {/* Ground */}
-      <Ground size={data.totalSize + 30} color={cfg.ground} />
+      <Ground size={data.totalSize + 30} color={groundColor} />
 
       {/* Roads */}
-      {data.roads.map((r, i) => <Road key={i} {...r} color={cfg.road} />)}
+      {data.roads.map((r, i) => <Road key={i} {...r} color={roadColor} />)}
 
       {/* Central park */}
-      <ParkTile cx={0} cz={0} size={BLOCK} color={cfg.park} />
+      <ParkTile cx={0} cz={0} size={BLOCK} color={parkColor} />
       <Fountain pos={[0, 0, 0]} />
 
       {/* Buildings */}
