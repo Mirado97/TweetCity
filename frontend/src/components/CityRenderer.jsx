@@ -1,245 +1,237 @@
-import React, { useMemo } from "react";
+import { useMemo, useState, Suspense } from "react";
+import { Canvas } from "@react-three/fiber";
+import { OrbitControls, Stars } from "@react-three/drei";
 
-// Seeded pseudo-random number generator (LCG)
 function mkRng(seed) {
-  let s = (seed >>> 0) || 1337;
+  let s = ((seed >>> 0) || 1337);
   return () => {
-    s = Math.imul(s, 1664525) + 1013904223 >>> 0;
-    return s / 0xFFFFFFFF;
+    s = (Math.imul(s, 1664525) + 1013904223) >>> 0;
+    return s / 0xffffffff;
   };
 }
 
-const STYLE_PALETTES = {
-  Cyberpunk:      { sky: ["#0a0010", "#1a0030"], ground: "#110022", glow: "#ff00ff" },
-  "Eco-Futurism": { sky: ["#00260d", "#004d1a"], ground: "#001a08", glow: "#00ff88" },
-  Medieval:       { sky: ["#1a0d00", "#3d1f00"], ground: "#0d0800", glow: "#ffaa00" },
-  Brutalist:      { sky: ["#1a1a1a", "#2d2d2d"], ground: "#111", glow: "#cccccc" },
-  Minimalist:     { sky: ["#f5f5f5", "#e0e0e0"], ground: "#ccc", glow: "#555" },
-  Baroque:        { sky: ["#120020", "#2d0040"], ground: "#0a0010", glow: "#cc88ff" },
-  "Bio-Punk":     { sky: ["#001a0a", "#003314"], ground: "#000d05", glow: "#44ff44" },
+const STYLE_CFG = {
+  Cyberpunk:      { sky: "#0a0010", ground: "#110022", fog: "#0d001a", stars: true,  ambI: 0.25, dirI: 0.6 },
+  "Eco-Futurism": { sky: "#001a0a", ground: "#1a3020", fog: "#002d10", stars: false, ambI: 0.7,  dirI: 1.0 },
+  Medieval:       { sky: "#1a0d00", ground: "#2d1800", fog: "#3d1f00", stars: true,  ambI: 0.4,  dirI: 0.8 },
+  Brutalist:      { sky: "#111111", ground: "#1a1a1a", fog: "#222222", stars: false, ambI: 0.5,  dirI: 0.9 },
+  Minimalist:     { sky: "#d8d8d8", ground: "#b0b0b0", fog: "#cccccc", stars: false, ambI: 0.9,  dirI: 1.0 },
+  Baroque:        { sky: "#0a0014", ground: "#14001e", fog: "#1e0028", stars: true,  ambI: 0.3,  dirI: 0.7 },
+  "Bio-Punk":     { sky: "#000d05", ground: "#001208", fog: "#001a0a", stars: true,  ambI: 0.3,  dirI: 0.6 },
 };
 
-function buildingShape(rng, style, x, w, h, baseY, primary, secondary, accent) {
-  const shapes = [];
-
-  if (style === "Cyberpunk") {
-    // Tall rectangular tower with horizontal bands
-    shapes.push(
-      <rect key="body" x={x} y={baseY - h} width={w} height={h} fill={primary} />
-    );
-    // Neon bands
-    const bands = Math.floor(rng() * 3) + 2;
-    for (let b = 0; b < bands; b++) {
-      const by = baseY - h + (h / (bands + 1)) * (b + 1);
-      shapes.push(<rect key={`band${b}`} x={x} y={by} width={w} height={1.5} fill={accent} opacity="0.9" />);
-    }
-    // Antenna
-    if (rng() > 0.4) {
-      shapes.push(<line key="ant" x1={x + w / 2} y1={baseY - h} x2={x + w / 2} y2={baseY - h - 10 - rng() * 20} stroke={accent} strokeWidth="1.5" />);
-    }
-  } else if (style === "Eco-Futurism") {
-    // Rounded tower with green roof garden
-    const rx = w * 0.3;
-    shapes.push(
-      <rect key="body" x={x} y={baseY - h} width={w} height={h} rx={rx} fill={primary} />
-    );
-    // Rooftop garden
-    shapes.push(
-      <ellipse key="garden" cx={x + w / 2} cy={baseY - h} rx={w * 0.4} ry={4} fill={accent} />
-    );
-  } else if (style === "Medieval") {
-    // Tower with battlements
-    shapes.push(
-      <rect key="body" x={x} y={baseY - h} width={w} height={h} fill={primary} />
-    );
-    const merlons = Math.floor(w / 6);
-    const mw = w / (merlons * 2 - 1);
-    for (let m = 0; m < merlons; m++) {
-      shapes.push(
-        <rect key={`m${m}`} x={x + m * mw * 2} y={baseY - h - 8} width={mw} height={8} fill={secondary} />
-      );
-    }
-    // Arrow slit
-    shapes.push(<rect key="slit" x={x + w / 2 - 1} y={baseY - h + h * 0.3} width={2} height={h * 0.2} fill={accent} />);
-  } else if (style === "Brutalist") {
-    // Wide blocky structure with few windows
-    shapes.push(
-      <rect key="body" x={x} y={baseY - h} width={w} height={h} fill={primary} />
-    );
-    // Grid windows, sparse
-    const cols = Math.max(1, Math.floor(w / 10));
-    const rows = Math.max(1, Math.floor(h / 14));
-    for (let r = 0; r < rows; r++) {
-      for (let c = 0; c < cols; c++) {
-        if (rng() > 0.6) {
-          shapes.push(
-            <rect key={`w${r}${c}`} x={x + 3 + c * (w / cols)} y={baseY - h + 5 + r * (h / rows)}
-              width={5} height={7} fill={accent} opacity="0.5" />
-          );
-        }
-      }
-    }
-  } else if (style === "Minimalist") {
-    // Clean rectangle, monochrome
-    shapes.push(
-      <rect key="body" x={x} y={baseY - h} width={w} height={h} fill={primary} />
-    );
-    shapes.push(
-      <rect key="top" x={x + w * 0.2} y={baseY - h - 3} width={w * 0.6} height={3} fill={secondary} />
-    );
-  } else if (style === "Baroque") {
-    // Tapered tower with ornate top
-    const pts = `${x},${baseY} ${x + w * 0.1},${baseY - h} ${x + w * 0.9},${baseY - h} ${x + w},${baseY}`;
-    shapes.push(<polygon key="body" points={pts} fill={primary} />);
-    // Dome
-    shapes.push(
-      <ellipse key="dome" cx={x + w / 2} cy={baseY - h} rx={w * 0.35} ry={w * 0.3} fill={secondary} />
-    );
-    // Spire
-    shapes.push(
-      <line key="spire" x1={x + w / 2} y1={baseY - h - w * 0.3} x2={x + w / 2} y2={baseY - h - w * 0.3 - 15}
-        stroke={accent} strokeWidth="1.5" />
-    );
-  } else {
-    // Bio-Punk: organic, irregular blob
-    const bx = x + w / 2;
-    const by = baseY - h / 2;
-    shapes.push(
-      <ellipse key="body" cx={bx} cy={by} rx={w / 2} ry={h / 2} fill={primary} />
-    );
-    // Tendrils
-    shapes.push(<line key="t1" x1={bx} y1={baseY - h} x2={bx - 5} y2={baseY - h - 12} stroke={accent} strokeWidth="2" strokeLinecap="round" />);
-    shapes.push(<line key="t2" x1={bx + 3} y1={baseY - h} x2={bx + 8} y2={baseY - h - 8} stroke={accent} strokeWidth="2" strokeLinecap="round" />);
-  }
-
-  return shapes;
+function Ground({ size, color }) {
+  return (
+    <mesh rotation={[-Math.PI / 2, 0, 0]}>
+      <planeGeometry args={[size, size]} />
+      <meshStandardMaterial color={color} roughness={0.9} />
+    </mesh>
+  );
 }
 
-export default function CityRenderer({ city, width = 600, height = 320 }) {
+function Building({ pos, w, d, h, color, accent, emissiveI }) {
+  return (
+    <mesh position={[pos[0], h / 2, pos[1]]}>
+      <boxGeometry args={[w, h, d]} />
+      <meshStandardMaterial
+        color={color}
+        emissive={accent}
+        emissiveIntensity={emissiveI}
+        roughness={0.7}
+        metalness={0.1}
+      />
+    </mesh>
+  );
+}
+
+function Road({ x, z, len, horiz, color }) {
+  return (
+    <mesh position={[x, 0.01, z]} rotation={[-Math.PI / 2, 0, horiz ? 0 : Math.PI / 2]}>
+      <planeGeometry args={[len, 1.8]} />
+      <meshStandardMaterial color={color} roughness={1} />
+    </mesh>
+  );
+}
+
+function Tree({ pos }) {
+  return (
+    <group position={pos}>
+      <mesh position={[0, 0.6, 0]}>
+        <cylinderGeometry args={[0.12, 0.18, 1.2, 6]} />
+        <meshStandardMaterial color="#5a3800" roughness={1} />
+      </mesh>
+      <mesh position={[0, 1.8, 0]}>
+        <sphereGeometry args={[0.55, 7, 7]} />
+        <meshStandardMaterial color="#2d7a2d" roughness={0.9} />
+      </mesh>
+    </group>
+  );
+}
+
+function CityScene({ metrics, style, colorPalette, level, tokenId }) {
+  const { followers = 0, tweetCount = 0, engagement = 0 } = metrics;
+  const cfg = STYLE_CFG[style] || STYLE_CFG.Cyberpunk;
+  const { primary, secondary, accent } = colorPalette;
+
+  const data = useMemo(() => {
+    const seed = (((tokenId | 0) * 9973) + (followers | 0)) >>> 0;
+    const rng = mkRng(seed);
+
+    const numBuildings = Math.max(8, Math.min(Math.floor(followers / 10), 150));
+    const cols = Math.ceil(Math.sqrt(numBuildings)) + 2;
+    const cellSize = 3;
+    const groundSize = cols * cellSize + 10;
+
+    const cells = [];
+    for (let r = 0; r < cols; r++) {
+      for (let c = 0; c < cols; c++) {
+        cells.push([
+          (c - cols / 2) * cellSize + (rng() - 0.5) * 0.8,
+          (r - cols / 2) * cellSize + (rng() - 0.5) * 0.8,
+        ]);
+      }
+    }
+    for (let i = cells.length - 1; i > 0; i--) {
+      const j = Math.floor(rng() * (i + 1));
+      [cells[i], cells[j]] = [cells[j], cells[i]];
+    }
+
+    const isCyber = style === "Cyberpunk";
+    const isEco = style === "Eco-Futurism";
+    const minH = 0.5 + level * 0.4;
+    const maxH = 1.5 + level * (isCyber ? 4 : 2.5);
+
+    const buildings = cells.slice(0, numBuildings).map((pos) => {
+      const h = minH + rng() * (maxH - minH);
+      const w = isCyber ? 0.7 + rng() * 0.7 : 1.0 + rng() * 1.2;
+      const d = isCyber ? 0.7 + rng() * 0.7 : 1.0 + rng() * 1.2;
+      const color = rng() > 0.35 ? primary : secondary;
+      const emissiveI = isCyber ? 0.15 + rng() * 0.25 : 0.03;
+      return { pos, w, d, h, color, accent, emissiveI };
+    });
+
+    const numRoads = Math.max(2, Math.min(Math.floor(tweetCount / 300) + 2, 6));
+    const roadColor = isCyber ? "#1a1a2e" : isEco ? "#2a3d2a" : "#2a2a2a";
+    const roads = [];
+    for (let i = 0; i < numRoads; i++) {
+      const t = (i / Math.max(numRoads - 1, 1) - 0.5) * (groundSize - 4);
+      roads.push({ x: t, z: 0, len: groundSize, horiz: true, color: roadColor });
+      roads.push({ x: 0, z: t, len: groundSize, horiz: false, color: roadColor });
+    }
+
+    const wantTrees = isEco || engagement > 0;
+    const numTrees = wantTrees
+      ? Math.min(Math.floor(engagement * 0.3) + (isEco ? 25 : 5), 40)
+      : 0;
+    const treeRng = mkRng(seed + 1);
+    const trees = Array.from({ length: numTrees }, () => [
+      (treeRng() - 0.5) * (groundSize - 4),
+      0,
+      (treeRng() - 0.5) * (groundSize - 4),
+    ]);
+
+    return { buildings, roads, trees, groundSize };
+  }, [followers, tweetCount, engagement, tokenId, level, style, primary, secondary, accent]);
+
+  return (
+    <>
+      <color attach="background" args={[cfg.sky]} />
+      <fog attach="fog" args={[cfg.fog, 40, 90]} />
+      <ambientLight intensity={cfg.ambI} />
+      <directionalLight position={[15, 25, 10]} intensity={cfg.dirI} />
+      <hemisphereLight args={[cfg.sky, cfg.ground, 0.4]} />
+      {cfg.stars && <Stars radius={60} depth={30} count={800} factor={2} fade />}
+      <Ground size={data.groundSize + 12} color={cfg.ground} />
+      {data.roads.map((r, i) => <Road key={i} {...r} />)}
+      {data.buildings.map((b, i) => <Building key={i} {...b} />)}
+      {data.trees.map((pos, i) => <Tree key={i} pos={pos} />)}
+    </>
+  );
+}
+
+export default function CityRenderer({ city, tokenId }) {
+  const [open, setOpen] = useState(false);
+
   const {
     level = 1,
     style = "Cyberpunk",
-    colorPalette = { primary: "#334", secondary: "#556", accent: "#f0f" },
+    colorPalette = { primary: "#334466", secondary: "#223355", accent: "#ff00ff" },
     followers = 0,
-    cityName = "Unknown City",
+    tweetCount = 0,
+    following = 0,
+    engagement = 0,
   } = city || {};
 
-  const palette = STYLE_PALETTES[style] || STYLE_PALETTES.Cyberpunk;
-  const { primary, secondary, accent } = colorPalette;
-
-  const buildings = useMemo(() => {
-    const rng = mkRng(followers || 1337);
-    const baseY = height * 0.78;
-    const numBuildings = Math.min(5 + level * 6, 35);
-    const result = [];
-
-    for (let i = 0; i < numBuildings; i++) {
-      const w = 12 + rng() * (40 - level * 2);
-      const h = 20 + rng() * (30 + level * 18);
-      const x = (width / numBuildings) * i + rng() * 8 - 4;
-      result.push({ x, w, h, baseY, z: rng() });
-    }
-    // Sort by Z for depth effect
-    result.sort((a, b) => a.z - b.z);
-    return result;
-  }, [level, followers, width, height]);
-
-  const groundY = height * 0.78;
-  const isMegacity = level >= 5;
+  const metrics = { followers, tweetCount, following, engagement };
+  const sceneProps = { metrics, style, colorPalette, level, tokenId: tokenId || 0 };
 
   return (
-    <svg
-      width={width}
-      height={height}
-      viewBox={`0 0 ${width} ${height}`}
-      style={{ borderRadius: 12, display: "block" }}
-    >
-      <defs>
-        <linearGradient id="skyGrad" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor={palette.sky[0]} />
-          <stop offset="100%" stopColor={palette.sky[1]} />
-        </linearGradient>
-        {isMegacity && (
-          <radialGradient id="aura" cx="50%" cy="80%" r="60%">
-            <stop offset="0%" stopColor={accent} stopOpacity="0.3" />
-            <stop offset="100%" stopColor={accent} stopOpacity="0" />
-          </radialGradient>
-        )}
-        <filter id="glow">
-          <feGaussianBlur stdDeviation="2" result="blur" />
-          <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
-        </filter>
-      </defs>
-
-      {/* Sky */}
-      <rect width={width} height={height} fill="url(#skyGrad)" />
-
-      {/* Stars for dark styles */}
-      {["Cyberpunk", "Medieval", "Baroque", "Bio-Punk"].includes(style) &&
-        Array.from({ length: 40 }, (_, i) => {
-          const sr = mkRng(i * 17 + 3);
-          return (
-            <circle key={i} cx={sr() * width} cy={sr() * groundY * 0.7}
-              r={sr() * 1.5} fill="white" opacity={0.3 + sr() * 0.7} />
-          );
-        })
-      }
-
-      {/* Moon / Sun */}
-      {style === "Cyberpunk" && (
-        <circle cx={width * 0.8} cy={height * 0.15} r={18} fill="#cc00ff" opacity="0.7" filter="url(#glow)" />
-      )}
-      {style === "Eco-Futurism" && (
-        <circle cx={width * 0.15} cy={height * 0.15} r={22} fill="#ffee00" opacity="0.8" />
-      )}
-      {style === "Medieval" && (
-        <circle cx={width * 0.75} cy={height * 0.12} r={15} fill="#ffe8a0" opacity="0.9" />
-      )}
-
-      {/* Buildings (back to front) */}
-      {buildings.map((b, i) => (
-        <g key={i} opacity={0.6 + b.z * 0.4}>
-          {buildingShape(
-            mkRng(b.x * 100 + i),
-            style, b.x, b.w, b.h, b.baseY,
-            secondary, primary, accent
-          )}
-        </g>
-      ))}
-
-      {/* Front buildings (larger) */}
-      {buildings.slice(-Math.ceil(buildings.length * 0.3)).map((b, i) => (
-        <g key={`f${i}`}>
-          {buildingShape(
-            mkRng(b.x * 50 + i + 9999),
-            style, b.x - 3, b.w * 1.3, b.h * 1.2, b.baseY,
-            primary, secondary, accent
-          )}
-        </g>
-      ))}
-
-      {/* Ground */}
-      <rect x={0} y={groundY} width={width} height={height - groundY} fill={palette.ground} />
-
-      {/* Ground line glow */}
-      <line x1={0} y1={groundY} x2={width} y2={groundY} stroke={accent} strokeWidth="1.5" opacity="0.7" />
-
-      {/* Megacity aura overlay */}
-      {isMegacity && <rect width={width} height={height} fill="url(#aura)" />}
-
-      {/* City name label */}
-      <text
-        x={width / 2}
-        y={height - 10}
-        textAnchor="middle"
-        fill={accent}
-        fontSize="11"
-        fontFamily="monospace"
-        opacity="0.8"
-        filter={isMegacity ? "url(#glow)" : undefined}
+    <>
+      <div
+        style={{ width: 600, height: 320, borderRadius: 12, overflow: "hidden", cursor: "pointer", position: "relative" }}
+        onClick={() => setOpen(true)}
       >
-        {cityName}
-      </text>
-    </svg>
+        <Canvas camera={{ position: [20, 18, 20], fov: 50 }}>
+          <Suspense fallback={null}>
+            <CityScene {...sceneProps} />
+            <OrbitControls
+              enableZoom={false}
+              enablePan={false}
+              enableRotate={false}
+              autoRotate
+              autoRotateSpeed={0.8}
+            />
+          </Suspense>
+        </Canvas>
+        <div style={{
+          position: "absolute", bottom: 10, right: 12,
+          color: "rgba(255,255,255,0.55)", fontSize: 11,
+          fontFamily: "monospace", pointerEvents: "none",
+        }}>
+          Click to explore ↗
+        </div>
+      </div>
+
+      {open && (
+        <div
+          style={{
+            position: "fixed", inset: 0, zIndex: 1000,
+            background: "rgba(0,0,0,0.92)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+          }}
+          onClick={() => setOpen(false)}
+        >
+          <div
+            style={{ width: "90vw", height: "85vh", borderRadius: 16, overflow: "hidden", position: "relative" }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <Canvas camera={{ position: [22, 20, 22], fov: 45 }}>
+              <Suspense fallback={null}>
+                <CityScene {...sceneProps} />
+                <OrbitControls
+                  enablePan={false}
+                  minDistance={6}
+                  maxDistance={70}
+                  maxPolarAngle={Math.PI / 2 - 0.05}
+                  autoRotate
+                  autoRotateSpeed={0.5}
+                />
+              </Suspense>
+            </Canvas>
+            <button
+              onClick={() => setOpen(false)}
+              style={{
+                position: "absolute", top: 16, right: 16,
+                background: "rgba(255,255,255,0.15)", border: "none",
+                color: "white", width: 36, height: 36, borderRadius: "50%",
+                cursor: "pointer", fontSize: 18, lineHeight: "36px", textAlign: "center",
+              }}
+            >
+              ✕
+            </button>
+          </div>
+        </div>
+      )}
+    </>
   );
 }

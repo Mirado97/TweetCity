@@ -94,6 +94,9 @@ export default function CityPage({ tokenId, signer, address }) {
     style: city.ipfsData?.city?.style || "Cyberpunk",
     colorPalette: city.ipfsData?.city?.colorPalette || { primary: "#334", secondary: "#556", accent: "#f0f" },
     followers: Number(cityMeta?.followers || 0),
+    tweetCount: Number(cityMeta?.tweetCount || 0),
+    following: Number(cityMeta?.following || 0),
+    engagement: Number(cityMeta?.engagement || 0),
     cityName: city.ipfsData?.name || `City #${tokenId}`,
   };
 
@@ -109,7 +112,7 @@ export default function CityPage({ tokenId, signer, address }) {
         )}
       </div>
 
-      <CityRenderer city={rendererCity} width={600} height={320} />
+      <CityRenderer city={rendererCity} tokenId={tokenId} />
 
       {city.ipfsData?.city?.motto && (
         <p className="city-motto">"{city.ipfsData.city.motto}"</p>
