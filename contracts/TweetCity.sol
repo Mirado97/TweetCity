@@ -196,7 +196,7 @@ contract TweetCity is Initializable, ERC721Upgradeable, OwnableUpgradeable, UUPS
         agentIdentityRegistry = registry;
     }
 
-    function setTokenAgentId(uint256 tokenId, uint256 agentId) external onlyOwner {
+    function setTokenAgentId(uint256 tokenId, uint256 agentId) external onlyOracle {
         tokenAgentId[tokenId] = agentId;
         emit AgentRegistered(tokenId, agentId);
     }

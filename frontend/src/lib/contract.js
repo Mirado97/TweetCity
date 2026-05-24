@@ -9,7 +9,7 @@ export const MANTLE_TESTNET = {
   nativeCurrency: { name: "MNT", symbol: "MNT", decimals: 18 },
 };
 
-export const CONTRACT_ADDRESS = "0x440fD25FECB79bD9367C539990Dd96f5da5c59F4";
+export const CONTRACT_ADDRESS = "0x1d27d3E227F75Ba64E295205B66B2756A5A6f096";
 // TweetCityABI.json is a raw ABI array (from backend/abi/)
 export const ABI = Array.isArray(TweetCityABI) ? TweetCityABI : TweetCityABI.abi;
 

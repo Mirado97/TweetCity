@@ -13,7 +13,7 @@ function makeVerifyCode(walletAddress, twitterHandle) {
 const getTwitterProvider = require("../services/twitter");
 const { analyzeCityPersonality, generateLevelUpNarrative } = require("../services/claude");
 const { uploadMetadata } = require("../services/ipfs");
-const { mintCity, updateCity, getCityData, getLeaderboard, getTokenIdByHandle, getHandleByTokenId, registerERC8004Agent } = require("../services/contract");
+const { mintCity, updateCity, getCityData, getLeaderboard, getTokenIdByHandle, getHandleByTokenId, registerERC8004Agent, recordValidation, getTokenAgentId } = require("../services/contract");
 const { checkSyncCooldown, mintLimiter } = require("../middleware/rateLimit");
 
 // POST /api/verify-tweet
@@ -108,8 +108,8 @@ router.post("/mint", mintLimiter, async (req, res) => {
       ipfsCID,
     });
 
-    // Step 6: Register city as ERC-8004 agent, store agentId on-chain
-    const agentId = await registerERC8004Agent(ipfsCID, tokenId);
+    // Step 6: Register city as ERC-8004 agent (IdentityRegistry + ReputationRegistry)
+    const agentId = await registerERC8004Agent(twitterHandle, walletAddress, tokenId);
 
     res.json({ tokenId, txHash, ipfsCID, agentId, cityData: metadata });
   } catch (err) {
@@ -173,8 +173,14 @@ router.post("/sync", checkSyncCooldown, async (req, res) => {
       tweetCount: metrics.tweetCount,
       following: metrics.following,
       engagement: avgEngagement,
-      ipfsCID, // empty string if no level-up → contract keeps old CID
+      ipfsCID,
     });
+
+    // ERC-8004: oracle validates city metrics on-chain (ValidationRegistry)
+    const cityAgentId = await getTokenAgentId(tokenId).catch(() => 0);
+    if (cityAgentId) {
+      await recordValidation(tokenId, cityAgentId, metrics.followers, metrics.tweetCount, metrics.following);
+    }
 
     res.json({
       updated: true,
