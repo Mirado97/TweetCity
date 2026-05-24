@@ -193,10 +193,9 @@ function CityScene({ metrics, style, colorPalette, level, tokenId }) {
   const cfg = STYLE_CFG[style] || STYLE_CFG.Cyberpunk;
   const { primary, secondary, accent } = colorPalette;
 
-  // Tint ground/park/road toward the city's primary color so ground always complements buildings
-  const groundColor = blendHex(cfg.ground, primary, 0.35);
-  const parkColor   = blendHex(cfg.park,   primary, 0.35);
-  const roadColor   = blendHex(cfg.road,   primary, 0.15);
+  const groundColor = "#3a8a30";
+  const parkColor   = "#4aaa3a";
+  const roadColor   = cfg.road;
 
   const isEco  = style === "Eco-Futurism";
   const isBio  = style === "Bio-Punk";
