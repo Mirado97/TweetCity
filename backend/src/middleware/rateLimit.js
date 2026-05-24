@@ -13,7 +13,8 @@ function checkSyncCooldown(req, res, next) {
     return res.status(429).json({ error: `Sync cooldown. Try again in ${waitMin} min.` });
   }
 
-  syncCooldowns.set(String(tokenId), Date.now());
+  // Set cooldown only after successful sync (route must call req.setSyncCooldown())
+  req.setSyncCooldown = () => syncCooldowns.set(String(tokenId), Date.now());
   next();
 }
 

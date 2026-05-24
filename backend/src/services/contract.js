@@ -153,8 +153,18 @@ async function mintCity({ to, twitterHandle, followers, tweetCount, following, e
 
 async function updateCity({ tokenId, followers, tweetCount, following, engagement, ipfsCID }) {
   const contract = getContract();
-  const tx = await contract.updateCity(tokenId, followers, tweetCount, following, engagement, ipfsCID);
-  const receipt = await tx.wait();
+  let tx, receipt;
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      tx = await contract.updateCity(tokenId, followers, tweetCount, following, engagement, ipfsCID);
+      receipt = await tx.wait();
+      break;
+    } catch (e) {
+      if (attempt === 3) throw e;
+      console.warn(`[updateCity] attempt ${attempt} failed: ${e.message} — retrying`);
+      await new Promise((r) => setTimeout(r, 2000 * attempt));
+    }
+  }
 
   const levelUpEvent = receipt.logs
     .map((log) => { try { return contract.interface.parseLog(log); } catch { return null; } })

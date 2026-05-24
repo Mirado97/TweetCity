@@ -12,7 +12,7 @@ function makeVerifyCode(walletAddress, twitterHandle) {
 
 const getTwitterProvider = require("../services/twitter");
 const { analyzeCityPersonality, generateLevelUpNarrative } = require("../services/claude");
-const { uploadMetadata } = require("../services/ipfs");
+const { uploadMetadata, getCachedMetadata } = require("../services/ipfs");
 const { mintCity, updateCity, getCityData, getLeaderboard, getTokenIdByHandle, getHandleByTokenId, registerERC8004Agent, recordValidation, getTokenAgentId } = require("../services/contract");
 const { checkSyncCooldown, mintLimiter } = require("../middleware/rateLimit");
 
@@ -128,27 +128,33 @@ router.post("/sync", checkSyncCooldown, async (req, res) => {
 
   try {
     const twitter = getTwitterProvider();
+    console.log("[sync] step1: fetching metrics+tweets");
     const [metrics, tweets] = await Promise.all([
       twitter.getUserMetrics(twitterHandle),
       twitter.getUserTweets(twitterHandle, 50),
     ]);
+    console.log("[sync] step1 done: followers=" + metrics.followers + " tweets=" + tweets.length);
 
     const avgEngagement = tweets.length
       ? Math.round(tweets.reduce((s, t) => s + t.likes + t.retweets, 0) / tweets.length)
       : 0;
 
+    console.log("[sync] step2: getCityData");
     const oldData = await getCityData(tokenId);
     const oldLevel = Number(oldData.city.level);
     const newLevel = calcLevel(metrics.followers);
     const isLevelUp = newLevel > oldLevel;
+    const noIpfs = !oldData.city.ipfsCID || oldData.city.ipfsCID.length === 0;
+    const noMetrics = oldData.city.followers === 0 && oldData.city.tweetCount === 0;
 
     let ipfsCID = "";
     let narrative = null;
 
-    if (isLevelUp) {
-      // Upload new metadata to IPFS only on level-up
+    if (isLevelUp || noIpfs || noMetrics) {
       const aiData = await analyzeCityPersonality(tweets, { ...metrics, avgEngagement });
-      narrative = await generateLevelUpNarrative(aiData.cityName, oldLevel, newLevel, metrics);
+      if (isLevelUp) {
+        narrative = await generateLevelUpNarrative(aiData.cityName, oldLevel, newLevel, metrics);
+      }
 
       const metadata = {
         name: aiData.cityName,
@@ -167,6 +173,7 @@ router.post("/sync", checkSyncCooldown, async (req, res) => {
       ipfsCID = await uploadMetadata(metadata);
     }
 
+    console.log("[sync] step3: updateCity ipfsCID=" + (ipfsCID || "(empty)"));
     const result = await updateCity({
       tokenId,
       followers: metrics.followers,
@@ -175,13 +182,19 @@ router.post("/sync", checkSyncCooldown, async (req, res) => {
       engagement: avgEngagement,
       ipfsCID,
     });
+    console.log("[sync] step3 done: txHash=" + result.txHash);
 
     // ERC-8004: oracle validates city metrics on-chain (ValidationRegistry)
+    console.log("[sync] step4: getTokenAgentId");
     const cityAgentId = await getTokenAgentId(tokenId).catch(() => 0);
+    console.log("[sync] step4 done: cityAgentId=" + cityAgentId);
     if (cityAgentId) {
+      console.log("[sync] step5: recordValidation");
       await recordValidation(tokenId, cityAgentId, metrics.followers, metrics.tweetCount, metrics.following);
+      console.log("[sync] step5 done");
     }
 
+    req.setSyncCooldown?.();
     res.json({
       updated: true,
       levelUp: result.levelUp,
@@ -202,20 +215,23 @@ router.get("/city/:tokenId", async (req, res) => {
   try {
     const data = await getCityData(req.params.tokenId);
 
-    // Fetch IPFS metadata — try multiple gateways
+    // Fetch IPFS metadata — in-memory cache first, then gateways
     let ipfsData = null;
     const cid = data.city?.ipfsCID;
     if (cid && cid.length > 0) {
-      const gateways = [
-        `https://gateway.pinata.cloud/ipfs/${cid}`,
-        `https://cloudflare-ipfs.com/ipfs/${cid}`,
-        `https://ipfs.io/ipfs/${cid}`,
-      ];
-      for (const url of gateways) {
-        try {
-          const ipfsRes = await fetch(url, { signal: AbortSignal.timeout(5000) });
-          if (ipfsRes.ok) { ipfsData = await ipfsRes.json(); break; }
-        } catch {}
+      ipfsData = getCachedMetadata(cid);
+      if (!ipfsData) {
+        const gateways = [
+          `https://w3s.link/ipfs/${cid}`,
+          `https://ipfs.io/ipfs/${cid}`,
+          `https://gateway.pinata.cloud/ipfs/${cid}`,
+        ];
+        for (const url of gateways) {
+          try {
+            const ipfsRes = await fetch(url, { signal: AbortSignal.timeout(5000) });
+            if (ipfsRes.ok) { ipfsData = await ipfsRes.json(); break; }
+          } catch {}
+        }
       }
     }
 
