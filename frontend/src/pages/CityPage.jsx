@@ -156,7 +156,8 @@ export default function CityPage({ tokenId, signer, address }) {
               `Just synced my TweetCity — ${name} is a ${style} ${lvl} on Mantle 🔥 Real Twitter metrics, real NFT. Come mint yours!`,
             ];
             const text = variants[tokenId % variants.length];
-            return `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}&hashtags=TweetCity,Mantle,NFT`;
+            const cityUrl = `${API_BASE}/share/city/${tokenId}`;
+            return `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent(cityUrl)}&hashtags=TweetCity,Mantle,NFT`;
           })()}>
           Share on Twitter
         </a>

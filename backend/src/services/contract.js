@@ -28,6 +28,33 @@ let _reputation = null;
 let _validation = null;
 let _wallet = null;
 
+// Poll for receipt manually — avoids ECONNRESET from tx.wait() on flaky Mantle RPC
+async function waitReceipt(provider, txHash, timeoutMs = 90000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    try {
+      const receipt = await provider.getTransactionReceipt(txHash);
+      if (receipt) return receipt;
+    } catch {}
+    await new Promise((r) => setTimeout(r, 4000));
+  }
+  throw new Error(`Receipt timeout for ${txHash}`);
+}
+
+// При ECONNRESET сбрасываем singleton провайдера и повторяем один раз
+async function rpcCall(fn) {
+  try {
+    return await fn();
+  } catch (err) {
+    if (String(err.message).includes("ECONNRESET") || err.code === "ECONNRESET") {
+      _contract = null; _wallet = null; _identity = null; _reputation = null; _validation = null;
+      await new Promise((r) => setTimeout(r, 600));
+      return fn();
+    }
+    throw err;
+  }
+}
+
 function getContract() {
   if (_contract) return _contract;
 
@@ -38,7 +65,11 @@ function getContract() {
   if (!key || key.includes("your_oracle")) throw new Error("ORACLE_PRIVATE_KEY not set in .env");
   if (!addr || addr.length < 10) throw new Error("CONTRACT_ADDRESS not set in .env");
 
-  const provider = new ethers.JsonRpcProvider(rpc);
+  // keepAlive=false — каждый HTTP-запрос открывает новое TCP-соединение,
+  // иначе Mantle testnet RPC закрывает idle-соединение и ethers получает ECONNRESET
+  const fetchReq = new ethers.FetchRequest(rpc);
+  fetchReq.keepAlive = false;
+  const provider = new ethers.JsonRpcProvider(fetchReq, undefined, { pollingInterval: 4000 });
   _wallet = new ethers.Wallet(key, provider);
   _contract = new ethers.Contract(addr, TweetCityABI, _wallet);
 
@@ -63,7 +94,7 @@ async function registerERC8004Agent(twitterHandle, walletAddress, tokenId) {
     const agentDomain = `tweetcity-${twitterHandle.toLowerCase()}`;
 
     const tx = await _identity.newAgent(agentDomain, walletAddress, { value: fee });
-    const receipt = await tx.wait();
+    const receipt = await waitReceipt(_wallet.provider, tx.hash);
     const event = receipt.logs
       .map((log) => { try { return _identity.interface.parseLog(log); } catch { return null; } })
       .find((e) => e?.name === "AgentRegistered");
@@ -75,7 +106,7 @@ async function registerERC8004Agent(twitterHandle, walletAddress, tokenId) {
     // Store agentId on-chain in TweetCity
     try {
       const tx2 = await _contract.setTokenAgentId(tokenId, agentId);
-      await tx2.wait();
+      await waitReceipt(_wallet.provider, tx2.hash);
     } catch (e) {
       console.warn("[ERC8004] setTokenAgentId failed:", e.message);
     }
@@ -84,7 +115,7 @@ async function registerERC8004Agent(twitterHandle, walletAddress, tokenId) {
     if (_reputation && oracleAgentId) {
       try {
         const tx3 = await _reputation.acceptFeedback(agentId, oracleAgentId);
-        await tx3.wait();
+        await waitReceipt(_wallet.provider, tx3.hash);
         console.log(`[ERC8004] acceptFeedback recorded: city=${agentId} oracle=${oracleAgentId}`);
       } catch (e) {
         console.warn("[ERC8004] acceptFeedback failed:", e.message);
@@ -113,12 +144,12 @@ async function recordValidation(tokenId, cityAgentId, followers, tweetCount, fol
     );
 
     const tx1 = await _validation.validationRequest(oracleAgentId, cityAgentId, dataHash);
-    await tx1.wait();
+    await waitReceipt(_wallet.provider, tx1.hash);
 
     // Score = engagement proxy: capped at 100
     const score = Math.min(100, Math.floor((followers / 1000) * 10) + 50);
     const tx2 = await _validation.validationResponse(dataHash, score);
-    await tx2.wait();
+    await waitReceipt(_wallet.provider, tx2.hash);
     console.log(`[ERC8004] Validation recorded: tokenId=${tokenId} score=${score}`);
   } catch (err) {
     console.warn("[ERC8004] recordValidation failed (non-fatal):", err.message);
@@ -139,7 +170,7 @@ function serializeCity(city) {
 async function mintCity({ to, twitterHandle, followers, tweetCount, following, engagement, ipfsCID }) {
   const contract = getContract();
   const tx = await contract.mintCity(to, twitterHandle, followers, tweetCount, following, engagement, ipfsCID);
-  const receipt = await tx.wait();
+  const receipt = await waitReceipt(_wallet.provider, tx.hash);
 
   const mintedEvent = receipt.logs
     .map((log) => { try { return contract.interface.parseLog(log); } catch { return null; } })
@@ -153,18 +184,8 @@ async function mintCity({ to, twitterHandle, followers, tweetCount, following, e
 
 async function updateCity({ tokenId, followers, tweetCount, following, engagement, ipfsCID }) {
   const contract = getContract();
-  let tx, receipt;
-  for (let attempt = 1; attempt <= 3; attempt++) {
-    try {
-      tx = await contract.updateCity(tokenId, followers, tweetCount, following, engagement, ipfsCID);
-      receipt = await tx.wait();
-      break;
-    } catch (e) {
-      if (attempt === 3) throw e;
-      console.warn(`[updateCity] attempt ${attempt} failed: ${e.message} — retrying`);
-      await new Promise((r) => setTimeout(r, 2000 * attempt));
-    }
-  }
+  const tx = await contract.updateCity(tokenId, followers, tweetCount, following, engagement, ipfsCID);
+  const receipt = await waitReceipt(_wallet.provider, tx.hash);
 
   const levelUpEvent = receipt.logs
     .map((log) => { try { return contract.interface.parseLog(log); } catch { return null; } })
@@ -179,53 +200,63 @@ async function updateCity({ tokenId, followers, tweetCount, following, engagemen
 }
 
 async function getHandleByTokenId(tokenId) {
-  const contract = getContract();
-  const handle = await contract.tokenToHandle(tokenId);
-  return handle || "";
+  return rpcCall(async () => {
+    const contract = getContract();
+    const handle = await contract.tokenToHandle(tokenId);
+    return handle || "";
+  });
 }
 
 async function getCityData(tokenId) {
-  const contract = getContract();
-  const [city, history, likes] = await Promise.all([
-    contract.cities(tokenId),
-    contract.getHistory(tokenId),
-    contract.cityLikes(tokenId),
-  ]);
-  return {
-    city: serializeCity(city),
-    history: history.map((h) => serializeCity(h)),
-    likes: likes.toString(),
-  };
+  return rpcCall(async () => {
+    const contract = getContract();
+    const [city, history, likes] = await Promise.all([
+      contract.cities(tokenId),
+      contract.getHistory(tokenId),
+      contract.cityLikes(tokenId),
+    ]);
+    return {
+      city: serializeCity(city),
+      history: history.map((h) => serializeCity(h)),
+      likes: likes.toString(),
+    };
+  });
 }
 
 async function getTokenIdByHandle(twitterHandle) {
-  const contract = getContract();
-  const tokenId = await contract.handleToTokenId(twitterHandle);
-  return Number(tokenId);
+  return rpcCall(async () => {
+    const contract = getContract();
+    const tokenId = await contract.handleToTokenId(twitterHandle);
+    return Number(tokenId);
+  });
 }
 
 async function getLeaderboard(limit = 10) {
-  const contract = getContract();
-  const total = Number(await contract.totalSupply());
-  const cities = [];
+  return rpcCall(async () => {
+    const contract = getContract();
+    const total = Number(await contract.totalSupply());
+    const cities = [];
 
-  for (let id = 1; id <= total; id++) {
-    const [city, handle] = await Promise.all([
-      contract.cities(id),
-      contract.tokenToHandle(id),
-    ]);
-    if (city.followers > 0n) {
-      cities.push({ tokenId: id, twitterHandle: handle || "", ...serializeCity(city) });
+    for (let id = 1; id <= total; id++) {
+      const [city, handle] = await Promise.all([
+        contract.cities(id),
+        contract.tokenToHandle(id),
+      ]);
+      if (city.followers > 0n) {
+        cities.push({ tokenId: id, twitterHandle: handle || "", ...serializeCity(city) });
+      }
     }
-  }
 
-  return cities.sort((a, b) => b.followers - a.followers).slice(0, limit);
+    return cities.sort((a, b) => b.followers - a.followers).slice(0, limit);
+  });
 }
 
 async function getTokenAgentId(tokenId) {
-  const contract = getContract();
-  const aid = await contract.tokenAgentId(tokenId);
-  return Number(aid);
+  return rpcCall(async () => {
+    const contract = getContract();
+    const aid = await contract.tokenAgentId(tokenId);
+    return Number(aid);
+  });
 }
 
 module.exports = { mintCity, updateCity, getCityData, getLeaderboard, getTokenIdByHandle, getHandleByTokenId, registerERC8004Agent, recordValidation, getTokenAgentId };

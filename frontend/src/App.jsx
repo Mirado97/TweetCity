@@ -8,9 +8,21 @@ import "./App.css";
 
 const LS_TOKEN = "tweetcity_my_token";
 
+function getInitialState() {
+  const params = new URLSearchParams(window.location.search);
+  const sharedCity = params.get("city");
+  if (sharedCity) {
+    window.history.replaceState({}, "", window.location.pathname);
+    return { page: "city", tokenId: sharedCity };
+  }
+  const saved = localStorage.getItem(LS_TOKEN);
+  return { page: saved ? "city" : "home", tokenId: saved };
+}
+
 export default function App() {
-  const [page, setPage] = useState(() => localStorage.getItem(LS_TOKEN) ? "city" : "home");
-  const [cityTokenId, setCityTokenId] = useState(() => localStorage.getItem(LS_TOKEN));
+  const init = getInitialState();
+  const [page, setPage] = useState(init.page);
+  const [cityTokenId, setCityTokenId] = useState(init.tokenId);
   const { address, signer, error: walletError, connect } = useWallet();
 
   function nav(p, extra) {
