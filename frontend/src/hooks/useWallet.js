@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { ethers } from "ethers";
 import { MANTLE_TESTNET } from "../lib/contract";
 
@@ -7,6 +7,22 @@ export function useWallet() {
   const [provider, setProvider] = useState(null);
   const [signer, setSigner] = useState(null);
   const [error, setError] = useState(null);
+
+  // Auto-reconnect on page load without prompting
+  useEffect(() => {
+    if (!window.ethereum) return;
+    window.ethereum.request({ method: "eth_accounts" }).then(async (accounts) => {
+      if (!accounts.length) return;
+      try {
+        const p = new ethers.BrowserProvider(window.ethereum);
+        const s = await p.getSigner();
+        const addr = await s.getAddress();
+        setProvider(p);
+        setSigner(s);
+        setAddress(addr);
+      } catch {}
+    });
+  }, []);
 
   const connect = useCallback(async () => {
     setError(null);

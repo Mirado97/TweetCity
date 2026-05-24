@@ -9,7 +9,7 @@ import "./App.css";
 const LS_TOKEN = "tweetcity_my_token";
 
 export default function App() {
-  const [page, setPage] = useState("home");
+  const [page, setPage] = useState(() => localStorage.getItem(LS_TOKEN) ? "city" : "home");
   const [cityTokenId, setCityTokenId] = useState(() => localStorage.getItem(LS_TOKEN));
   const { address, signer, error: walletError, connect } = useWallet();
 
