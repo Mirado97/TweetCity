@@ -50,7 +50,7 @@ function Road({ x, z, len, horiz, color }) {
 }
 
 // Building with window strips — proper skyscraper look
-function Building({ pos, w, d, h, color, winColor, accent, winEmI, style }) {
+function Building({ pos, w, d, h, color, winColor, accent, winEmI, style, prestige = 0.25 }) {
   const floors = Math.max(2, Math.floor(h / 2.2));
   const floorH = h / floors;
 
@@ -59,7 +59,7 @@ function Building({ pos, w, d, h, color, winColor, accent, winEmI, style }) {
       {/* Main body */}
       <mesh position={[0, h / 2, 0]}>
         <boxGeometry args={[w, h, d]} />
-        <meshStandardMaterial color={color} roughness={0.55} metalness={0.25} />
+        <meshStandardMaterial color={color} roughness={0.55} metalness={prestige} />
       </mesh>
       {/* Window bands every floor */}
       {Array.from({ length: floors - 1 }, (_, i) => {
@@ -189,7 +189,7 @@ function Lantern({ pos }) {
 }
 
 function CityScene({ metrics, style, colorPalette, level, tokenId }) {
-  const { followers = 0, tweetCount = 0, engagement = 0 } = metrics;
+  const { followers = 0, tweetCount = 0, engagement = 0, following = 0 } = metrics;
   const cfg = STYLE_CFG[style] || STYLE_CFG.Cyberpunk;
   const { primary, secondary, accent } = colorPalette;
 
@@ -212,24 +212,39 @@ function CityScene({ metrics, style, colorPalette, level, tokenId }) {
     const seed = (((tokenId | 0) * 9973) + (followers | 0)) >>> 0;
     const rng  = mkRng(seed);
 
-    // 3×3 grid of city blocks, center = park
-    // Block offsets: -STEP, 0, +STEP on X and Z
+    // --- FOLLOWERS → city grid size ---
+    // <1k → tiny 2×2 blocks, 1k-20k → 3×3, >20k → 5×5
+    const gridR = followers >= 20000 ? 2 : followers >= 1000 ? 1 : 0;
+
+    // --- TWEET COUNT → buildings per block ---
+    const perBlockBase = tweetCount >= 10000 ? 8 : tweetCount >= 1000 ? 6 : tweetCount >= 100 ? 4 : 2;
+
+    // --- ENGAGEMENT → building height (skyscraper vs shack) ---
+    const minH = 3;
+    const maxH = engagement >= 3 ? 30 : engagement >= 1 ? 18 : engagement >= 0.3 ? 10 : 5;
+
+    // --- FOLLOWERS/FOLLOWING ratio → material prestige (metalness) ---
+    const ratio = following > 0 ? followers / following : followers > 0 ? 5 : 1;
+    const prestige = Math.min(Math.max(ratio / 20, 0.08), 0.8);
+
+    // Block offsets based on gridR
     const blockOffsets = [];
-    for (let row = -1; row <= 1; row++)
-      for (let col = -1; col <= 1; col++)
-        if (!(row === 0 && col === 0))  // skip center — it's the park
-          blockOffsets.push({ bx: col * STEP, bz: row * STEP });
+    if (gridR === 0) {
+      // Tiny: 4 quarter-blocks around center
+      for (const row of [-1, 1])
+        for (const col of [-1, 1])
+          blockOffsets.push({ bx: col * (STEP / 2), bz: row * (STEP / 2) });
+    } else {
+      for (let row = -gridR; row <= gridR; row++)
+        for (let col = -gridR; col <= gridR; col++)
+          if (!(row === 0 && col === 0))
+            blockOffsets.push({ bx: col * STEP, bz: row * STEP });
+    }
 
-    const numBuildings = Math.max(12, Math.min(Math.floor(followers / 10), 100));
-    const perBlock = Math.max(2, Math.ceil(numBuildings / blockOffsets.length));
-
-    const minH = 4 + level * 1.8;
-    const maxH = 9 + level * (isEco || isMed ? 3.5 : 5.5);
-
+    // Buildings
     const buildings = [];
     blockOffsets.forEach(({ bx, bz }) => {
-      const count = perBlock + (rng() > 0.6 ? 1 : 0);
-      // Arrange buildings inside block on a mini-grid
+      const count = perBlockBase + (rng() > 0.6 ? 1 : 0);
       const bCols = Math.ceil(Math.sqrt(count));
       const bRows = Math.ceil(count / bCols);
       const bCell = (BLOCK - 2) / Math.max(bCols, bRows);
@@ -242,30 +257,29 @@ function CityScene({ metrics, style, colorPalette, level, tokenId }) {
           const w = 2.8 + rng() * 2.4;
           const d = 2.8 + rng() * 2.4;
           const color = rng() > 0.45 ? primary : secondary;
-          buildings.push({ pos: [px, pz], w, d, h, color, accent });
+          buildings.push({ pos: [px, pz], w, d, h, color, accent, prestige });
         }
       }
     });
 
-    // Road grid: 2 horizontal + 2 vertical between blocks
-    const totalSize = 3 * BLOCK + 2 * ROAD + 10;
+    // Roads between blocks
+    const totalSize = (2 * Math.max(gridR, 1) + 1) * BLOCK + 2 * Math.max(gridR, 1) * ROAD + 10;
     const roads = [];
-    [-STEP / 2, STEP / 2].forEach(t => {
+    for (let i = -Math.max(gridR, 1); i < Math.max(gridR, 1); i++) {
+      const t = (i + 0.5) * STEP;
       roads.push({ x: t, z: 0, len: totalSize, horiz: false });
       roads.push({ x: 0, z: t, len: totalSize, horiz: true });
-    });
+    }
 
-    // Trees around park and along roads
+    // --- FOLLOWING → trees (more social = greener city) ---
     const treeRng = mkRng(seed + 1);
     const trees = [];
-    // Park perimeter trees
-    const numParkTrees = 16 + Math.floor(engagement * 0.3);
-    for (let i = 0; i < Math.min(numParkTrees, 32); i++) {
+    const numParkTrees = Math.min(8 + Math.floor(following / 30), 60);
+    for (let i = 0; i < numParkTrees; i++) {
       const angle = (i / numParkTrees) * Math.PI * 2 + treeRng() * 0.4;
       const r = 5 + treeRng() * 2.5;
       trees.push({ pos: [Math.cos(angle) * r, 0, Math.sin(angle) * r], s: 0.7 + treeRng() * 0.5 });
     }
-    // Extra trees for eco/bio
     if (isEco || isBio) {
       for (let i = 0; i < 30; i++) {
         const tx = (treeRng() - 0.5) * totalSize * 0.85;
@@ -274,11 +288,11 @@ function CityScene({ metrics, style, colorPalette, level, tokenId }) {
       }
     }
 
-    // Lanterns along roads
+    // --- TWEET COUNT → lanterns (more activity = more lit streets) ---
     const lanternRng = mkRng(seed + 2);
     const lanterns = [];
-    const lCount = 6 + Math.floor(tweetCount / 400);
-    for (let i = 0; i < Math.min(lCount, 20); i++) {
+    const lCount = Math.min(4 + Math.floor(tweetCount / 200), 24);
+    for (let i = 0; i < lCount; i++) {
       const side = lanternRng() > 0.5 ? 1 : -1;
       const along = (lanternRng() - 0.5) * (STEP * 1.5);
       if (lanternRng() > 0.5) lanterns.push([(STEP / 2 + 1.8) * side, 0, along]);
@@ -286,7 +300,7 @@ function CityScene({ metrics, style, colorPalette, level, tokenId }) {
     }
 
     return { buildings, roads, trees, lanterns, totalSize };
-  }, [followers, tweetCount, engagement, tokenId, level, style, primary, secondary, accent]);
+  }, [followers, tweetCount, engagement, following, tokenId, style, primary, secondary, accent]);
 
   return (
     <>
@@ -322,6 +336,7 @@ function CityScene({ metrics, style, colorPalette, level, tokenId }) {
             winColor={winColor}
             winEmI={cfg.winEmI}
             style={style}
+            prestige={b.prestige}
           />
         );
       })}
