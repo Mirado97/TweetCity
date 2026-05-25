@@ -253,4 +253,11 @@ function calcLevel(followers) {
   return 1;
 }
 
+// GET /api/config — public contract addresses for frontend
+router.get("/config", (req, res) => {
+  res.json({
+    giftsContract: process.env.GIFTS_CONTRACT_ADDRESS || "",
+  });
+});
+
 module.exports = router;

@@ -11,7 +11,6 @@ export const MANTLE_TESTNET = {
 };
 
 export const CONTRACT_ADDRESS = "0x1d27d3E227F75Ba64E295205B66B2756A5A6f096";
-export const GIFTS_CONTRACT_ADDRESS = import.meta.env.VITE_GIFTS_CONTRACT || "";
 
 export const ABI = Array.isArray(TweetCityABI) ? TweetCityABI : TweetCityABI.abi;
 
@@ -21,9 +20,14 @@ export function getContract(signerOrProvider) {
   return new ethers.Contract(CONTRACT_ADDRESS, ABI, signerOrProvider);
 }
 
-export function getGiftsContract(signerOrProvider) {
-  if (!GIFTS_CONTRACT_ADDRESS) return null;
-  return new ethers.Contract(GIFTS_CONTRACT_ADDRESS, CityGiftsABI, signerOrProvider);
+export async function fetchConfig() {
+  const r = await fetch(`${API_BASE}/api/config`);
+  return r.json(); // { giftsContract }
+}
+
+export function getGiftsContract(address, signerOrProvider) {
+  if (!address) return null;
+  return new ethers.Contract(address, CityGiftsABI, signerOrProvider);
 }
 
 export const LEVEL_NAMES = ["", "Village", "Town", "City", "Metropolis", "Megacity"];

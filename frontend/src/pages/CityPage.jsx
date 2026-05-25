@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { ethers } from "ethers";
-import { API_BASE, LEVEL_NAMES, GIFT_TYPES, getContract, getGiftsContract } from "../lib/contract";
+import { API_BASE, LEVEL_NAMES, GIFT_TYPES, getContract, getGiftsContract, fetchConfig } from "../lib/contract";
 import CityRenderer from "../components/CityRenderer";
 
 // ─── Gift sub-components ──────────────────────────────────────────────────────
@@ -19,7 +19,7 @@ function timeLeft(deadline) {
 }
 
 // Owner sets their own price list
-function PriceManager({ tokenId, signer, currentPrices, onSaved }) {
+function PriceManager({ tokenId, signer, giftsAddr, currentPrices, onSaved }) {
   const [inputs, setInputs] = useState(
     currentPrices.map(p => p > 0n ? ethers.formatEther(p) : "")
   );
@@ -30,7 +30,7 @@ function PriceManager({ tokenId, signer, currentPrices, onSaved }) {
     setSaving(true);
     setErr("");
     try {
-      const gc = getGiftsContract(signer);
+      const gc = getGiftsContract(giftsAddr, signer);
       if (!gc) throw new Error("Gifts contract not deployed yet");
       const prices = inputs.map(v => v ? ethers.parseEther(v) : 0n);
       const tx = await gc.setPrices(tokenId, prices);
@@ -74,13 +74,13 @@ function PriceManager({ tokenId, signer, currentPrices, onSaved }) {
 }
 
 // Owner inbox: approve or reject pending gifts
-function GiftInbox({ tokenId, signer, pendingGifts, onAction }) {
+function GiftInbox({ tokenId, signer, giftsAddr, pendingGifts, onAction }) {
   const [busy, setBusy] = useState(null); // giftId being processed
 
   async function act(giftId, approve) {
     setBusy(giftId);
     try {
-      const gc = getGiftsContract(signer);
+      const gc = getGiftsContract(giftsAddr, signer);
       const tx = approve ? await gc.approveGift(giftId) : await gc.rejectGift(giftId);
       await tx.wait();
       onAction();
@@ -133,7 +133,7 @@ function GiftInbox({ tokenId, signer, pendingGifts, onAction }) {
 }
 
 // Visitor: send a gift to this city
-function GiftShop({ tokenId, signer, prices, ownerHandle, onSent }) {
+function GiftShop({ tokenId, signer, giftsAddr, prices, ownerHandle, onSent }) {
   const [type, setType] = useState(0);
   const [tweetUrl, setTweetUrl] = useState("");
   const [sending, setSending] = useState(false);
@@ -148,7 +148,7 @@ function GiftShop({ tokenId, signer, prices, ownerHandle, onSent }) {
     setSending(true);
     setErr("");
     try {
-      const gc = getGiftsContract(signer);
+      const gc = getGiftsContract(giftsAddr, signer);
       if (!gc) throw new Error("Gifts contract not deployed yet");
       const tx = await gc.sendGift(tokenId, type, tweetUrl.trim(), { value: price });
       await tx.wait();
@@ -232,6 +232,7 @@ export default function CityPage({ tokenId, signer, address }) {
   const [isOwner, setIsOwner] = useState(false);
 
   // Gift state
+  const [giftsContractAddr, setGiftsContractAddr] = useState("");
   const [prices, setPrices] = useState([0n, 0n, 0n, 0n, 0n, 0n]);
   const [activeGifts, setActiveGifts] = useState([]);
   const [pendingGifts, setPendingGifts] = useState([]);
@@ -240,8 +241,8 @@ export default function CityPage({ tokenId, signer, address }) {
 
   useEffect(() => { loadCity(); }, [tokenId]);
 
-  const loadGifts = useCallback(async (provider) => {
-    const gc = getGiftsContract(provider);
+  const loadGifts = useCallback(async (provider, addr) => {
+    const gc = getGiftsContract(addr, provider);
     if (!gc) return;
     try {
       const [p, active, stats] = await Promise.all([
@@ -258,9 +259,9 @@ export default function CityPage({ tokenId, signer, address }) {
     } catch {}
   }, [tokenId]);
 
-  const loadPending = useCallback(async () => {
+  const loadPending = useCallback(async (addr) => {
     if (!signer) return;
-    const gc = getGiftsContract(signer);
+    const gc = getGiftsContract(addr, signer);
     if (!gc) return;
     try {
       const p = await gc.getPendingGifts(tokenId);
@@ -272,10 +273,16 @@ export default function CityPage({ tokenId, signer, address }) {
     setLoading(true);
     setError("");
     try {
-      const res  = await fetch(`${API_BASE}/api/city/${tokenId}`);
+      const [res, cfg] = await Promise.all([
+        fetch(`${API_BASE}/api/city/${tokenId}`),
+        fetchConfig().catch(() => ({})),
+      ]);
       const data = await res.json();
       if (data.error) throw new Error(data.error);
       setCity(data);
+
+      const addr = cfg.giftsContract || "";
+      setGiftsContractAddr(addr);
 
       const provider = signer?.provider
         || (window.ethereum ? new ethers.BrowserProvider(window.ethereum) : null);
@@ -292,7 +299,7 @@ export default function CityPage({ tokenId, signer, address }) {
           setIsOwner(owned);
         } catch {}
 
-        await loadGifts(provider);
+        await loadGifts(provider, addr);
       }
     } catch (e) {
       setError(e.message);
@@ -301,7 +308,7 @@ export default function CityPage({ tokenId, signer, address }) {
     }
   }
 
-  useEffect(() => { if (isOwner) loadPending(); }, [isOwner, loadPending]);
+  useEffect(() => { if (isOwner) loadPending(giftsContractAddr); }, [isOwner, loadPending, giftsContractAddr]);
 
   async function sync() {
     setSyncing(true);
@@ -434,6 +441,7 @@ export default function CityPage({ tokenId, signer, address }) {
         <PriceManager
           tokenId={tokenId}
           signer={signer}
+          giftsAddr={giftsContractAddr}
           currentPrices={prices}
           onSaved={p => { setPrices(p); setShowPriceManager(false); }}
         />
@@ -444,8 +452,9 @@ export default function CityPage({ tokenId, signer, address }) {
         <GiftInbox
           tokenId={tokenId}
           signer={signer}
+          giftsAddr={giftsContractAddr}
           pendingGifts={pendingGifts}
-          onAction={() => { loadPending(); loadGifts(signer?.provider); }}
+          onAction={() => { loadPending(giftsContractAddr); loadGifts(signer?.provider, giftsContractAddr); }}
         />
       )}
 
@@ -454,9 +463,10 @@ export default function CityPage({ tokenId, signer, address }) {
         <GiftShop
           tokenId={tokenId}
           signer={signer}
+          giftsAddr={giftsContractAddr}
           prices={prices}
           ownerHandle={twitterHandle}
-          onSent={() => loadGifts(signer?.provider)}
+          onSent={() => loadGifts(signer?.provider, giftsContractAddr)}
         />
       )}
     </div>
