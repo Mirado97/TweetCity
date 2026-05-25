@@ -287,16 +287,15 @@ export default function CityPage({ tokenId, signer, address }) {
       const provider = signer?.provider
         || (window.ethereum ? new ethers.BrowserProvider(window.ethereum) : null);
 
+      const managerWallet = data.managerWallet || null;
+      const owned = !!(address && managerWallet && managerWallet.toLowerCase() === address.toLowerCase());
+      setIsOwner(owned);
+
       if (provider) {
         try {
           const contract = getContract(provider);
-          const [likes, owner] = await Promise.all([
-            contract.cityLikes(tokenId),
-            contract.ownerOf(tokenId),
-          ]);
+          const likes = await contract.cityLikes(tokenId);
           setLikeCount(Number(likes));
-          const owned = address && owner.toLowerCase() === address.toLowerCase();
-          setIsOwner(owned);
         } catch {}
 
         await loadGifts(provider, addr);

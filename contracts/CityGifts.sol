@@ -69,6 +69,10 @@ contract CityGifts is Ownable, ReentrancyGuard {
 
     uint256 public nextGiftId;
 
+    // tokenId → registered city manager (the wallet that minted the city)
+    // Separate from ERC-721 owner (oracle holds the NFT; minter manages the city)
+    mapping(uint256 => address) public cityManager;
+
     // tokenId → price per GiftType (0 = type disabled)
     mapping(uint256 => uint256[6]) public cityPrices;
 
@@ -80,6 +84,7 @@ contract CityGifts is Ownable, ReentrancyGuard {
 
     // ─── Events ───────────────────────────────────────────────────────────────
 
+    event ManagerSet(uint256 indexed tokenId, address indexed manager);
     event PricesSet(uint256 indexed tokenId, uint256[6] prices);
     event GiftSent(uint256 indexed giftId, uint256 indexed tokenId, address buyer, GiftType giftType, string tweetUrl, uint256 amount);
     event GiftApproved(uint256 indexed giftId, uint256 indexed tokenId);
@@ -91,7 +96,7 @@ contract CityGifts is Ownable, ReentrancyGuard {
     // ─── Modifiers ────────────────────────────────────────────────────────────
 
     modifier onlyCityOwner(uint256 tokenId) {
-        require(cityNFT.ownerOf(tokenId) == msg.sender, "CityGifts: not city owner");
+        require(cityManager[tokenId] == msg.sender, "CityGifts: not city manager");
         _;
     }
 
@@ -236,11 +241,12 @@ contract CityGifts is Ownable, ReentrancyGuard {
 
         g.status = GiftStatus.Verified;
 
-        address cityOwner = cityNFT.ownerOf(g.cityTokenId);
-        (bool ok,) = cityOwner.call{value: g.ownerAmount}("");
+        address manager = cityManager[g.cityTokenId];
+        require(manager != address(0), "CityGifts: no manager registered");
+        (bool ok,) = manager.call{value: g.ownerAmount}("");
         require(ok, "CityGifts: payout failed");
 
-        emit GiftVerified(giftId, g.cityTokenId, cityOwner, g.ownerAmount);
+        emit GiftVerified(giftId, g.cityTokenId, manager, g.ownerAmount);
     }
 
     // ─── View functions ───────────────────────────────────────────────────────
@@ -309,6 +315,19 @@ contract CityGifts is Ownable, ReentrancyGuard {
                 activeByType[uint8(g.giftType)]++;
             }
         }
+    }
+
+    // ─── Oracle functions (manager registration) ──────────────────────────────
+
+    /**
+     * @notice Register the city manager (minter wallet) for a city.
+     *         Called by oracle after mint or when manager updates their wallet.
+     *         NFT stays with oracle; management rights belong to the registered wallet.
+     */
+    function registerManager(uint256 tokenId, address manager) external onlyOracle {
+        require(manager != address(0), "CityGifts: zero address");
+        cityManager[tokenId] = manager;
+        emit ManagerSet(tokenId, manager);
     }
 
     // ─── Admin functions ──────────────────────────────────────────────────────

@@ -1,6 +1,55 @@
 const { ethers } = require("ethers");
+const fs = require("fs");
+const path = require("path");
 const _abiFile = require("../../abi/TweetCity.json");
 const TweetCityABI = Array.isArray(_abiFile) ? _abiFile : _abiFile.abi;
+
+const GIFTS_ABI = [
+  "function registerManager(uint256 tokenId, address manager) external",
+  "function cityManager(uint256 tokenId) external view returns (address)",
+];
+
+let _giftsContract = null;
+
+const MANAGERS_FILE = path.join(__dirname, "../../data/managers.json");
+
+function loadManagers() {
+  try { return JSON.parse(fs.readFileSync(MANAGERS_FILE, "utf8")); } catch { return {}; }
+}
+function saveManagers(data) {
+  fs.mkdirSync(path.dirname(MANAGERS_FILE), { recursive: true });
+  fs.writeFileSync(MANAGERS_FILE, JSON.stringify(data, null, 2));
+}
+
+function getGiftsContract() {
+  if (_giftsContract) return _giftsContract;
+  if (!_wallet) getContract();
+  const addr = process.env.GIFTS_CONTRACT_ADDRESS;
+  if (!addr) return null;
+  _giftsContract = new ethers.Contract(addr, GIFTS_ABI, _wallet);
+  return _giftsContract;
+}
+
+async function registerCityManager(tokenId, walletAddress) {
+  const managers = loadManagers();
+  managers[String(tokenId)] = walletAddress.toLowerCase();
+  saveManagers(managers);
+
+  try {
+    const gc = getGiftsContract();
+    if (!gc) return;
+    const tx = await gc.registerManager(tokenId, walletAddress);
+    await waitReceipt(_wallet.provider, tx.hash);
+    console.log(`[gifts] manager registered: tokenId=${tokenId} wallet=${walletAddress}`);
+  } catch (e) {
+    console.warn("[gifts] registerManager failed (non-fatal):", e.message);
+  }
+}
+
+function getCityManagerWallet(tokenId) {
+  const managers = loadManagers();
+  return managers[String(tokenId)] || null;
+}
 
 const IDENTITY_ABI = [
   "function newAgent(string agentDomain, address agentAddress) payable returns (uint256 agentId)",
@@ -47,7 +96,7 @@ async function rpcCall(fn) {
     return await fn();
   } catch (err) {
     if (String(err.message).includes("ECONNRESET") || err.code === "ECONNRESET") {
-      _contract = null; _wallet = null; _identity = null; _reputation = null; _validation = null;
+      _contract = null; _wallet = null; _identity = null; _reputation = null; _validation = null; _giftsContract = null;
       await new Promise((r) => setTimeout(r, 600));
       return fn();
     }
@@ -259,4 +308,4 @@ async function getTokenAgentId(tokenId) {
   });
 }
 
-module.exports = { mintCity, updateCity, getCityData, getLeaderboard, getTokenIdByHandle, getHandleByTokenId, registerERC8004Agent, recordValidation, getTokenAgentId };
+module.exports = { mintCity, updateCity, getCityData, getLeaderboard, getTokenIdByHandle, getHandleByTokenId, registerERC8004Agent, recordValidation, getTokenAgentId, registerCityManager, getCityManagerWallet };

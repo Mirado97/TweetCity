@@ -13,7 +13,7 @@ function makeVerifyCode(walletAddress, twitterHandle) {
 const getTwitterProvider = require("../services/twitter");
 const { analyzeCityPersonality, generateLevelUpNarrative } = require("../services/claude");
 const { uploadMetadata, getCachedMetadata } = require("../services/ipfs");
-const { mintCity, updateCity, getCityData, getLeaderboard, getTokenIdByHandle, getHandleByTokenId, registerERC8004Agent, recordValidation, getTokenAgentId } = require("../services/contract");
+const { mintCity, updateCity, getCityData, getLeaderboard, getTokenIdByHandle, getHandleByTokenId, registerERC8004Agent, recordValidation, getTokenAgentId, registerCityManager, getCityManagerWallet } = require("../services/contract");
 const { checkSyncCooldown, mintLimiter } = require("../middleware/rateLimit");
 
 // POST /api/verify-tweet
@@ -110,6 +110,9 @@ router.post("/mint", mintLimiter, async (req, res) => {
 
     // Step 6: Register city as ERC-8004 agent (IdentityRegistry + ReputationRegistry)
     const agentId = await registerERC8004Agent(twitterHandle, walletAddress, tokenId);
+
+    // Step 7: Register minter wallet as city manager in CityGifts
+    registerCityManager(tokenId, walletAddress).catch(() => {});
 
     res.json({ tokenId, txHash, ipfsCID, agentId, cityData: metadata });
   } catch (err) {
@@ -229,9 +232,31 @@ router.get("/city/:tokenId", async (req, res) => {
     // Resolve twitterHandle: IPFS first (fast), then on-chain event (chunked)
     const twitterHandle = ipfsData?.twitterHandle || await getHandleByTokenId(req.params.tokenId);
 
-    res.json({ ...data, city: { ...data.city, twitterHandle }, ipfsData });
+    const managerWallet = getCityManagerWallet(req.params.tokenId);
+    res.json({ ...data, city: { ...data.city, twitterHandle }, ipfsData, managerWallet });
   } catch (err) {
     res.status(404).json({ error: err.message });
+  }
+});
+
+// POST /api/city/:tokenId/claim-manager
+// First-come-first-served: registers walletAddress as city manager if unclaimed.
+// Used when original minter wallet is unknown (e.g. legacy mints).
+router.post("/city/:tokenId/claim-manager", async (req, res) => {
+  const { walletAddress } = req.body;
+  if (!walletAddress || !ethers.isAddress(walletAddress)) {
+    return res.status(400).json({ error: "walletAddress required" });
+  }
+  const tokenId = req.params.tokenId;
+  const existing = getCityManagerWallet(tokenId);
+  if (existing) {
+    return res.status(409).json({ error: "Manager already registered", manager: existing });
+  }
+  try {
+    await registerCityManager(tokenId, walletAddress);
+    res.json({ ok: true, tokenId, manager: walletAddress.toLowerCase() });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
   }
 });
 
