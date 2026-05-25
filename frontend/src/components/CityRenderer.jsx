@@ -16,13 +16,13 @@ function blendHex(a, b, t) {
 }
 
 const STYLE_CFG = {
-  Cyberpunk:      { sky: "#04000f", ground: "#2a0050", road: "#0d0d2e", park: "#0d1a0d", stars: true,  ambI: 0.9, dirI: 1.0, winEmI: 0.5 },
-  "Eco-Futurism": { sky: "#001a05", ground: "#44aa44", road: "#3a4a3a", park: "#33aa33", stars: false, ambI: 1.1, dirI: 1.3, winEmI: 0.1 },
-  Medieval:       { sky: "#180a00", ground: "#7a5000", road: "#2a1a00", park: "#3a6a00", stars: true,  ambI: 1.0, dirI: 1.0, winEmI: 0.4 },
-  Brutalist:      { sky: "#111",    ground: "#3a3a3a", road: "#1a1a1a", park: "#2a3a2a", stars: false, ambI: 1.0, dirI: 1.0, winEmI: 0.1 },
-  Minimalist:     { sky: "#e0e8f0", ground: "#c0ccd8", road: "#8899aa", park: "#88aa88", stars: false, ambI: 1.2, dirI: 1.1, winEmI: 0.05 },
-  Baroque:        { sky: "#080010", ground: "#500070", road: "#18002a", park: "#200040", stars: true,  ambI: 0.9, dirI: 1.0, winEmI: 0.4 },
-  "Bio-Punk":     { sky: "#000d03", ground: "#3a7a28", road: "#1a2a1a", park: "#2a6a20", stars: true,  ambI: 1.0, dirI: 0.9, winEmI: 0.3 },
+  Cyberpunk:      { sky: "#aac0e8", ground: "#2a0050", road: "#1a1a1a", park: "#1a3a1a", stars: false, ambI: 1.2, dirI: 1.2, winEmI: 0.3 },
+  "Eco-Futurism": { sky: "#87ceeb", ground: "#44aa44", road: "#1e1e1e", park: "#33aa33", stars: false, ambI: 1.3, dirI: 1.4, winEmI: 0.05 },
+  Medieval:       { sky: "#c8d0b8", ground: "#7a5000", road: "#1e1e1e", park: "#3a6a00", stars: false, ambI: 1.2, dirI: 1.3, winEmI: 0.2 },
+  Brutalist:      { sky: "#b8c0c8", ground: "#3a3a3a", road: "#1e1e1e", park: "#2a3a2a", stars: false, ambI: 1.2, dirI: 1.2, winEmI: 0.05 },
+  Minimalist:     { sky: "#e8f0f8", ground: "#c0ccd8", road: "#8899aa", park: "#88aa88", stars: false, ambI: 1.4, dirI: 1.2, winEmI: 0.02 },
+  Baroque:        { sky: "#d8c890", ground: "#500070", road: "#1e1e1e", park: "#200040", stars: false, ambI: 1.2, dirI: 1.3, winEmI: 0.2 },
+  "Bio-Punk":     { sky: "#90d8b0", ground: "#3a7a28", road: "#1e1e1e", park: "#2a6a20", stars: false, ambI: 1.3, dirI: 1.1, winEmI: 0.15 },
 };
 
 const BLOCK = 16;   // city block size
@@ -324,7 +324,7 @@ function CityScene({ metrics, style, colorPalette, level, tokenId }) {
   return (
     <>
       <color attach="background" args={[cfg.sky]} />
-      <fog attach="fog" args={[cfg.sky, 70, 160]} />
+      <fog attach="fog" args={[cfg.sky, 80, 200]} />
 
       <ambientLight intensity={cfg.ambI} />
       <directionalLight position={[25, 35, 20]} intensity={cfg.dirI} />
@@ -332,7 +332,7 @@ function CityScene({ metrics, style, colorPalette, level, tokenId }) {
       <hemisphereLight args={[cfg.sky, groundColor, 0.6]} />
       <pointLight position={[0, 12, 0]} color={accent} intensity={1.5} distance={60} decay={1.5} />
 
-      {cfg.stars && <Stars radius={120} depth={50} count={1200} factor={2} fade />}
+      {/* no stars — always daytime */}
 
       {/* Ground */}
       <Ground size={data.totalSize + 30} color={groundColor} />
