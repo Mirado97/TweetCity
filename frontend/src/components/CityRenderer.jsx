@@ -303,20 +303,28 @@ function CityScene({ metrics, style, colorPalette, level, tokenId }) {
       }
     }
 
-    // --- TWEET COUNT → lanterns on sidewalk, never on roads ---
-    const lanternRng = mkRng(seed + 2);
+    // --- TWEET COUNT → lantern density along roads ---
+    // Rule: lanterns stand evenly along both sides of every road, never on road surface.
+    // They alternate sides (left/right) at fixed intervals.
+    const sidewalk = ROAD / 2 + 1.8;
+    const spacing  = tweetCount >= 1000 ? 9 : tweetCount >= 100 ? 12 : 16;
+    const halfLen  = totalSize / 2;
     const lanterns = [];
-    const lCount = Math.min(4 + Math.floor(tweetCount / 200), 24);
-    for (let attempt = 0; lanterns.length < lCount && attempt < 400; attempt++) {
-      // Pick a road, stand on its sidewalk (ROAD/2 + 1.5 units from center)
-      const rc = roadCenters[Math.floor(lanternRng() * roadCenters.length)];
-      const sidewalk = ROAD / 2 + 1.5 + lanternRng() * 0.8;
-      const along = (lanternRng() - 0.5) * totalSize * 0.7;
-      const horiz = lanternRng() > 0.5;
-      const lx = horiz ? along : rc + (lanternRng() > 0.5 ? sidewalk : -sidewalk);
-      const lz = horiz ? rc + (lanternRng() > 0.5 ? sidewalk : -sidewalk) : along;
-      if (!isOnRoad(lx, lz)) lanterns.push([lx, 0, lz]);
-    }
+
+    roadCenters.forEach(rc => {
+      // Vertical road at x=rc — lamps run along Z axis
+      let side = 1;
+      for (let z = -halfLen + spacing / 2; z <= halfLen; z += spacing, side *= -1) {
+        const lx = rc + sidewalk * side;
+        if (!isOnRoad(lx, z)) lanterns.push([lx, 0, z]);
+      }
+      // Horizontal road at z=rc — lamps run along X axis
+      side = 1;
+      for (let x = -halfLen + spacing / 2; x <= halfLen; x += spacing, side *= -1) {
+        const lz = rc + sidewalk * side;
+        if (!isOnRoad(x, lz)) lanterns.push([x, 0, lz]);
+      }
+    });
 
     return { buildings, roads, trees, lanterns, totalSize };
   }, [followers, tweetCount, engagement, following, tokenId, style, primary, secondary, accent]);
