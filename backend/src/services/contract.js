@@ -47,13 +47,27 @@ async function registerCityManager(tokenId, walletAddress) {
 }
 
 async function getCityManagerWallet(tokenId) {
-  try {
-    const gc = getGiftsContract();
-    if (gc) {
-      const addr = await gc.cityManager(tokenId);
-      if (addr && addr !== "0x0000000000000000000000000000000000000000") return addr.toLowerCase();
-    }
-  } catch {}
+  const giftsAddr = process.env.GIFTS_CONTRACT_ADDRESS;
+  const rpc = process.env.MANTLE_TESTNET_RPC;
+  if (giftsAddr && rpc) {
+    try {
+      // Direct JSON-RPC call — avoids ethers singleton state issues
+      const selector = "0x2e9ea304"; // keccak256("cityManager(uint256)")[:4]
+      const padded = BigInt(tokenId).toString(16).padStart(64, "0");
+      const resp = await fetch(rpc, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ jsonrpc: "2.0", method: "eth_call", id: 1,
+          params: [{ to: giftsAddr, data: selector + padded }, "latest"] }),
+        signal: AbortSignal.timeout(6000),
+      });
+      const json = await resp.json();
+      if (json.result && json.result !== "0x" && json.result.length === 66) {
+        const addr = "0x" + json.result.slice(26);
+        if (addr !== "0x0000000000000000000000000000000000000000") return addr.toLowerCase();
+      }
+    } catch {}
+  }
   const managers = loadManagers();
   return managers[String(tokenId)] || null;
 }
