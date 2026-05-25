@@ -232,7 +232,7 @@ router.get("/city/:tokenId", async (req, res) => {
     // Resolve twitterHandle: IPFS first (fast), then on-chain event (chunked)
     const twitterHandle = ipfsData?.twitterHandle || await getHandleByTokenId(req.params.tokenId);
 
-    const managerWallet = getCityManagerWallet(req.params.tokenId);
+    const managerWallet = await getCityManagerWallet(req.params.tokenId);
     res.json({ ...data, city: { ...data.city, twitterHandle }, ipfsData, managerWallet });
   } catch (err) {
     res.status(404).json({ error: err.message });
@@ -248,7 +248,7 @@ router.post("/city/:tokenId/claim-manager", async (req, res) => {
     return res.status(400).json({ error: "walletAddress required" });
   }
   const tokenId = req.params.tokenId;
-  const existing = getCityManagerWallet(tokenId);
+  const existing = await getCityManagerWallet(tokenId);
   if (existing) {
     return res.status(409).json({ error: "Manager already registered", manager: existing });
   }

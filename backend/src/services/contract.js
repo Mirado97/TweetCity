@@ -46,7 +46,14 @@ async function registerCityManager(tokenId, walletAddress) {
   }
 }
 
-function getCityManagerWallet(tokenId) {
+async function getCityManagerWallet(tokenId) {
+  try {
+    const gc = getGiftsContract();
+    if (gc) {
+      const addr = await gc.cityManager(tokenId);
+      if (addr && addr !== "0x0000000000000000000000000000000000000000") return addr.toLowerCase();
+    }
+  } catch {}
   const managers = loadManagers();
   return managers[String(tokenId)] || null;
 }
