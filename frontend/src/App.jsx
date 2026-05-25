@@ -4,6 +4,7 @@ import LandingPage from "./pages/LandingPage";
 import MintPage from "./pages/MintPage";
 import CityPage from "./pages/CityPage";
 import LeaderboardPage from "./pages/LeaderboardPage";
+import TestCitiesPage from "./pages/TestCitiesPage";
 import "./App.css";
 
 const LS_TOKEN = "tweetcity_my_token";
@@ -44,6 +45,7 @@ export default function App() {
             <button onClick={() => nav("city", { tokenId: cityTokenId })}>My City</button>
           )}
           <button onClick={() => nav("leaderboard")}>Leaderboard</button>
+          <button onClick={() => nav("test")} style={{ opacity: 0.5, fontSize: 11 }}>Test</button>
         </div>
         <div className="nav-wallet">
           {address ? (
@@ -65,6 +67,7 @@ export default function App() {
         {page === "leaderboard" && (
           <LeaderboardPage onCityClick={(id) => nav("city", { tokenId: id })} />
         )}
+        {page === "test" && <TestCitiesPage />}
       </main>
 
       {walletError && <div className="global-error">{walletError}</div>}

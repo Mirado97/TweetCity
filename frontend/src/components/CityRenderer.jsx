@@ -1,118 +1,429 @@
 import { useMemo, useState, Suspense } from "react";
 import { Canvas } from "@react-three/fiber";
-import { OrbitControls, Stars } from "@react-three/drei";
+import { OrbitControls } from "@react-three/drei";
 
 function mkRng(seed) {
   let s = ((seed >>> 0) || 1337);
   return () => { s = (Math.imul(s, 1664525) + 1013904223) >>> 0; return s / 0xffffffff; };
 }
 
-// Blend two hex colors: t=0 → colorA, t=1 → colorB
-function blendHex(a, b, t) {
-  const parse = h => [parseInt(h.slice(1,3),16), parseInt(h.slice(3,5),16), parseInt(h.slice(5,7),16)];
-  const [ar,ag,ab] = parse(a); const [br,bg,bb] = parse(b);
-  const r = Math.round(ar + (br-ar)*t), g = Math.round(ag + (bg-ag)*t), bv = Math.round(ab + (bb-ab)*t);
-  return `#${r.toString(16).padStart(2,'0')}${g.toString(16).padStart(2,'0')}${bv.toString(16).padStart(2,'0')}`;
+// Rule: green is reserved for ground and vegetation. Building colors must not be green.
+function degreen(hex) {
+  if (!hex || hex.length < 7) return hex;
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  if (g > r * 1.3 && g > b * 1.3 && g > 70) {
+    const nr = Math.min(255, r + Math.floor((g - r) * 0.5));
+    const ng = Math.floor(g * 0.45);
+    const nb = Math.min(255, b + Math.floor((g - b) * 0.5));
+    return `#${nr.toString(16).padStart(2, "0")}${ng.toString(16).padStart(2, "0")}${nb.toString(16).padStart(2, "0")}`;
+  }
+  return hex;
+}
+
+// Contrasting window color vs building
+function windowContrast(hex) {
+  if (!hex || hex.length < 7) return "#e8d890";
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  return (0.299 * r + 0.587 * g + 0.114 * b) < 140 ? "#e8d890" : "#1a2a44";
 }
 
 const STYLE_CFG = {
-  Cyberpunk:      { sky: "#aac0e8", ground: "#2a0050", road: "#1a1a1a", park: "#1a3a1a", stars: false, ambI: 1.2, dirI: 1.2, winEmI: 0.3 },
-  "Eco-Futurism": { sky: "#87ceeb", ground: "#44aa44", road: "#1e1e1e", park: "#33aa33", stars: false, ambI: 1.3, dirI: 1.4, winEmI: 0.05 },
-  Medieval:       { sky: "#c8d0b8", ground: "#7a5000", road: "#1e1e1e", park: "#3a6a00", stars: false, ambI: 1.2, dirI: 1.3, winEmI: 0.2 },
-  Brutalist:      { sky: "#b8c0c8", ground: "#3a3a3a", road: "#1e1e1e", park: "#2a3a2a", stars: false, ambI: 1.2, dirI: 1.2, winEmI: 0.05 },
-  Minimalist:     { sky: "#e8f0f8", ground: "#c0ccd8", road: "#8899aa", park: "#88aa88", stars: false, ambI: 1.4, dirI: 1.2, winEmI: 0.02 },
-  Baroque:        { sky: "#d8c890", ground: "#500070", road: "#1e1e1e", park: "#200040", stars: false, ambI: 1.2, dirI: 1.3, winEmI: 0.2 },
-  "Bio-Punk":     { sky: "#90d8b0", ground: "#3a7a28", road: "#1e1e1e", park: "#2a6a20", stars: false, ambI: 1.3, dirI: 1.1, winEmI: 0.15 },
+  Cyberpunk:      { sky: "#aac0e8", ambI: 1.2, dirI: 1.2, winEmI: 0.35 },
+  "Eco-Futurism": { sky: "#87ceeb", ambI: 1.3, dirI: 1.4, winEmI: 0.05 },
+  Medieval:       { sky: "#c8d0b8", ambI: 1.2, dirI: 1.3, winEmI: 0.2  },
+  Brutalist:      { sky: "#b8c0c8", ambI: 1.2, dirI: 1.2, winEmI: 0.05 },
+  Minimalist:     { sky: "#e8f0f8", ambI: 1.4, dirI: 1.2, winEmI: 0.02 },
+  Baroque:        { sky: "#d8c890", ambI: 1.2, dirI: 1.3, winEmI: 0.2  },
+  "Bio-Punk":     { sky: "#90d8b0", ambI: 1.3, dirI: 1.1, winEmI: 0.15 },
 };
 
-const BLOCK = 16;   // city block size
-const ROAD  = 4;    // road width
+// Roof decoration per style (Medieval skipped — MedTower has its own cone)
+const ROOF_DECOR = {
+  Cyberpunk:      "antenna",
+  "Eco-Futurism": "panel",
+  Baroque:        "finial",
+  "Bio-Punk":     "blob",
+};
+const NEON_COLORS = ["#ff00cc", "#00ffee", "#ff8800", "#ff2266"];
+
+// Ground always green. Roads always asphalt. Park always bright green.
+const GROUND_COLOR = "#3a8a30";
+const PARK_COLOR   = "#4aaa3a";
+const ROAD_COLOR   = "#1e1e1e";
+
+const BLOCK = 16;
+const ROAD  = 4;
 const STEP  = BLOCK + ROAD;
 
-// Ground plane
-function Ground({ size, color }) {
+// ─── Geometry primitives ────────────────────────────────────────────────────
+
+function Ground({ size }) {
   return (
     <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.05, 0]}>
       <planeGeometry args={[size, size]} />
-      <meshStandardMaterial color={color} roughness={0.9} />
+      <meshStandardMaterial color={GROUND_COLOR} roughness={0.9} />
     </mesh>
   );
 }
 
-// Road strip
-function Road({ x, z, len, horiz, color }) {
+function RoadStrip({ x, z, len, horiz }) {
   return (
     <mesh position={[x, 0.01, z]} rotation={[-Math.PI / 2, 0, horiz ? 0 : Math.PI / 2]}>
       <planeGeometry args={[len, ROAD]} />
-      <meshStandardMaterial color={color} roughness={1} />
+      <meshStandardMaterial color={ROAD_COLOR} roughness={1} />
     </mesh>
   );
 }
 
-// Building with window strips — proper skyscraper look
-function Building({ pos, w, d, h, color, winColor, accent, winEmI, style, prestige = 0.25 }) {
-  const floors = Math.max(2, Math.floor(h / 2.2));
-  const floorH = h / floors;
+function ParkTile() {
+  return (
+    <mesh position={[0, 0.02, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+      <planeGeometry args={[BLOCK, BLOCK]} />
+      <meshStandardMaterial color={PARK_COLOR} roughness={0.9} />
+    </mesh>
+  );
+}
+
+// ─── Statues (one per gridR level, placed in park center) ───────────────────
+
+// gridR 0 — tiny city: plain stone obelisk
+function StoneObelisk() {
+  const stone = { color: "#999999", roughness: 0.88 };
+  return (
+    <group>
+      <mesh position={[0, 0.15, 0]}>
+        <boxGeometry args={[2, 0.3, 2]} />
+        <meshStandardMaterial {...stone} />
+      </mesh>
+      <mesh position={[0, 2.1, 0]}>
+        <boxGeometry args={[0.72, 3.7, 0.72]} />
+        <meshStandardMaterial {...stone} />
+      </mesh>
+      <mesh position={[0, 4.35, 0]}>
+        <boxGeometry args={[0.46, 1.2, 0.46]} />
+        <meshStandardMaterial {...stone} />
+      </mesh>
+      <mesh position={[0, 5.2, 0]}>
+        <coneGeometry args={[0.34, 0.85, 4]} />
+        <meshStandardMaterial color="#bbbbbb" roughness={0.65} metalness={0.2} />
+      </mesh>
+    </group>
+  );
+}
+
+// gridR 1 — small city: column with eternal flame
+function TorchColumn() {
+  return (
+    <group>
+      <mesh position={[0, 0.2, 0]}>
+        <cylinderGeometry args={[1.9, 2.1, 0.4, 8]} />
+        <meshStandardMaterial color="#aaaaaa" roughness={0.9} />
+      </mesh>
+      <mesh position={[0, 0.55, 0]}>
+        <boxGeometry args={[1.4, 0.3, 1.4]} />
+        <meshStandardMaterial color="#aaaaaa" roughness={0.9} />
+      </mesh>
+      <mesh position={[0, 3.5, 0]}>
+        <cylinderGeometry args={[0.34, 0.44, 5.4, 8]} />
+        <meshStandardMaterial color="#cccccc" roughness={0.8} />
+      </mesh>
+      <mesh position={[0, 6.5, 0]}>
+        <cylinderGeometry args={[0.72, 0.34, 0.4, 8]} />
+        <meshStandardMaterial color="#cccccc" roughness={0.75} />
+      </mesh>
+      <mesh position={[0, 7.0, 0]}>
+        <cylinderGeometry args={[0.5, 0.38, 0.55, 8]} />
+        <meshStandardMaterial color="#888888" roughness={0.6} />
+      </mesh>
+      <mesh position={[0, 7.9, 0]}>
+        <coneGeometry args={[0.38, 1.6, 6]} />
+        <meshStandardMaterial color="#ff8800" emissive="#ff4400" emissiveIntensity={1.8} roughness={0.4} />
+      </mesh>
+      <pointLight position={[0, 7.8, 0]} color="#ff8800" intensity={4} distance={22} decay={2} />
+    </group>
+  );
+}
+
+// gridR 2 — large city: triumphal arch (architecturally distinct from all other levels)
+function TriumphArch() {
+  const stone  = { color: "#c8c4b0", roughness: 0.88, metalness: 0.08 };
+  const bright = { color: "#dddacc", roughness: 0.72, metalness: 0.12 };
+  return (
+    <group scale={1.15}>
+      {/* Base pedestals */}
+      <mesh position={[-2.3, 0.45, 0]}>
+        <boxGeometry args={[1.9, 0.9, 1.5]} />
+        <meshStandardMaterial {...stone} />
+      </mesh>
+      <mesh position={[ 2.3, 0.45, 0]}>
+        <boxGeometry args={[1.9, 0.9, 1.5]} />
+        <meshStandardMaterial {...stone} />
+      </mesh>
+
+      {/* Pillars: y 0.9→7.5 */}
+      <mesh position={[-2.3, 4.2, 0]}>
+        <boxGeometry args={[1.6, 6.6, 1.3]} />
+        <meshStandardMaterial {...stone} />
+      </mesh>
+      <mesh position={[ 2.3, 4.2, 0]}>
+        <boxGeometry args={[1.6, 6.6, 1.3]} />
+        <meshStandardMaterial {...stone} />
+      </mesh>
+
+      {/* Arch over opening (3-piece approximation) */}
+      <mesh position={[-1.2, 8.0, 0]} rotation={[0, 0,  Math.PI / 4.5]}>
+        <boxGeometry args={[0.5, 1.8, 1.2]} />
+        <meshStandardMaterial {...bright} />
+      </mesh>
+      <mesh position={[ 1.2, 8.0, 0]} rotation={[0, 0, -Math.PI / 4.5]}>
+        <boxGeometry args={[0.5, 1.8, 1.2]} />
+        <meshStandardMaterial {...bright} />
+      </mesh>
+      <mesh position={[0, 8.8, 0]}>
+        <boxGeometry args={[0.9, 0.55, 1.2]} />
+        <meshStandardMaterial color="#eeead8" roughness={0.65} metalness={0.15} />
+      </mesh>
+
+      {/* Entablature */}
+      <mesh position={[0, 9.4, 0]}>
+        <boxGeometry args={[6.5, 0.95, 1.4]} />
+        <meshStandardMaterial {...stone} />
+      </mesh>
+
+      {/* Attic */}
+      <mesh position={[0, 10.15, 0]}>
+        <boxGeometry args={[6.0, 0.6, 1.3]} />
+        <meshStandardMaterial {...bright} />
+      </mesh>
+      <mesh position={[0, 10.65, 0]}>
+        <boxGeometry args={[5.5, 0.4, 1.2]} />
+        <meshStandardMaterial {...stone} />
+      </mesh>
+
+      {/* Top medallion */}
+      <mesh position={[0, 11.1, 0]}>
+        <sphereGeometry args={[0.62, 9, 9]} />
+        <meshStandardMaterial color="#e8d890" emissive="#aa9900" emissiveIntensity={0.7} roughness={0.35} metalness={0.65} />
+      </mesh>
+      <pointLight position={[0, 11.2, 0]} color="#ffdd44" intensity={3} distance={24} decay={2} />
+    </group>
+  );
+}
+
+// gridR 3 — mega city: the Colossus (humanoid figure, one arm raised)
+// Geometry verified analytically (pre-scale=1.3):
+//   legs   y 1.2→4.4  (center 2.8)
+//   torso  y 4.2→7.2  (center 5.7, w 1.6)
+//   chest  y 6.8→7.4  (center 7.1, w 2.1) — wider shoulder zone
+//   head   center 8.5, r 0.68, top 9.18
+//   L arm  pivot [-1.0, 7.1], rot −22.5° → local [0,-1.2] → world [-1.459, 5.991] (down-left) ✓
+//   R arm  pivot [+1.0, 7.1], rot +165° → local [0,-2.8] (orb) → world [1.725, 9.805] > head top ✓
+function Colossus() {
+  const metal = { color: "#aaaaaa", roughness: 0.55, metalness: 0.45 };
+  const RA = (11 * Math.PI) / 12;  // 165° — right arm raised up-right
+  const LA = -Math.PI / 8;          // −22.5° — left arm hanging outward-down
 
   return (
-    <group position={[pos[0], 0, pos[1]]}>
-      {/* Main body */}
-      <mesh position={[0, h / 2, 0]}>
-        <boxGeometry args={[w, h, d]} />
-        <meshStandardMaterial color={color} roughness={0.55} metalness={prestige} />
+    <group scale={1.3}>
+      {/* Base */}
+      <mesh position={[0, 0.5, 0]}>
+        <boxGeometry args={[4.2, 1.0, 4.2]} />
+        <meshStandardMaterial color="#888" roughness={0.92} />
       </mesh>
-      {/* Window bands every floor */}
-      {Array.from({ length: floors - 1 }, (_, i) => {
-        const y = floorH * (i + 1);
+      <mesh position={[0, 1.1, 0]}>
+        <boxGeometry args={[2.8, 0.2, 2.8]} />
+        <meshStandardMaterial color="#999" roughness={0.88} />
+      </mesh>
+
+      {/* Legs: y 1.2→4.4 */}
+      <mesh position={[-0.52, 2.8, 0]}>
+        <boxGeometry args={[0.78, 3.2, 0.72]} />
+        <meshStandardMaterial {...metal} />
+      </mesh>
+      <mesh position={[ 0.52, 2.8, 0]}>
+        <boxGeometry args={[0.78, 3.2, 0.72]} />
+        <meshStandardMaterial {...metal} />
+      </mesh>
+
+      {/* Hip connector */}
+      <mesh position={[0, 4.25, 0]}>
+        <boxGeometry args={[1.45, 0.5, 0.72]} />
+        <meshStandardMaterial {...metal} />
+      </mesh>
+
+      {/* Torso: y 4.2→7.2 */}
+      <mesh position={[0, 5.7, 0]}>
+        <boxGeometry args={[1.6, 3.0, 0.82]} />
+        <meshStandardMaterial {...metal} />
+      </mesh>
+
+      {/* Chest — wider shoulder zone: y 6.8→7.4 */}
+      <mesh position={[0, 7.1, 0]}>
+        <boxGeometry args={[2.1, 0.6, 0.85]} />
+        <meshStandardMaterial {...metal} />
+      </mesh>
+
+      {/* Neck */}
+      <mesh position={[0, 7.7, 0]}>
+        <boxGeometry args={[0.5, 0.6, 0.46]} />
+        <meshStandardMaterial {...metal} />
+      </mesh>
+
+      {/* Head */}
+      <mesh position={[0, 8.5, 0]}>
+        <sphereGeometry args={[0.68, 10, 10]} />
+        <meshStandardMaterial color="#c0bba8" roughness={0.6} metalness={0.25} />
+      </mesh>
+
+      {/* Left arm: pivot [-1.0, 7.1], rot −22.5° → hangs down-left */}
+      <group position={[-1.0, 7.1, 0]} rotation={[0, 0, LA]}>
+        <mesh position={[0, -1.2, 0]}>
+          <boxGeometry args={[0.62, 2.4, 0.58]} />
+          <meshStandardMaterial {...metal} />
+        </mesh>
+      </group>
+
+      {/* Right arm: pivot [+1.0, 7.1], rot 165° → raised up-right, orb above head */}
+      <group position={[1.0, 7.1, 0]} rotation={[0, 0, RA]}>
+        <mesh position={[0, -1.2, 0]}>
+          <boxGeometry args={[0.62, 2.4, 0.58]} />
+          <meshStandardMaterial {...metal} />
+        </mesh>
+        <mesh position={[0, -2.8, 0]}>
+          <sphereGeometry args={[0.52, 12, 12]} />
+          <meshStandardMaterial color="#88ccff" emissive="#4499ff" emissiveIntensity={3.0} roughness={0.1} metalness={0.9} />
+        </mesh>
+        <pointLight position={[0, -2.8, 0]} color="#4499ff" intensity={8} distance={38} decay={2} />
+      </group>
+
+      {/* Crown: 7 spikes at head top */}
+      {Array.from({ length: 7 }, (_, i) => {
+        const a = (i / 7) * Math.PI * 2;
         return (
-          <mesh key={i} position={[0, y, 0]}>
-            <boxGeometry args={[w + 0.04, 0.18, d + 0.04]} />
-            <meshStandardMaterial color={winColor} emissive={accent} emissiveIntensity={winEmI} roughness={0.3} metalness={0.5} transparent opacity={0.85} />
+          <mesh key={i} position={[Math.cos(a) * 0.5, 9.0, Math.sin(a) * 0.5]}>
+            <boxGeometry args={[0.14, 0.58, 0.14]} />
+            <meshStandardMaterial color="#ffdd44" emissive="#ffaa00" emissiveIntensity={1.5} roughness={0.3} metalness={0.8} />
           </mesh>
         );
       })}
-      {/* Crown */}
-      <mesh position={[0, h + 0.6, 0]}>
-        <boxGeometry args={[w * 0.65, 1.2, d * 0.65]} />
-        <meshStandardMaterial color={winColor} roughness={0.4} metalness={0.4} />
-      </mesh>
+      <pointLight position={[0, 9.5, 0]} color="#ffdd44" intensity={4} distance={26} decay={2} />
     </group>
   );
 }
 
-// Round eco-tower with dome
-function EcoTower({ pos, r, h, color, accent }) {
-  const floors = Math.max(2, Math.floor(h / 2));
+function Statue({ gridR }) {
+  if (gridR === 0) return <StoneObelisk />;
+  if (gridR === 1) return <TorchColumn />;
+  if (gridR === 2) return <TriumphArch />;
+  return <Colossus />;
+}
+
+// ─── Buildings ───────────────────────────────────────────────────────────────
+
+// Rule: buildings are always box-shaped (no cylinders — they look like poles).
+// detailed=true  (gridR 0-1, small cities):  individual window squares per floor — full detail.
+// detailed=false (gridR 2-3, large cities):  thin horizontal strip per floor — 1 mesh instead of ~40,
+//   keeps the city smooth to rotate and zoom.
+function Building({ pos, w, d, h, color, accent, winEmI, prestige = 0.25, detailed = true, roofStyle = null, neonColor = null }) {
+  const winColor = windowContrast(color);
+  const floors   = Math.min(12, Math.max(2, Math.floor(h / 2.2)));
+  const floorH   = h / floors;
+
+  let windowEls;
+  if (detailed) {
+    const nWinX = Math.max(1, Math.min(4, Math.round(w / 1.1)));
+    const nWinZ = Math.max(1, Math.min(4, Math.round(d / 1.1)));
+    const wW = 0.30, wH = 0.25, wD = 0.06;
+    windowEls = [];
+    for (let f = 0; f < floors; f++) {
+      const wy = floorH * (f + 0.5);
+      for (let j = 0; j < nWinX; j++) {
+        const wx = -w / 2 + (j + 0.5) * (w / nWinX);
+        windowEls.push(<mesh key={`ff${f}-${j}`} position={[wx, wy,  d / 2 + 0.02]}><boxGeometry args={[wW, wH, wD]} /><meshStandardMaterial color={winColor} emissive={accent} emissiveIntensity={winEmI * 0.5} roughness={0.15} /></mesh>);
+        windowEls.push(<mesh key={`fb${f}-${j}`} position={[wx, wy, -d / 2 - 0.02]}><boxGeometry args={[wW, wH, wD]} /><meshStandardMaterial color={winColor} emissive={accent} emissiveIntensity={winEmI * 0.5} roughness={0.15} /></mesh>);
+      }
+      for (let j = 0; j < nWinZ; j++) {
+        const wz = -d / 2 + (j + 0.5) * (d / nWinZ);
+        windowEls.push(<mesh key={`fl${f}-${j}`} position={[ w / 2 + 0.02, wy, wz]}><boxGeometry args={[wD, wH, wW]} /><meshStandardMaterial color={winColor} emissive={accent} emissiveIntensity={winEmI * 0.5} roughness={0.15} /></mesh>);
+        windowEls.push(<mesh key={`fr${f}-${j}`} position={[-w / 2 - 0.02, wy, wz]}><boxGeometry args={[wD, wH, wW]} /><meshStandardMaterial color={winColor} emissive={accent} emissiveIntensity={winEmI * 0.5} roughness={0.15} /></mesh>);
+      }
+    }
+  } else {
+    // Low-detail: one thin strip per floor — 1 mesh total per floor (vs ~40)
+    windowEls = Array.from({ length: floors - 1 }, (_, i) => (
+      <mesh key={i} position={[0, floorH * (i + 1), 0]}>
+        <boxGeometry args={[w + 0.04, 0.18, d + 0.04]} />
+        <meshStandardMaterial color={winColor} emissive={accent} emissiveIntensity={winEmI * 0.6} roughness={0.3} metalness={0.4} />
+      </mesh>
+    ));
+  }
+
   return (
     <group position={[pos[0], 0, pos[1]]}>
       <mesh position={[0, h / 2, 0]}>
-        <cylinderGeometry args={[r * 0.88, r, h, 10]} />
-        <meshStandardMaterial color={color} roughness={0.5} />
+        <boxGeometry args={[w, h, d]} />
+        <meshStandardMaterial color={color} roughness={0.6} metalness={prestige} />
       </mesh>
-      {Array.from({ length: floors - 1 }, (_, i) => (
-        <mesh key={i} position={[0, (h / floors) * (i + 1), 0]}>
-          <cylinderGeometry args={[r * 0.9, r * 0.9, 0.35, 10]} />
-          <meshStandardMaterial color="#88cc88" emissive={accent} emissiveIntensity={0.08} transparent opacity={0.8} />
-        </mesh>
-      ))}
-      <mesh position={[0, h, 0]}>
-        <sphereGeometry args={[r * 0.88, 9, 7, 0, Math.PI * 2, 0, Math.PI / 2]} />
-        <meshStandardMaterial color={accent} roughness={0.35} metalness={0.3} />
+      {windowEls}
+      <mesh position={[0, h + 0.4, 0]}>
+        <boxGeometry args={[w * 0.7, 0.7, d * 0.7]} />
+        <meshStandardMaterial color={winColor} roughness={0.5} metalness={0.4} />
       </mesh>
+      {roofStyle && (
+        <group position={[0, h + 0.76, 0]}>
+          <RoofDecor style={roofStyle} w={w} d={d} accent={accent} />
+        </group>
+      )}
+      {/* Neon band: all 4 sides — visible from any camera angle (Cyberpunk only) */}
+      {neonColor && (
+        <>
+          <mesh position={[0, h * 0.45,  d / 2 + 0.07]}>
+            <boxGeometry args={[w + 0.14, 0.6, 0.09]} />
+            <meshStandardMaterial color="#0a0a0a" emissive={neonColor} emissiveIntensity={6} roughness={0.05} />
+          </mesh>
+          <mesh position={[0, h * 0.45, -d / 2 - 0.07]}>
+            <boxGeometry args={[w + 0.14, 0.6, 0.09]} />
+            <meshStandardMaterial color="#0a0a0a" emissive={neonColor} emissiveIntensity={6} roughness={0.05} />
+          </mesh>
+          <mesh position={[ w / 2 + 0.07, h * 0.45, 0]}>
+            <boxGeometry args={[0.09, 0.6, d + 0.14]} />
+            <meshStandardMaterial color="#0a0a0a" emissive={neonColor} emissiveIntensity={6} roughness={0.05} />
+          </mesh>
+          <mesh position={[-w / 2 - 0.07, h * 0.45, 0]}>
+            <boxGeometry args={[0.09, 0.6, d + 0.14]} />
+            <meshStandardMaterial color="#0a0a0a" emissive={neonColor} emissiveIntensity={6} roughness={0.05} />
+          </mesh>
+        </>
+      )}
     </group>
   );
 }
 
-// Medieval stone tower + conical roof
+// Medieval tower — box + arrow slits + battlements + cone roof
 function MedTower({ pos, w, h, color, accent }) {
+  const slitFloors = Math.max(2, Math.floor(h / 3));
   return (
     <group position={[pos[0], 0, pos[1]]}>
       <mesh position={[0, h / 2, 0]}>
         <boxGeometry args={[w, h, w]} />
         <meshStandardMaterial color={color} roughness={0.95} />
       </mesh>
+      {/* Arrow slits on all 4 faces per floor */}
+      {Array.from({ length: slitFloors }, (_, f) => {
+        const sy = h * ((f + 1) / (slitFloors + 1));
+        return [
+          <mesh key={`f${f}`} position={[0,      sy,  w / 2 + 0.02]}><boxGeometry args={[0.19, 0.58, 0.07]} /><meshStandardMaterial color="#1a1028" roughness={0.95} /></mesh>,
+          <mesh key={`b${f}`} position={[0,      sy, -w / 2 - 0.02]}><boxGeometry args={[0.19, 0.58, 0.07]} /><meshStandardMaterial color="#1a1028" roughness={0.95} /></mesh>,
+          <mesh key={`l${f}`} position={[-w / 2 - 0.02, sy, 0]}><boxGeometry args={[0.07, 0.58, 0.19]} /><meshStandardMaterial color="#1a1028" roughness={0.95} /></mesh>,
+          <mesh key={`r${f}`} position={[ w / 2 + 0.02, sy, 0]}><boxGeometry args={[0.07, 0.58, 0.19]} /><meshStandardMaterial color="#1a1028" roughness={0.95} /></mesh>,
+        ];
+      })}
       {/* Battlements */}
-      {[[-w*0.3, -w*0.3],[w*0.3,-w*0.3],[-w*0.3,w*0.3],[w*0.3,w*0.3]].map(([bx,bz], i) => (
+      {[[-w*0.3,-w*0.3],[w*0.3,-w*0.3],[-w*0.3,w*0.3],[w*0.3,w*0.3]].map(([bx,bz],i) => (
         <mesh key={i} position={[bx, h + 0.4, bz]}>
           <boxGeometry args={[w * 0.28, 0.8, w * 0.28]} />
           <meshStandardMaterial color={color} roughness={0.95} />
@@ -126,37 +437,8 @@ function MedTower({ pos, w, h, color, accent }) {
   );
 }
 
-// Park tile (flat green)
-function ParkTile({ cx, cz, size, color }) {
-  return (
-    <mesh position={[cx, 0.02, cz]} rotation={[-Math.PI / 2, 0, 0]}>
-      <planeGeometry args={[size, size]} />
-      <meshStandardMaterial color={color} roughness={0.9} />
-    </mesh>
-  );
-}
+// ─── Park vegetation & lighting ──────────────────────────────────────────────
 
-// Fountain
-function Fountain({ pos }) {
-  return (
-    <group position={pos}>
-      <mesh position={[0, 0.2, 0]}>
-        <cylinderGeometry args={[2.2, 2.5, 0.4, 16]} />
-        <meshStandardMaterial color="#aabbcc" roughness={0.3} />
-      </mesh>
-      <mesh position={[0, 0.7, 0]}>
-        <cylinderGeometry args={[0.2, 0.3, 1.0, 8]} />
-        <meshStandardMaterial color="#ccddee" roughness={0.4} />
-      </mesh>
-      <mesh position={[0, 1.4, 0]}>
-        <sphereGeometry args={[0.55, 8, 8]} />
-        <meshStandardMaterial color="#aaccee" emissive="#6699bb" emissiveIntensity={0.4} roughness={0.2} />
-      </mesh>
-    </group>
-  );
-}
-
-// Tree
 function Tree({ pos, s = 1 }) {
   return (
     <group position={pos} scale={s}>
@@ -172,7 +454,6 @@ function Tree({ pos, s = 1 }) {
   );
 }
 
-// Street lantern
 function Lantern({ pos }) {
   return (
     <group position={pos}>
@@ -188,50 +469,99 @@ function Lantern({ pos }) {
   );
 }
 
-function CityScene({ metrics, style, colorPalette, level, tokenId }) {
+function RoofDecor({ style, w, d, accent }) {
+  if (style === "antenna") {
+    return (
+      <group>
+        <mesh position={[0, 0.75, 0]}>
+          <boxGeometry args={[0.07, 1.5, 0.07]} />
+          <meshStandardMaterial color="#444" roughness={0.5} metalness={0.8} />
+        </mesh>
+        <mesh position={[0, 0.38, 0]} rotation={[0, 0, Math.PI / 2]}>
+          <boxGeometry args={[0.55, 0.05, 0.05]} />
+          <meshStandardMaterial color="#555" roughness={0.5} metalness={0.8} />
+        </mesh>
+        <mesh position={[0, 1.5, 0]}>
+          <sphereGeometry args={[0.055, 5, 5]} />
+          <meshStandardMaterial color={accent} emissive={accent} emissiveIntensity={2.5} roughness={0.1} />
+        </mesh>
+      </group>
+    );
+  }
+  if (style === "finial") {
+    return (
+      <group>
+        <mesh position={[0, 0.5, 0]}>
+          <boxGeometry args={[0.08, 1.0, 0.08]} />
+          <meshStandardMaterial color={accent} roughness={0.3} metalness={0.75} />
+        </mesh>
+        <mesh position={[0, 1.1, 0]}>
+          <sphereGeometry args={[0.13, 7, 7]} />
+          <meshStandardMaterial color={accent} emissive={accent} emissiveIntensity={0.6} roughness={0.2} metalness={0.85} />
+        </mesh>
+      </group>
+    );
+  }
+  if (style === "blob") {
+    return (
+      <mesh position={[0, 0.28, 0]}>
+        <sphereGeometry args={[0.28, 6, 5]} />
+        <meshStandardMaterial color="#44cc66" emissive="#22aa44" emissiveIntensity={1.0} roughness={0.4} />
+      </mesh>
+    );
+  }
+  if (style === "panel") {
+    return (
+      <mesh position={[0, 0.04, 0]}>
+        <boxGeometry args={[w * 0.5, 0.05, d * 0.5]} />
+        <meshStandardMaterial color="#1a4a7a" roughness={0.25} metalness={0.7} />
+      </mesh>
+    );
+  }
+  return null;
+}
+
+// ─── City scene ──────────────────────────────────────────────────────────────
+
+function CityScene({ metrics, style, colorPalette, tokenId }) {
   const { followers = 0, tweetCount = 0, engagement = 0, following = 0 } = metrics;
   const cfg = STYLE_CFG[style] || STYLE_CFG.Cyberpunk;
   const { primary, secondary, accent } = colorPalette;
-
-  const groundColor = "#3a8a30";
-  const parkColor   = "#4aaa3a";
-  const roadColor   = "#1e1e1e"; // asphalt — always dark gray, never invisible
-
-  const isEco  = style === "Eco-Futurism";
-  const isBio  = style === "Bio-Punk";
-  const isMed  = style === "Medieval";
-
-  // Window color: lighter tint of primary
-  const winColor = style === "Minimalist" ? "#aaddff"
-    : style === "Cyberpunk" ? "#002244"
-    : style === "Medieval"  ? "#3a2800"
-    : style === "Baroque"   ? "#1a0030"
-    : "#223344";
+  const isMed    = style === "Medieval";
+  const isCyber  = style === "Cyberpunk";
+  const roofDeco = isMed ? null : (ROOF_DECOR[style] || null);
 
   const data = useMemo(() => {
-    const seed = (((tokenId | 0) * 9973) + (followers | 0)) >>> 0;
-    const rng  = mkRng(seed);
+    const seed     = (((tokenId | 0) * 9973) + (followers | 0)) >>> 0;
+    const rng      = mkRng(seed);
+    const decorRng = mkRng(seed + 77777); // separate — doesn't shift building positions
 
-    // --- FOLLOWERS → city grid size ---
-    // <1k → tiny 2×2 blocks, 1k-20k → 3×3, >20k → 5×5
-    const gridR = followers >= 20000 ? 2 : followers >= 1000 ? 1 : 0;
+    // FOLLOWERS → city grid size. Each level visually distinct.
+    const gridR = followers >= 50000 ? 3 : followers >= 5000 ? 2 : followers >= 500 ? 1 : 0;
 
-    // --- TWEET COUNT → buildings per block ---
+    // TWEET COUNT → buildings per block (density)
     const perBlockBase = tweetCount >= 10000 ? 6 : tweetCount >= 1000 ? 4 : tweetCount >= 100 ? 3 : 2;
 
-    // --- ENGAGEMENT → building height (skyscraper vs shack) ---
-    const minH = 3;
-    const maxH = engagement >= 3 ? 30 : engagement >= 1 ? 18 : engagement >= 0.3 ? 10 : 5;
+    // ENGAGEMENT → building height range.
+    // minH also grows with gridR so every level has a taller skyline floor.
+    const minH = [3, 5, 8, 12][gridR];
+    const engBoost = engagement >= 3 ? [20, 24, 28, 32][gridR]
+                   : engagement >= 1 ? [12, 15, 18, 22][gridR]
+                   : engagement >= 0.3 ? [6, 8, 11, 15][gridR]
+                   : [3, 5, 7, 10][gridR];
+    const maxH = minH + engBoost;
 
-    // --- FOLLOWERS/FOLLOWING ratio → material prestige (metalness) ---
-    const ratio = following > 0 ? followers / following : followers > 0 ? 5 : 1;
+    // FOLLOWERS/FOLLOWING ratio → prestige (metalness)
+    const ratio   = following > 0 ? followers / following : followers > 0 ? 5 : 1;
     const prestige = Math.min(Math.max(ratio / 20, 0.08), 0.8);
 
-    // Block offsets — always use STEP-aligned centers so buildings never land on roads.
-    // Roads are at ±(i+0.5)*STEP, blocks are at ±STEP, ±2*STEP etc — always clear.
+    // Building width also scales with city level — bigger cities, bigger buildings
+    const maxBW = [3.2, 3.8, 4.4, 5.2][gridR];
+
+    // Block offsets — STEP-aligned so blocks never overlap roads.
+    // Roads at ±(i+0.5)*STEP; blocks at ±STEP, ±2STEP, ±3STEP — always clear.
     const blockOffsets = [];
     if (gridR === 0) {
-      // Tiny city: just 4 corner blocks (same positions as gridR=1 corners)
       for (const row of [-1, 1])
         for (const col of [-1, 1])
           blockOffsets.push({ bx: col * STEP, bz: row * STEP });
@@ -242,83 +572,94 @@ function CityScene({ metrics, style, colorPalette, level, tokenId }) {
             blockOffsets.push({ bx: col * STEP, bz: row * STEP });
     }
 
-    // Safe zone inside each block: shrink by 4 units on each side so buildings
-    // never spill onto adjacent roads (rule: buildings don't stand on roads).
-    const safeHalf = (BLOCK - 6) / 2; // = 5 units from block center
+    // Safe zone — buildings stay inside block, never spill onto roads.
+    const safeHalf = (BLOCK - 6) / 2;
 
-    // Building width inversely proportional to density
-    const maxBW = perBlockBase <= 2 ? 3.8 : perBlockBase <= 4 ? 2.8 : 2.0;
-
-    // Buildings placed randomly inside safe zone with minimum spacing enforced
+    // Regular buildings: random scatter with min-spacing, degreened colors
     const buildings = [];
     blockOffsets.forEach(({ bx, bz }) => {
-      const count = perBlockBase + (rng() > 0.7 ? 1 : 0);
+      const count  = perBlockBase + (rng() > 0.7 ? 1 : 0);
       const placed = [];
       for (let attempt = 0; placed.length < count && attempt < count * 15; attempt++) {
         const px = bx + (rng() - 0.5) * 2 * safeHalf;
         const pz = bz + (rng() - 0.5) * 2 * safeHalf;
-        const minDist = maxBW * 1.1;
-        if (placed.every(p => Math.hypot(p[0] - px, p[1] - pz) >= minDist)) {
+        if (placed.every(p => Math.hypot(p[0] - px, p[1] - pz) >= maxBW * 1.15)) {
           placed.push([px, pz]);
           const h = minH + rng() * (maxH - minH);
           const w = maxBW * 0.55 + rng() * maxBW * 0.45;
           const d = maxBW * 0.55 + rng() * maxBW * 0.45;
-          const color = rng() > 0.45 ? primary : secondary;
+          const color = degreen(rng() > 0.45 ? primary : secondary);
           buildings.push({ pos: [px, pz], w, d, h, color, accent, prestige });
         }
       }
     });
 
-    // Roads between blocks
-    const totalSize = (2 * Math.max(gridR, 1) + 1) * BLOCK + 2 * Math.max(gridR, 1) * ROAD + 10;
-    const roadCenters = []; // track road center coords for collision checks
+    // Assign roof decor and neon signs using decorRng (independent — doesn't shift main rng)
+    buildings.forEach(b => {
+      b.roofStyle = roofDeco && decorRng() > 0.38 ? roofDeco : null;
+      b.neonColor = decorRng() < 0.38
+        ? (isCyber ? NEON_COLORS[Math.floor(decorRng() * NEON_COLORS.length)] : accent)
+        : null;
+    });
+
+    // Central landmark tower — the taller the city level, the more dominant.
+    // Placed at the block nearest to center (e.g. STEP, STEP corner).
+    // gridR 0 = no landmark, 1+ = one or more signature towers.
+    const landmarks = [];
+    if (gridR >= 1) {
+      const lmPos = [STEP, STEP]; // closest block to center
+      const lmH   = maxH * [0, 1.8, 2.2, 2.8][gridR];
+      const lmW   = maxBW * 0.9;
+      const lmColor = degreen(primary);
+      landmarks.push({ pos: lmPos, w: lmW, d: lmW, h: lmH, color: lmColor, accent, prestige: Math.min(prestige + 0.2, 0.9), roofStyle: roofDeco, neonColor: isCyber ? NEON_COLORS[0] : accent });
+
+      // For gridR 3 — additional landmark towers at the other 3 nearest blocks
+      if (gridR === 3) {
+        [[-STEP, STEP], [STEP, -STEP], [-STEP, -STEP]].forEach(p => {
+          landmarks.push({ pos: p, w: lmW * 0.8, d: lmW * 0.8, h: lmH * 0.75, color: lmColor, accent, prestige: Math.min(prestige + 0.15, 0.85), roofStyle: roofDeco, neonColor: isCyber ? NEON_COLORS[2] : accent });
+        });
+      }
+    }
+
+    // Roads and centers (for collision checks)
+    const gr = Math.max(gridR, 1);
+    const totalSize = (2 * gr + 1) * BLOCK + 2 * gr * ROAD + 10;
+    const roadCenters = [];
     const roads = [];
-    for (let i = -Math.max(gridR, 1); i < Math.max(gridR, 1); i++) {
+    for (let i = -gr; i < gr; i++) {
       const t = (i + 0.5) * STEP;
       roadCenters.push(t);
       roads.push({ x: t, z: 0, len: totalSize, horiz: false });
       roads.push({ x: 0, z: t, len: totalSize, horiz: true });
     }
 
-    // Rule: nothing stands on roads. A point is on a road if it falls within
-    // ROAD/2 of any road center on either axis.
+    // Rule: nothing stands on roads
     const isOnRoad = (x, z) =>
       roadCenters.some(rc => Math.abs(x - rc) <= ROAD / 2 + 0.3) ||
       roadCenters.some(rc => Math.abs(z - rc) <= ROAD / 2 + 0.3);
 
-    // --- FOLLOWING → trees (more social = greener city) ---
-    const treeRng = mkRng(seed + 1);
-    const trees = [];
+    // FOLLOWING → trees in park
+    const treeRng      = mkRng(seed + 1);
+    const trees        = [];
     const numParkTrees = Math.min(8 + Math.floor(following / 30), 60);
     for (let i = 0; i < numParkTrees; i++) {
       const angle = (i / numParkTrees) * Math.PI * 2 + treeRng() * 0.4;
-      const r = 5 + treeRng() * 2.5;
+      const r     = 5 + treeRng() * 2.5;
       trees.push({ pos: [Math.cos(angle) * r, 0, Math.sin(angle) * r], s: 0.7 + treeRng() * 0.5 });
     }
-    if (isEco || isBio) {
-      for (let i = 0; i < 30; i++) {
-        const tx = (treeRng() - 0.5) * totalSize * 0.85;
-        const tz = (treeRng() - 0.5) * totalSize * 0.85;
-        trees.push({ pos: [tx, 0, tz], s: 0.5 + treeRng() * 0.6 });
-      }
-    }
 
-    // --- TWEET COUNT → lantern density along roads ---
-    // Rule: lanterns stand evenly along both sides of every road, never on road surface.
-    // They alternate sides (left/right) at fixed intervals.
+    // TWEET COUNT → lantern density along roads.
+    // Rule: lanterns evenly spaced on sidewalk, alternating sides, never on road surface.
     const sidewalk = ROAD / 2 + 1.8;
     const spacing  = tweetCount >= 1000 ? 9 : tweetCount >= 100 ? 12 : 16;
     const halfLen  = totalSize / 2;
     const lanterns = [];
-
     roadCenters.forEach(rc => {
-      // Vertical road at x=rc — lamps run along Z axis
       let side = 1;
       for (let z = -halfLen + spacing / 2; z <= halfLen; z += spacing, side *= -1) {
         const lx = rc + sidewalk * side;
         if (!isOnRoad(lx, z)) lanterns.push([lx, 0, z]);
       }
-      // Horizontal road at z=rc — lamps run along X axis
       side = 1;
       for (let x = -halfLen + spacing / 2; x <= halfLen; x += spacing, side *= -1) {
         const lz = rc + sidewalk * side;
@@ -326,69 +667,65 @@ function CityScene({ metrics, style, colorPalette, level, tokenId }) {
       }
     });
 
-    return { buildings, roads, trees, lanterns, totalSize };
-  }, [followers, tweetCount, engagement, following, tokenId, style, primary, secondary, accent]);
+    return { buildings, landmarks, roads, trees, lanterns, totalSize, gridR };
+  }, [followers, tweetCount, engagement, following, tokenId, primary, secondary, accent, roofDeco, isCyber]);
 
   return (
     <>
       <color attach="background" args={[cfg.sky]} />
-      <fog attach="fog" args={[cfg.sky, 80, 200]} />
+      <fog attach="fog" args={[cfg.sky, 80, 240]} />
 
       <ambientLight intensity={cfg.ambI} />
       <directionalLight position={[25, 35, 20]} intensity={cfg.dirI} />
-      <directionalLight position={[-15, 20, -10]} intensity={cfg.dirI * 0.35} color={accent} />
-      <hemisphereLight args={[cfg.sky, groundColor, 0.6]} />
-      <pointLight position={[0, 12, 0]} color={accent} intensity={1.5} distance={60} decay={1.5} />
+      <directionalLight position={[-15, 20, -10]} intensity={cfg.dirI * 0.3} color={accent} />
+      <hemisphereLight args={[cfg.sky, GROUND_COLOR, 0.5]} />
 
-      {/* no stars — always daytime */}
+      <Ground size={data.totalSize + 40} />
+      {data.roads.map((r, i) => <RoadStrip key={i} {...r} />)}
 
-      {/* Ground */}
-      <Ground size={data.totalSize + 30} color={groundColor} />
+      {/* Park with statue — statue changes every city level */}
+      <ParkTile />
+      <Statue gridR={data.gridR} />
 
-      {/* Roads */}
-      {data.roads.map((r, i) => <Road key={i} {...r} color={roadColor} />)}
+      {/* Regular buildings — detailed windows only for small cities (gridR ≤ 1) */}
+      {data.buildings.map((b, i) =>
+        isMed
+          ? <MedTower key={i} pos={b.pos} w={b.w * 0.75} h={b.h} color={b.color} accent={accent} />
+          : <Building key={`b${i}`} {...b} winEmI={cfg.winEmI} detailed={data.gridR <= 1} />
+      )}
 
-      {/* Central park */}
-      <ParkTile cx={0} cz={0} size={BLOCK} color={parkColor} />
-      <Fountain pos={[0, 0, 0]} />
+      {/* Landmark towers */}
+      {data.landmarks.map((b, i) =>
+        <Building key={`lm${i}`} {...b} winEmI={cfg.winEmI * 1.4} detailed={data.gridR <= 1} />
+      )}
 
-      {/* Buildings */}
-      {data.buildings.map((b, i) => {
-        if (isEco || isBio)
-          return <EcoTower key={i} pos={b.pos} r={(b.w / 2)} h={b.h} color={b.color} accent={accent} />;
-        if (isMed)
-          return <MedTower key={i} pos={b.pos} w={b.w * 0.75} h={b.h} color={b.color} accent={accent} />;
-        return (
-          <Building key={i} {...b}
-            winColor={winColor}
-            winEmI={cfg.winEmI}
-            style={style}
-            prestige={b.prestige}
-          />
-        );
-      })}
-
-      {/* Trees */}
-      {data.trees.map((t, i) => <Tree key={i} pos={t.pos} s={t.s} />)}
-
-      {/* Lanterns */}
-      {data.lanterns.map((pos, i) => <Lantern key={i} pos={pos} />)}
+      {data.trees.map((t, i)   => <Tree    key={i} pos={t.pos} s={t.s} />)}
+      {data.lanterns.map((p,i) => <Lantern key={i} pos={p} />)}
     </>
   );
 }
+
+// Camera pulls back as city grows
+function camPos(followers) {
+  const gridR = followers >= 50000 ? 3 : followers >= 5000 ? 2 : followers >= 500 ? 1 : 0;
+  const d = 28 + gridR * 20;
+  return [d, d * 0.8, d];
+}
+
+// ─── Public component ────────────────────────────────────────────────────────
 
 export default function CityRenderer({ city, tokenId }) {
   const [open, setOpen] = useState(false);
 
   const {
-    level = 1,
-    style = "Cyberpunk",
+    style        = "Cyberpunk",
     colorPalette = { primary: "#2255aa", secondary: "#1a3377", accent: "#00ccff" },
     followers = 0, tweetCount = 0, following = 0, engagement = 0,
   } = city || {};
 
-  const metrics = { followers, tweetCount, following, engagement };
-  const sceneProps = { metrics, style, colorPalette, level, tokenId: tokenId || 0 };
+  const metrics    = { followers, tweetCount, following, engagement };
+  const sceneProps = { metrics, style, colorPalette, tokenId: tokenId || 0 };
+  const cp         = camPos(followers);
 
   return (
     <>
@@ -396,7 +733,7 @@ export default function CityRenderer({ city, tokenId }) {
         style={{ width: 600, height: 320, borderRadius: 12, overflow: "hidden", cursor: "pointer", position: "relative" }}
         onClick={() => setOpen(true)}
       >
-        <Canvas camera={{ position: [28, 22, 28], fov: 45 }}>
+        <Canvas camera={{ position: cp, fov: 45 }}>
           <Suspense fallback={null}>
             <CityScene {...sceneProps} />
             <OrbitControls enableZoom={false} enablePan={false} enableRotate={false} autoRotate autoRotateSpeed={0.6} />
@@ -416,10 +753,10 @@ export default function CityRenderer({ city, tokenId }) {
             style={{ width: "90vw", height: "85vh", borderRadius: 16, overflow: "hidden", position: "relative" }}
             onClick={e => e.stopPropagation()}
           >
-            <Canvas camera={{ position: [30, 24, 30], fov: 42 }}>
+            <Canvas camera={{ position: [cp[0] * 1.1, cp[1] * 1.1, cp[2] * 1.1], fov: 42 }}>
               <Suspense fallback={null}>
                 <CityScene {...sceneProps} />
-                <OrbitControls enablePan={false} minDistance={8} maxDistance={120} maxPolarAngle={Math.PI / 2 - 0.04} autoRotate autoRotateSpeed={0.35} />
+                <OrbitControls enablePan={false} minDistance={8} maxDistance={250} maxPolarAngle={Math.PI / 2 - 0.04} autoRotate autoRotateSpeed={0.35} />
               </Suspense>
             </Canvas>
             <button
