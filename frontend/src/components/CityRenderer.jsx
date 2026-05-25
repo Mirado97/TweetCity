@@ -521,9 +521,147 @@ function RoofDecor({ style, w, d, accent }) {
   return null;
 }
 
+// ─── Gift visual objects ──────────────────────────────────────────────────────
+
+// Graffiti / StreetArt — emissive panel on a "wall" at park edge
+function GiftWallArt({ pos, seed, large = false }) {
+  const COLORS = ["#ff00cc", "#00ffee", "#ff8800", "#44ff22", "#ff2266", "#aa44ff"];
+  const color  = COLORS[seed % COLORS.length];
+  const w = large ? 3.2 : 1.8;
+  const h = large ? 1.6 : 0.9;
+  return (
+    <group position={pos}>
+      <mesh>
+        <boxGeometry args={[w, h, 0.12]} />
+        <meshStandardMaterial color="#0a0a0a" emissive={color} emissiveIntensity={4} roughness={0.08} />
+      </mesh>
+      {/* Frame */}
+      <mesh position={[0, 0, -0.04]}>
+        <boxGeometry args={[w + 0.18, h + 0.18, 0.08]} />
+        <meshStandardMaterial color="#222" roughness={0.5} metalness={0.6} />
+      </mesh>
+    </group>
+  );
+}
+
+// Flag — pole + coloured banner
+function GiftFlag({ pos, seed }) {
+  const COLORS = ["#dd2200", "#0055dd", "#ffaa00", "#00cc55", "#aa00dd"];
+  const color  = COLORS[seed % COLORS.length];
+  return (
+    <group position={pos}>
+      <mesh position={[0, 4.5, 0]}>
+        <cylinderGeometry args={[0.07, 0.07, 9, 5]} />
+        <meshStandardMaterial color="#999" roughness={0.5} metalness={0.7} />
+      </mesh>
+      <mesh position={[1.0, 8.0, 0]}>
+        <boxGeometry args={[2.0, 0.85, 0.07]} />
+        <meshStandardMaterial color={color} roughness={0.6} />
+      </mesh>
+    </group>
+  );
+}
+
+// Billboard — tall pole + glowing sign board
+function GiftBillboard({ pos, seed }) {
+  const COLORS = ["#ff00cc", "#00ffee", "#ffaa00", "#ff2266", "#44aaff"];
+  const color  = COLORS[seed % COLORS.length];
+  return (
+    <group position={pos}>
+      <mesh position={[0, 4, 0]}>
+        <cylinderGeometry args={[0.12, 0.12, 8, 6]} />
+        <meshStandardMaterial color="#555" roughness={0.6} metalness={0.8} />
+      </mesh>
+      <mesh position={[0, 8.2, 0]}>
+        <boxGeometry args={[4.0, 1.8, 0.22]} />
+        <meshStandardMaterial color="#0a0a0a" emissive={color} emissiveIntensity={5} roughness={0.05} />
+      </mesh>
+      <pointLight position={[0, 8.2, 0.5]} color={color} intensity={4} distance={18} decay={2} />
+    </group>
+  );
+}
+
+// Monument — unique shape per seed (3 variants)
+function GiftMonument({ pos, seed }) {
+  const t = seed % 3;
+  const mat = { roughness: 0.05, metalness: 0.9 };
+
+  if (t === 0) {
+    // Golden orb on pedestal
+    return (
+      <group position={pos}>
+        <mesh position={[0, 0.6, 0]}><boxGeometry args={[1.6, 1.2, 1.6]} /><meshStandardMaterial color="#888" roughness={0.9} /></mesh>
+        <mesh position={[0, 1.7, 0]}><boxGeometry args={[0.1, 0.6, 0.1]} /><meshStandardMaterial color="#aaa" roughness={0.5} /></mesh>
+        <mesh position={[0, 2.2, 0]}>
+          <sphereGeometry args={[0.75, 12, 12]} />
+          <meshStandardMaterial color="#ffcc44" emissive="#aa8800" emissiveIntensity={1.2} {...mat} />
+        </mesh>
+        <pointLight position={[0, 2.2, 0]} color="#ffcc44" intensity={5} distance={14} decay={2} />
+      </group>
+    );
+  }
+  if (t === 1) {
+    // Crystal diamond
+    return (
+      <group position={pos}>
+        <mesh position={[0, 0.6, 0]}><boxGeometry args={[1.4, 1.2, 1.4]} /><meshStandardMaterial color="#888" roughness={0.9} /></mesh>
+        <mesh position={[0, 2.1, 0]} rotation={[0, Math.PI / 4, 0]}>
+          <octahedronGeometry args={[0.88]} />
+          <meshStandardMaterial color="#44ccff" emissive="#0077ff" emissiveIntensity={2} {...mat} />
+        </mesh>
+        <pointLight position={[0, 2.1, 0]} color="#44ccff" intensity={5} distance={16} decay={2} />
+      </group>
+    );
+  }
+  // Star / burst
+  return (
+    <group position={pos}>
+      <mesh position={[0, 0.6, 0]}><boxGeometry args={[1.5, 1.2, 1.5]} /><meshStandardMaterial color="#888" roughness={0.9} /></mesh>
+      {[0, Math.PI / 3, (2 * Math.PI) / 3].map((rot, i) => (
+        <mesh key={i} position={[0, 2.1, 0]} rotation={[0, rot, 0]}>
+          <boxGeometry args={[1.6, 0.28, 0.28]} />
+          <meshStandardMaterial color="#ff8800" emissive="#ff4400" emissiveIntensity={2.5} roughness={0.1} metalness={0.8} />
+        </mesh>
+      ))}
+      <pointLight position={[0, 2.1, 0]} color="#ff8800" intensity={4} distance={14} decay={2} />
+    </group>
+  );
+}
+
+// Dispatches to the right component based on giftType
+// Positions are deterministic: gifts spread around the park, max 4 per slot
+const GIFT_SLOTS = {
+  0: [[-7.5, 0.45, 0], [7.5, 0.45, 0], [0, 0.45, -7.5], [0, 0.45, 7.5]],   // Graffiti — wall panels at park edge
+  1: [[-7.5, 1.2, 0], [7.5, 1.2, 0], [0, 1.2, -7.5], [0, 1.2, 7.5]],        // StreetArt — larger panels
+  2: [[6, 0, 6], [-6, 0, 6], [6, 0, -6], [-6, 0, -6]],                       // Flag — park corners
+  3: [[5, 0, -5], [-5, 0, -5], [5, 0, 5], [-5, 0, 5]],                       // Billboard — park quadrants
+  4: [[3.5, 0, 0], [-3.5, 0, 0], [0, 0, 3.5], [0, 0, -3.5]],                 // Monument — near statue
+};
+
+function GiftObjects({ gifts }) {
+  if (!gifts || gifts.length === 0) return null;
+  // Count per type to pick slot index
+  const typeCount = [0, 0, 0, 0, 0, 0];
+  return gifts.map((gift) => {
+    const t   = Number(gift.giftType);
+    const idx = typeCount[t] % 4;
+    typeCount[t]++;
+    const slots = GIFT_SLOTS[t];
+    if (!slots) return null;
+    const pos = slots[idx];
+    const seed = Number(gift.id ?? 0);
+    if (t === 0) return <GiftWallArt key={gift.id} pos={pos} seed={seed} large={false} />;
+    if (t === 1) return <GiftWallArt key={gift.id} pos={pos} seed={seed} large={true}  />;
+    if (t === 2) return <GiftFlag     key={gift.id} pos={pos} seed={seed} />;
+    if (t === 3) return <GiftBillboard key={gift.id} pos={pos} seed={seed} />;
+    if (t === 4) return <GiftMonument  key={gift.id} pos={pos} seed={seed} />;
+    return null; // District (type 5) — visual TBD
+  });
+}
+
 // ─── City scene ──────────────────────────────────────────────────────────────
 
-function CityScene({ metrics, style, colorPalette, tokenId }) {
+function CityScene({ metrics, style, colorPalette, tokenId, gifts = [] }) {
   const { followers = 0, tweetCount = 0, engagement = 0, following = 0 } = metrics;
   const cfg = STYLE_CFG[style] || STYLE_CFG.Cyberpunk;
   const { primary, secondary, accent } = colorPalette;
@@ -701,6 +839,9 @@ function CityScene({ metrics, style, colorPalette, tokenId }) {
 
       {data.trees.map((t, i)   => <Tree    key={i} pos={t.pos} s={t.s} />)}
       {data.lanterns.map((p,i) => <Lantern key={i} pos={p} />)}
+
+      {/* Gift objects placed in city by other users */}
+      <GiftObjects gifts={gifts} />
     </>
   );
 }
@@ -714,7 +855,9 @@ function camPos(followers) {
 
 // ─── Public component ────────────────────────────────────────────────────────
 
-export default function CityRenderer({ city, tokenId }) {
+// gifts: array of active gift objects from CityGifts contract (Accepted + Verified)
+// Shape: [{ id, giftType, tweetUrl, buyer, status }, ...]
+export default function CityRenderer({ city, tokenId, gifts = [] }) {
   const [open, setOpen] = useState(false);
 
   const {
@@ -724,7 +867,7 @@ export default function CityRenderer({ city, tokenId }) {
   } = city || {};
 
   const metrics    = { followers, tweetCount, following, engagement };
-  const sceneProps = { metrics, style, colorPalette, tokenId: tokenId || 0 };
+  const sceneProps = { metrics, style, colorPalette, tokenId: tokenId || 0, gifts };
   const cp         = camPos(followers);
 
   return (
