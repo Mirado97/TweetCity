@@ -677,8 +677,8 @@ function CityScene({ metrics, style, colorPalette, tokenId, gifts = [] }) {
     // FOLLOWERS → city grid size. Each level visually distinct.
     const gridR = followers >= 50000 ? 3 : followers >= 5000 ? 2 : followers >= 500 ? 1 : 0;
 
-    // TWEET COUNT → buildings per block (density)
-    const perBlockBase = tweetCount >= 10000 ? 6 : tweetCount >= 1000 ? 4 : tweetCount >= 100 ? 3 : 2;
+    // Max 2 buildings per block — keeps city readable and uncluttered
+    const perBlockBase = 2;
 
     // ENGAGEMENT → building height range.
     // minH also grows with gridR so every level has a taller skyline floor.
@@ -713,19 +713,24 @@ function CityScene({ metrics, style, colorPalette, tokenId, gifts = [] }) {
     // Safe zone — buildings stay inside block, never spill onto roads.
     const safeHalf = (BLOCK - 6) / 2;
 
-    // Regular buildings: random scatter with min-spacing, degreened colors
+    // Regular buildings: 1–2 per block, proper rectangular footprint, tall enough
     const buildings = [];
     blockOffsets.forEach(({ bx, bz }) => {
-      const count  = perBlockBase + (rng() > 0.7 ? 1 : 0);
+      const count = 1 + (rng() > 0.45 ? 1 : 0); // 1 or 2 per block
       const placed = [];
-      for (let attempt = 0; placed.length < count && attempt < count * 15; attempt++) {
+      for (let attempt = 0; placed.length < count && attempt < 30; attempt++) {
         const px = bx + (rng() - 0.5) * 2 * safeHalf;
         const pz = bz + (rng() - 0.5) * 2 * safeHalf;
-        if (placed.every(p => Math.hypot(p[0] - px, p[1] - pz) >= maxBW * 1.15)) {
+        // Footprint: 45–90% of maxBW, rectangular (not square)
+        const bw = maxBW * 0.45 + rng() * maxBW * 0.45;
+        const bd = bw * (0.5 + rng() * 0.9); // depth 50–140% of width
+        if (placed.every(p => Math.hypot(p[0] - px, p[1] - pz) >= Math.max(bw, bd) * 2.4)) {
           placed.push([px, pz]);
-          const w = maxBW * 0.22 + rng() * maxBW * 0.28;
-          const d = maxBW * 0.22 + rng() * maxBW * 0.28;
-          const h = Math.max(minH + rng() * (maxH - minH), Math.max(w, d) * 2.5);
+          const w = bw;
+          const d = bd;
+          // Height: engagement-driven floor, but always >= 2× largest footprint dim
+          const rawH = minH + rng() * (maxH - minH);
+          const h = Math.max(rawH, Math.max(w, d) * 2.0);
           const color = degreen(rng() > 0.45 ? primary : secondary);
           buildings.push({ pos: [px, pz], w, d, h, color, accent, prestige });
         }
