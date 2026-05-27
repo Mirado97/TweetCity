@@ -50,6 +50,17 @@ const ROOF_DECOR = {
 };
 const NEON_COLORS = ["#ff00cc", "#00ffee", "#ff8800", "#ff2266"];
 
+export const LEVEL_NAMES = [
+  "Hamlet", "Village", "Borough", "Town", "Township",
+  "City", "Metropolis", "Megalopolis", "Megacity", "World Capital",
+];
+export const LEVEL_THRESHOLDS = [0, 50, 250, 1000, 3000, 10000, 30000, 100000, 300000, 1000000];
+export function cityLevel(followers) {
+  let l = 0;
+  for (let i = 0; i < LEVEL_THRESHOLDS.length; i++) if (followers >= LEVEL_THRESHOLDS[i]) l = i;
+  return l;
+}
+
 // Ground always green. Roads always asphalt. Park always bright green.
 const GROUND_COLOR = "#3a8a30";
 const PARK_COLOR   = "#4aaa3a";
@@ -521,6 +532,81 @@ function RoofDecor({ style, w, d, accent }) {
   return null;
 }
 
+// ─── POI Components ──────────────────────────────────────────────────────────
+
+function Pond() {
+  const sw = BLOCK - 3, sd = BLOCK - 4;
+  return (
+    <group>
+      <mesh position={[0, 0.02, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+        <planeGeometry args={[sw, sd]} />
+        <meshStandardMaterial color="#b8a060" roughness={0.95} />
+      </mesh>
+      <mesh position={[0, 0.09, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+        <planeGeometry args={[sw - 3, sd - 3]} />
+        <meshStandardMaterial color="#1a6090" roughness={0.06} metalness={0.35} />
+      </mesh>
+      {[[-3.5, -3.5], [3.5, 3.5], [-3.5, 3.5], [3.5, -3.5]].map(([rx, rz], i) => (
+        <mesh key={i} position={[rx, 0.8 + i * 0.15, rz]}>
+          <cylinderGeometry args={[0.08, 0.13, 1.6 + i * 0.25, 5]} />
+          <meshStandardMaterial color="#5a8a30" roughness={0.9} />
+        </mesh>
+      ))}
+    </group>
+  );
+}
+
+function Cinema({ accent }) {
+  const cw = BLOCK - 2, cd = BLOCK * 0.55;
+  return (
+    <group>
+      <mesh position={[0, 3.5, 0]}>
+        <boxGeometry args={[cw, 7, cd]} />
+        <meshStandardMaterial color="#252535" roughness={0.7} />
+      </mesh>
+      <mesh position={[0, 7.5, cd / 2 + 0.12]}>
+        <boxGeometry args={[cw - 1.5, 1.8, 0.18]} />
+        <meshStandardMaterial color="#060608" emissive={accent} emissiveIntensity={5} roughness={0.05} />
+      </mesh>
+      {[-3, 0, 3].map((ox, i) => (
+        <mesh key={i} position={[ox, 1.5, cd / 2 + 0.12]}>
+          <boxGeometry args={[1.2, 3, 0.14]} />
+          <meshStandardMaterial color="#0a0a14" emissive={accent} emissiveIntensity={1.2} roughness={0.2} />
+        </mesh>
+      ))}
+      <mesh position={[0, 2.4, cd / 2 + 1.3]}>
+        <boxGeometry args={[6, 0.2, 2.6]} />
+        <meshStandardMaterial color="#1a1a28" roughness={0.5} metalness={0.55} />
+      </mesh>
+      <pointLight position={[0, 7.6, cd / 2 + 0.6]} color={accent} intensity={4} distance={22} decay={2} />
+    </group>
+  );
+}
+
+function Market({ primary }) {
+  const spots = [[-4, -4], [-4, 0], [-4, 4], [0, -4], [0, 4], [4, -4], [4, 0], [4, 4]];
+  return (
+    <group>
+      {spots.map(([sx, sz], i) => (
+        <group key={i} position={[sx, 0, sz]}>
+          <mesh position={[0, 0.75, 0]}>
+            <cylinderGeometry args={[0.1, 0.1, 1.5, 5]} />
+            <meshStandardMaterial color="#666" roughness={0.6} metalness={0.4} />
+          </mesh>
+          <mesh position={[0, 2.15, 0]} rotation={[-0.12, 0, 0]}>
+            <boxGeometry args={[3.0, 0.14, 3.0]} />
+            <meshStandardMaterial color={i % 2 === 0 ? primary : "#cc3322"} roughness={0.6} />
+          </mesh>
+        </group>
+      ))}
+      <mesh position={[0, 0.04, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+        <planeGeometry args={[3, BLOCK - 2]} />
+        <meshStandardMaterial color="#c0aa80" roughness={0.9} />
+      </mesh>
+    </group>
+  );
+}
+
 // ─── Gift visual objects ──────────────────────────────────────────────────────
 
 // Graffiti / StreetArt — emissive panel on a "wall" at park edge
@@ -672,65 +758,91 @@ function CityScene({ metrics, style, colorPalette, tokenId, gifts = [] }) {
   const data = useMemo(() => {
     const seed     = (((tokenId | 0) * 9973) + (followers | 0)) >>> 0;
     const rng      = mkRng(seed);
-    const decorRng = mkRng(seed + 77777); // separate — doesn't shift building positions
+    const decorRng = mkRng(seed + 77777);
+    const poiRng   = mkRng(seed + 55555);
 
-    // FOLLOWERS → city grid size. Each level visually distinct.
-    const gridR = followers >= 50000 ? 3 : followers >= 5000 ? 2 : followers >= 500 ? 1 : 0;
+    // 10-level city system → gridR 0-5 controls block grid radius
+    const level = cityLevel(followers);
+    const gridR = level >= 9 ? 5 : level >= 7 ? 4 : level >= 5 ? 3 : level >= 3 ? 2 : level >= 1 ? 1 : 0;
 
-    // Max 2 buildings per block — keeps city readable and uncluttered
-    const perBlockBase = 2;
+    // Height range by gridR (0-5) and engagement
+    const minH     = [3, 4, 5, 7, 9, 11][gridR];
+    const engBoost = engagement >= 3   ? [16, 20, 26, 32, 40, 50][gridR]
+                   : engagement >= 1   ? [10, 13, 17, 22, 28, 36][gridR]
+                   : engagement >= 0.3 ? [ 5,  7, 10, 13, 17, 22][gridR]
+                   :                    [ 2,  3,  5,  7,  9, 12][gridR];
+    const maxH     = minH + engBoost;
 
-    // ENGAGEMENT → building height range.
-    // minH also grows with gridR so every level has a taller skyline floor.
-    const minH = [3, 5, 8, 12][gridR];
-    const engBoost = engagement >= 3 ? [20, 24, 28, 32][gridR]
-                   : engagement >= 1 ? [12, 15, 18, 22][gridR]
-                   : engagement >= 0.3 ? [6, 8, 11, 15][gridR]
-                   : [3, 5, 7, 10][gridR];
-    const maxH = minH + engBoost;
-
-    // FOLLOWERS/FOLLOWING ratio → prestige (metalness)
-    const ratio   = following > 0 ? followers / following : followers > 0 ? 5 : 1;
+    const ratio    = following > 0 ? followers / following : followers > 0 ? 5 : 1;
     const prestige = Math.min(Math.max(ratio / 20, 0.08), 0.8);
+    const maxBW    = [3.2, 3.6, 4.0, 4.5, 5.0, 5.5][gridR];
 
-    // Building width also scales with city level — bigger cities, bigger buildings
-    const maxBW = [3.2, 3.8, 4.4, 5.2][gridR];
-
-    // Block offsets — STEP-aligned so blocks never overlap roads.
-    // Roads at ±(i+0.5)*STEP; blocks at ±STEP, ±2STEP, ±3STEP — always clear.
+    // Block offsets with zone = Chebyshev distance from center (determines building tier)
     const blockOffsets = [];
     if (gridR === 0) {
       for (const row of [-1, 1])
         for (const col of [-1, 1])
-          blockOffsets.push({ bx: col * STEP, bz: row * STEP });
+          blockOffsets.push({ bx: col * STEP, bz: row * STEP, zone: 1 });
     } else {
       for (let row = -gridR; row <= gridR; row++)
         for (let col = -gridR; col <= gridR; col++)
           if (!(row === 0 && col === 0))
-            blockOffsets.push({ bx: col * STEP, bz: row * STEP });
+            blockOffsets.push({ bx: col * STEP, bz: row * STEP, zone: Math.max(Math.abs(row), Math.abs(col)) });
     }
 
     // Safe zone — buildings stay inside block, never spill onto roads.
     const safeHalf = (BLOCK - 6) / 2;
 
-    // Regular buildings: 1–2 per block, proper rectangular footprint, tall enough
+    // Pre-assign POI blocks — level 2+ only
+    const poiChance  = [0, 0, 0.06, 0.08, 0.10, 0.12, 0.14, 0.16, 0.18, 0.22][level];
+    const poiBlocks  = new Set(
+      blockOffsets.map((_, i) => (level >= 2 && poiRng() < poiChance ? i : -1)).filter(i => i >= 0)
+    );
+    const poiTypeRng = mkRng(seed + 66666);
+
+    // Buildings: zone 1+level6 → skyscraper | zone≤2+level4 → high-rise
+    //            zone≤gridR-1  → mid-rise   | outer         → residential
     const buildings = [];
-    blockOffsets.forEach(({ bx, bz }) => {
-      const count = 1 + (rng() > 0.45 ? 1 : 0); // 1 or 2 per block
+    const pois      = [];
+    blockOffsets.forEach(({ bx, bz, zone }, idx) => {
+      if (poiBlocks.has(idx)) {
+        const pt = poiTypeRng();
+        pois.push({ bx, bz, type: pt < 0.35 ? "pond" : pt < 0.65 ? "cinema" : "market" });
+        return;
+      }
+
+      const isSkyZone  = zone <= 1 && level >= 6;
+      const isHighZone = zone <= 2 && level >= 4;
+      const isMidZone  = zone <= gridR - 1;
+
+      const count = isSkyZone ? 1 : (1 + (rng() > 0.45 ? 1 : 0));
       const placed = [];
+
       for (let attempt = 0; placed.length < count && attempt < 30; attempt++) {
         const px = bx + (rng() - 0.5) * 2 * safeHalf;
         const pz = bz + (rng() - 0.5) * 2 * safeHalf;
-        // Footprint: 45–90% of maxBW, rectangular (not square)
-        const bw = maxBW * 0.45 + rng() * maxBW * 0.45;
-        const bd = bw * (0.5 + rng() * 0.9); // depth 50–140% of width
-        if (placed.every(p => Math.hypot(p[0] - px, p[1] - pz) >= Math.max(bw, bd) * 2.4)) {
+
+        let w, d, h;
+        if (isSkyZone) {
+          w = maxBW * (0.28 + rng() * 0.18);
+          d = w * (0.55 + rng() * 0.65);
+          h = Math.max(w, d) * (7 + rng() * 9);
+        } else if (isHighZone) {
+          w = maxBW * (0.38 + rng() * 0.3);
+          d = w * (0.55 + rng() * 0.8);
+          h = Math.max(minH + rng() * (maxH - minH), Math.max(w, d) * 2.8);
+        } else if (isMidZone) {
+          w = maxBW * (0.45 + rng() * 0.35);
+          d = w * (0.55 + rng() * 0.75);
+          h = Math.max(minH, Math.max(w, d) * (1.8 + rng() * 1.6));
+        } else {
+          w = maxBW * (0.5 + rng() * 0.4);
+          d = w * (0.5 + rng() * 0.75);
+          h = Math.max(minH, Math.max(w, d) * (1.0 + rng() * 1.2));
+        }
+
+        if (placed.every(p => Math.hypot(p[0] - px, p[1] - pz) >= Math.max(w, d) * 2.4)) {
           placed.push([px, pz]);
-          const w = bw;
-          const d = bd;
-          // Height: engagement-driven floor, but always >= 2× largest footprint dim
-          const rawH = minH + rng() * (maxH - minH);
-          const h = Math.max(rawH, Math.max(w, d) * 2.0);
           const color = degreen(rng() > 0.45 ? primary : secondary);
           buildings.push({ pos: [px, pz], w, d, h, color, accent, prestige });
         }
@@ -750,16 +862,15 @@ function CityScene({ metrics, style, colorPalette, tokenId, gifts = [] }) {
     // gridR 0 = no landmark, 1+ = one or more signature towers.
     const landmarks = [];
     if (gridR >= 1) {
-      const lmPos = [STEP, STEP]; // closest block to center
-      const lmH   = maxH * [0, 1.8, 2.2, 2.8][gridR];
-      const lmW   = maxBW * 0.9;
+      const lmPos   = [STEP, STEP];
+      const lmH     = maxH * [0, 1.6, 1.9, 2.2, 2.6, 3.0][gridR];
+      const lmW     = maxBW * 0.85;
       const lmColor = degreen(primary);
-      landmarks.push({ pos: lmPos, w: lmW, d: lmW, h: lmH, color: lmColor, accent, prestige: Math.min(prestige + 0.2, 0.9), roofStyle: roofDeco, neonColor: isCyber ? NEON_COLORS[0] : accent });
+      landmarks.push({ pos: lmPos, w: lmW, d: lmW * (0.7 + rng() * 0.4), h: lmH, color: lmColor, accent, prestige: Math.min(prestige + 0.2, 0.9), roofStyle: roofDeco, neonColor: isCyber ? NEON_COLORS[0] : accent });
 
-      // For gridR 3 — additional landmark towers at the other 3 nearest blocks
-      if (gridR === 3) {
+      if (gridR >= 3) {
         [[-STEP, STEP], [STEP, -STEP], [-STEP, -STEP]].forEach(p => {
-          landmarks.push({ pos: p, w: lmW * 0.8, d: lmW * 0.8, h: lmH * 0.75, color: lmColor, accent, prestige: Math.min(prestige + 0.15, 0.85), roofStyle: roofDeco, neonColor: isCyber ? NEON_COLORS[2] : accent });
+          landmarks.push({ pos: p, w: lmW * 0.75, d: lmW * (0.55 + rng() * 0.4), h: lmH * 0.72, color: lmColor, accent, prestige: Math.min(prestige + 0.15, 0.85), roofStyle: roofDeco, neonColor: isCyber ? NEON_COLORS[2] : accent });
         });
       }
     }
@@ -810,7 +921,7 @@ function CityScene({ metrics, style, colorPalette, tokenId, gifts = [] }) {
       }
     });
 
-    return { buildings, landmarks, roads, trees, lanterns, totalSize, gridR };
+    return { buildings, landmarks, roads, trees, lanterns, totalSize, gridR, pois };
   }, [followers, tweetCount, engagement, following, tokenId, primary, secondary, accent, roofDeco, isCyber]);
 
   return (
@@ -845,6 +956,15 @@ function CityScene({ metrics, style, colorPalette, tokenId, gifts = [] }) {
       {data.trees.map((t, i)   => <Tree    key={i} pos={t.pos} s={t.s} />)}
       {data.lanterns.map((p,i) => <Lantern key={i} pos={p} />)}
 
+      {/* POI blocks — pond, cinema, market */}
+      {data.pois.map(({ bx, bz, type }, i) => (
+        <group key={`poi${i}`} position={[bx, 0, bz]}>
+          {type === "pond"   && <Pond />}
+          {type === "cinema" && <Cinema accent={accent} />}
+          {type === "market" && <Market primary={degreen(primary)} />}
+        </group>
+      ))}
+
       {/* Gift objects placed in city by other users */}
       <GiftObjects gifts={gifts} />
     </>
@@ -853,9 +973,10 @@ function CityScene({ metrics, style, colorPalette, tokenId, gifts = [] }) {
 
 // Camera pulls back as city grows
 function camPos(followers) {
-  const gridR = followers >= 50000 ? 3 : followers >= 5000 ? 2 : followers >= 500 ? 1 : 0;
-  const d = 28 + gridR * 20;
-  return [d, d * 0.8, d];
+  const level = cityLevel(followers);
+  const gridR = level >= 9 ? 5 : level >= 7 ? 4 : level >= 5 ? 3 : level >= 3 ? 2 : level >= 1 ? 1 : 0;
+  const d = 28 + gridR * 18;
+  return [d, d * 0.72, d];
 }
 
 // ─── Public component ────────────────────────────────────────────────────────
