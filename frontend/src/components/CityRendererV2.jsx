@@ -134,90 +134,93 @@ function V2Scene({ metrics, tokenId }) {
         const list   = MODELS[pack];
         const baseScale = ZONE_SCALE[pack];
 
-        // Suburban split: 25% chance → 2 smaller houses offset to opposite corners
-        if (pack === 'suburban' && rng() < 0.25) {
-          const offsets = [
-            [JITTER * 0.5, JITTER * 0.5],
-            [-JITTER * 0.5, -JITTER * 0.5],
-          ];
-          for (const [ox, oz] of offsets) {
-            const sx = baseScale * (0.75 + rng() * 0.15);
-            models.push({
-              url:  list[Math.floor(rng() * list.length)],
-              x:    cx + ox + (rng() - 0.5) * 4,
-              z:    cz + oz + (rng() - 0.5) * 4,
-              rotY: Math.floor(rng() * 4) * Math.PI / 2,
-              scale: sx,
-            });
-          }
-          continue;
+        // ── Cluster placement ─────────────────────────────────────────
+        // commercial/skyscraper: 1 large building centred
+        // industrial: 2 buildings side by side
+        // suburban: 3-4 small houses at cell corners
+
+        let clusterOffsets;
+        let clusterScale;
+
+        if (pack === 'commercial' || pack === 'skyscraper') {
+          clusterOffsets = [[(rng() - 0.5) * JITTER, (rng() - 0.5) * JITTER]];
+          clusterScale   = baseScale * (0.9 + rng() * 0.2);
+        } else if (pack === 'industrial') {
+          const off  = 3.5 + rng() * 1.5;
+          const useX = rng() > 0.5;
+          clusterOffsets = useX
+            ? [[-off, (rng() - 0.5) * 3], [off, (rng() - 0.5) * 3]]
+            : [[(rng() - 0.5) * 3, -off], [(rng() - 0.5) * 3, off]];
+          clusterScale = baseScale * (0.85 + rng() * 0.2);
+        } else {
+          // suburban: 4 corners, sometimes drop one → 3 houses
+          const corners = [[-4, -4], [4, -4], [-4, 4], [4, 4]];
+          if (rng() < 0.35) corners.splice(Math.floor(rng() * 4) | 0, 1); // 3 houses
+          clusterOffsets = corners.map(([ox, oz]) => [ox + (rng() - 0.5) * 1.5, oz + (rng() - 0.5) * 1.5]);
+          clusterScale   = 2.8 + rng() * 0.5;
         }
 
-        // Normal placement: jitter within cell + slight scale variation
-        const x     = cx + (rng() - 0.5) * JITTER * 2;
-        const z     = cz + (rng() - 0.5) * JITTER * 2;
-        const scale = baseScale * (0.85 + rng() * 0.3);
+        for (const [ox, oz] of clusterOffsets) {
+          models.push({
+            url:  list[Math.floor(rng() * list.length)],
+            x:    cx + ox,
+            z:    cz + oz,
+            rotY: Math.floor(rng() * 4) * Math.PI / 2,
+            scale: clusterScale * (0.9 + rng() * 0.2),
+          });
+        }
 
-        models.push({
-          url:  list[Math.floor(rng() * list.length)],
-          x, z,
-          rotY: Math.floor(rng() * 4) * Math.PI / 2,
-          scale,
-        });
-
-        // Industrial: chimney or tank prop nearby at 30%
-        if (pack === 'industrial' && rng() < 0.3) {
+        // Props use cell centre as reference
+        // Industrial: chimney at 35%
+        if (pack === 'industrial' && rng() < 0.35) {
           models.push({
             url:   MODELS.chimneys[Math.floor(rng() * MODELS.chimneys.length)],
-            x:     x + (rng() - 0.5) * 6,
-            z:     z + (rng() - 0.5) * 6,
+            x:     cx + (rng() - 0.5) * 6,
+            z:     cz + (rng() - 0.5) * 6,
             rotY:  rng() * Math.PI * 2,
             scale: 2.0,
           });
         }
 
-        // Suburban: driveway at 40%
-        if (pack === 'suburban' && rng() < 0.4) {
-          models.push({
-            url:   MODELS.driveways[Math.floor(rng() * MODELS.driveways.length)],
-            x:     x + (rng() - 0.5) * 2,
-            z:     z + (rng() - 0.5) * 2,
-            rotY:  Math.floor(rng() * 4) * Math.PI / 2,
-            scale: 5.0,
-          });
+        // Suburban: driveway at 40% + planter at 25%
+        if (pack === 'suburban') {
+          if (rng() < 0.4) {
+            models.push({
+              url:  MODELS.driveways[Math.floor(rng() * MODELS.driveways.length)],
+              x:    cx + (rng() - 0.5) * 5,
+              z:    cz + (rng() - 0.5) * 5,
+              rotY: Math.floor(rng() * 4) * Math.PI / 2,
+              scale: 5.0,
+            });
+          }
+          if (rng() < 0.25) {
+            models.push({
+              url:  '/models/suburban/planter.glb',
+              x:    cx + (rng() - 0.5) * 4,
+              z:    cz + (rng() - 0.5) * 4,
+              rotY: rng() * Math.PI * 2,
+              scale: 4.0,
+            });
+          }
         }
 
-        // Suburban: planter at 25%
-        if (pack === 'suburban' && rng() < 0.25) {
-          models.push({
-            url:   '/models/suburban/planter.glb',
-            x:     x + (rng() - 0.5) * 3,
-            z:     z + (rng() - 0.5) * 3,
-            rotY:  rng() * Math.PI * 2,
-            scale: 4.0,
-          });
-        }
-
-        // Commercial: awning or parasol at 40%
+        // Commercial: awning/parasol at 40%
         if ((pack === 'commercial' || pack === 'skyscraper') && rng() < 0.4) {
           models.push({
-            url:   MODELS.commercialDetails[Math.floor(rng() * MODELS.commercialDetails.length)],
-            x:     x + (rng() - 0.5) * 4,
-            z:     z + (rng() - 0.5) * 4,
-            rotY:  Math.floor(rng() * 4) * Math.PI / 2,
+            url:  MODELS.commercialDetails[Math.floor(rng() * MODELS.commercialDetails.length)],
+            x:    cx + (rng() - 0.5) * 5,
+            z:    cz + (rng() - 0.5) * 5,
+            rotY: Math.floor(rng() * 4) * Math.PI / 2,
             scale: 3.5,
           });
         }
 
-        // Trees scattered throughout city — 1 tree every ~3 cells, big enough to see
+        // Tree: 35% per cell, placed near road edge
         if (rng() < 0.35) {
-          // place near road edge, not behind building
-          const tx = cx + (rng() > 0.5 ? 1 : -1) * (JITTER + 1 + rng() * 3);
-          const tz = cz + (rng() - 0.5) * JITTER;
           models.push({
             url:   MODELS.trees[rng() > 0.5 ? 0 : 1],
-            x:     tx,
-            z:     tz,
+            x:     cx + (rng() > 0.5 ? 1 : -1) * (JITTER + 1 + rng() * 2),
+            z:     cz + (rng() - 0.5) * JITTER,
             rotY:  rng() * Math.PI * 2,
             scale: 4.0 + rng() * 2.0,
           });
