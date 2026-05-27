@@ -125,11 +125,12 @@ function V2Scene({ metrics, tokenId }) {
         const cx   = col * TILE;
         const cz   = row * TILE;
 
-        // Zone → model pack
-        const isSky  = zone <= 1 && level >= 6;
-        const isHigh = zone <= 2 && level >= 4;
-        const isMid  = zone <= gridR - 1;
-        const pack   = isSky ? 'skyscraper' : isHigh ? 'commercial' : isMid ? 'industrial' : 'suburban';
+        // Zone → model pack (zone = Chebyshev distance from center)
+        // zone=1: commercial always; zone=2 commercial for large cities; middle rings: industrial; outer: suburban
+        const isSky  = zone === 1 && level >= 6;
+        const isComm = zone <= 1 || (zone === 2 && gridR >= 4);
+        const isInd  = zone >= 2 && zone <= gridR - 1;
+        const pack   = isSky ? 'skyscraper' : isComm ? 'commercial' : isInd ? 'industrial' : 'suburban';
         const list   = MODELS[pack];
         const baseScale = ZONE_SCALE[pack];
 
