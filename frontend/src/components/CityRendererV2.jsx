@@ -1,4 +1,4 @@
-// CityRendererV2 — city built from Kenney GLB models (commercial + industrial + suburban + roads)
+// CityRendererV2 — tile-grid city: tile-low blocks + road tiles + buildings
 import { useMemo, useState, Suspense } from "react";
 import { Canvas } from "@react-three/fiber";
 import { OrbitControls, useGLTF } from "@react-three/drei";
@@ -22,15 +22,14 @@ const MODELS = {
   commercialDetails: ['detail-awning','detail-awning-wide','detail-overhang','detail-overhang-wide','detail-parasol-a','detail-parasol-b'].map(n => `/models/commercial/${n}.glb`),
 };
 
-const ZONE_SCALE = {
-  skyscraper: 5.0,
-  commercial: 4.0,
-  industrial: 2.5,
-  suburban:   4.0,
-};
+const ZONE_SCALE = { skyscraper: 5.0, commercial: 4.0, industrial: 2.5, suburban: 3.2 };
 
-const TILE   = 28; // distance between building cell centers
-const ROAD_W = 7;  // = TILE/4 → road tiles (1×1 native) at scale 7 tile perfectly: 3 straights between crossroads
+// ─── Tile grid constants ──────────────────────────────────────────────────────
+// All Kenney road/sidewalk tiles: native 1×1 → scale S → S×S world units
+const S       = 8;               // tile scale
+const BLOCK_N = 3;               // tiles per building-block side (3×3 = 9 tiles)
+const PERIOD  = (BLOCK_N + 1) * S;  // = 32 — block center spacing
+const HALF_B  = (BLOCK_N / 2) * S; // = 12 — half block size
 
 // ─── GLB model component ─────────────────────────────────────────────────────
 
@@ -38,24 +37,6 @@ function GlbModel({ url, position, rotY = 0, scale = 1 }) {
   const { scene } = useGLTF(url);
   const clone = useMemo(() => scene.clone(true), [scene]);
   return <primitive object={clone} position={position} rotation={[0, rotY, 0]} scale={scale} />;
-}
-
-// ─── Paved blocks (sidewalk between roads) ────────────────────────────────────
-
-function BlockPaving({ gridR }) {
-  const size = TILE - ROAD_W; // 21 units — fits exactly between road tile edges
-  const blocks = [];
-  for (let row = -gridR; row <= gridR; row++) {
-    for (let col = -gridR; col <= gridR; col++) {
-      blocks.push(
-        <mesh key={`p${row}_${col}`} position={[col * TILE, 0.02, row * TILE]} rotation={[-Math.PI / 2, 0, 0]}>
-          <planeGeometry args={[size, size]} />
-          <meshStandardMaterial color="#8a8e98" roughness={0.95} />
-        </mesh>
-      );
-    }
-  }
-  return <>{blocks}</>;
 }
 
 // ─── City scene ──────────────────────────────────────────────────────────────
@@ -74,19 +55,80 @@ function V2Scene({ metrics, tokenId }) {
 
     const models = [];
 
-    // Safe jitter: road edge = TILE/2 - ROAD_W/2 = 10.5, minus building half(2.5) and margin(2) = 6.0
-    const JITTER = TILE / 2 - ROAD_W / 2 - 4.5; // = 6.0
+    // Block center positions (multiples of PERIOD)
+    const blockPos = [];
+    for (let bc = -gridR; bc <= gridR; bc++) blockPos.push(bc * PERIOD);
 
-    // ── Buildings ────────────────────────────────────────────────────────────
+    // Road strip center positions (between each pair of blocks)
+    const roadPos = [];
+    for (let bc = -gridR; bc < gridR; bc++) roadPos.push(bc * PERIOD + PERIOD / 2);
 
-    for (let row = -gridR; row <= gridR; row++) {
-      for (let col = -gridR; col <= gridR; col++) {
-        if (row === 0 && col === 0) continue;
-        if (rng() < 0.12) continue; // ~12% empty lots
+    // ── Sidewalk tiles (tile-low) under every building block ─────────────────
+    for (const bx of blockPos) {
+      for (const bz of blockPos) {
+        for (let tx = -1; tx <= 1; tx++) {
+          for (let tz = -1; tz <= 1; tz++) {
+            models.push({
+              url: '/models/roads/tile-low.glb',
+              x: bx + tx * S,
+              z: bz + tz * S,
+              rotY: 0, scale: S,
+            });
+          }
+        }
+      }
+    }
 
-        const zone = Math.max(Math.abs(row), Math.abs(col));
-        const cx   = col * TILE;
-        const cz   = row * TILE;
+    // ── Road tiles ────────────────────────────────────────────────────────────
+    // Crossroads at every (rx, rz) intersection
+    for (const rx of roadPos) {
+      for (const rz of roadPos) {
+        models.push({ url: '/models/roads/road-crossroad-path.glb', x: rx, z: rz, rotY: 0, scale: S });
+      }
+    }
+
+    // Tile x/z range: from outer edge of leftmost block to outer edge of rightmost
+    const tileHalfSpan = gr * PERIOD + HALF_B - S / 2; // = gr*32 + 8
+
+    // Horizontal straights (road runs along X → rotY = π/2)
+    for (const rz of roadPos) {
+      for (let x = -tileHalfSpan; x <= tileHalfSpan + 0.001; x += S) {
+        if (roadPos.some(rx => Math.abs(rx - x) < 0.1)) continue; // crossroad handles it
+        models.push({ url: '/models/roads/road-straight.glb', x, z: rz, rotY: Math.PI / 2, scale: S });
+      }
+    }
+
+    // Vertical straights (road runs along Z → rotY = 0)
+    for (const rx of roadPos) {
+      for (let z = -tileHalfSpan; z <= tileHalfSpan + 0.001; z += S) {
+        if (roadPos.some(rz => Math.abs(rz - z) < 0.1)) continue;
+        models.push({ url: '/models/roads/road-straight.glb', x: rx, z, rotY: 0, scale: S });
+      }
+    }
+
+    // Street lights at every other intersection
+    for (let ri = 0; ri < roadPos.length; ri++) {
+      for (let rj = 0; rj < roadPos.length; rj++) {
+        if ((ri + rj) % 2 !== 0) continue;
+        const rx = roadPos[ri], rz = roadPos[rj];
+        models.push({ url: '/models/roads/light-square-double.glb', x: rx + S * 0.55, z: rz + S * 0.55, rotY: Math.PI * 1.25, scale: S });
+        models.push({ url: '/models/roads/light-square-double.glb', x: rx - S * 0.55, z: rz - S * 0.55, rotY: Math.PI * 0.25, scale: S });
+      }
+    }
+
+    // ── Buildings ─────────────────────────────────────────────────────────────
+    // Buildings are placed on top of tile-low blocks.
+    // Max safe offset from block center: HALF_B - building_half_footprint ≈ 12 - 3 = 9
+    const JITTER = 7;
+
+    for (let bc_row = -gridR; bc_row <= gridR; bc_row++) {
+      for (let bc_col = -gridR; bc_col <= gridR; bc_col++) {
+        if (bc_row === 0 && bc_col === 0) continue; // center = park
+        if (rng() < 0.1) continue; // 10% empty blocks
+
+        const cx   = bc_col * PERIOD;
+        const cz   = bc_row * PERIOD;
+        const zone = Math.max(Math.abs(bc_row), Math.abs(bc_col));
 
         const isSky  = zone === 1 && level >= 6;
         const isComm = zone <= 1 || (zone === 2 && gridR >= 4);
@@ -101,47 +143,42 @@ function V2Scene({ metrics, tokenId }) {
           clusterOffsets = [[(rng() - 0.5) * JITTER, (rng() - 0.5) * JITTER]];
           clusterScale   = baseScale * (0.9 + rng() * 0.2);
         } else if (pack === 'industrial') {
-          const off  = 3.5 + rng() * 1.5;
+          const off  = 4 + rng() * 2;
           const useX = rng() > 0.5;
           clusterOffsets = useX
             ? [[-off, (rng() - 0.5) * 3], [off, (rng() - 0.5) * 3]]
             : [[(rng() - 0.5) * 3, -off], [(rng() - 0.5) * 3, off]];
           clusterScale = baseScale * (0.85 + rng() * 0.2);
         } else {
-          const corners = [[-4, -4], [4, -4], [-4, 4], [4, 4]];
+          // suburban: 3-4 small houses in block corners
+          const corners = [[-5, -5], [5, -5], [-5, 5], [5, 5]];
           if (rng() < 0.35) corners.splice(Math.floor(rng() * 4) | 0, 1);
           clusterOffsets = corners.map(([ox, oz]) => [ox + (rng() - 0.5) * 1.5, oz + (rng() - 0.5) * 1.5]);
-          clusterScale   = 2.8 + rng() * 0.5;
+          clusterScale   = baseScale * (0.9 + rng() * 0.2);
         }
 
         for (const [ox, oz] of clusterOffsets) {
           models.push({
-            url:  list[Math.floor(rng() * list.length)],
+            url:   list[Math.floor(rng() * list.length)],
             x: cx + ox, z: cz + oz,
-            rotY: Math.floor(rng() * 4) * Math.PI / 2,
+            rotY:  Math.floor(rng() * 4) * Math.PI / 2,
             scale: clusterScale * (0.9 + rng() * 0.2),
           });
         }
 
+        // Props
         if (pack === 'industrial' && rng() < 0.35) {
-          models.push({
-            url: MODELS.chimneys[Math.floor(rng() * MODELS.chimneys.length)],
-            x: cx + (rng() - 0.5) * 6, z: cz + (rng() - 0.5) * 6,
-            rotY: rng() * Math.PI * 2, scale: 2.0,
-          });
+          models.push({ url: MODELS.chimneys[Math.floor(rng() * MODELS.chimneys.length)], x: cx + (rng()-0.5)*8, z: cz + (rng()-0.5)*8, rotY: rng()*Math.PI*2, scale: 2.0 });
         }
-
-        if (pack === 'suburban') {
-          if (rng() < 0.4) models.push({ url: MODELS.driveways[Math.floor(rng() * MODELS.driveways.length)], x: cx + (rng()-0.5)*5, z: cz + (rng()-0.5)*5, rotY: Math.floor(rng()*4)*Math.PI/2, scale: 5.0 });
-          if (rng() < 0.25) models.push({ url: '/models/suburban/planter.glb', x: cx+(rng()-0.5)*4, z: cz+(rng()-0.5)*4, rotY: rng()*Math.PI*2, scale: 4.0 });
+        if (pack === 'suburban' && rng() < 0.35) {
+          models.push({ url: MODELS.driveways[Math.floor(rng() * MODELS.driveways.length)], x: cx+(rng()-0.5)*6, z: cz+(rng()-0.5)*6, rotY: Math.floor(rng()*4)*Math.PI/2, scale: 5.0 });
         }
-
         if ((pack === 'commercial' || pack === 'skyscraper') && rng() < 0.4) {
-          models.push({ url: MODELS.commercialDetails[Math.floor(rng()*MODELS.commercialDetails.length)], x: cx+(rng()-0.5)*5, z: cz+(rng()-0.5)*5, rotY: Math.floor(rng()*4)*Math.PI/2, scale: 3.5 });
+          models.push({ url: MODELS.commercialDetails[Math.floor(rng()*MODELS.commercialDetails.length)], x: cx+(rng()-0.5)*6, z: cz+(rng()-0.5)*6, rotY: Math.floor(rng()*4)*Math.PI/2, scale: 3.5 });
         }
-
-        if (rng() < 0.35) {
-          models.push({ url: MODELS.trees[rng()>0.5?0:1], x: cx+(rng()>0.5?1:-1)*(JITTER+1+rng()*2), z: cz+(rng()-0.5)*JITTER, rotY: rng()*Math.PI*2, scale: 4.0+rng()*2.0 });
+        // Scattered trees
+        if (rng() < 0.3) {
+          models.push({ url: MODELS.trees[rng()>0.5?0:1], x: cx+(rng()-0.5)*HALF_B, z: cz+(rng()-0.5)*HALF_B, rotY: rng()*Math.PI*2, scale: 4.0+rng()*2.0 });
         }
       }
     }
@@ -149,56 +186,11 @@ function V2Scene({ metrics, tokenId }) {
     // Center park trees
     for (let i = 0; i < 6; i++) {
       const angle = (i / 6) * Math.PI * 2 + treeRng() * 0.8;
-      const r     = 5 + treeRng() * 7;
+      const r     = 4 + treeRng() * 6;
       models.push({ url: MODELS.trees[treeRng()>0.5?0:1], x: Math.cos(angle)*r, z: Math.sin(angle)*r, rotY: treeRng()*Math.PI*2, scale: 4.5+treeRng()*2.0 });
     }
 
-    // ── Road tiles (Kenney road pack) ─────────────────────────────────────────
-    // ROAD_W=7 = tile scale. TILE/ROAD_W = 4 → between crossroads: exactly 3 straight tiles.
-
-    const S = ROAD_W; // tile scale
-    const span = gr * TILE; // half-span of entire road grid
-
-    // Road strip centers
-    const roadPos = [];
-    for (let i = -gr; i < gr; i++) roadPos.push((i + 0.5) * TILE);
-
-    // Crossroads at every (rx, rz) intersection
-    for (const rx of roadPos) {
-      for (const rz of roadPos) {
-        models.push({ url: '/models/roads/road-crossroad-path.glb', x: rx, z: rz, rotY: 0, scale: S });
-      }
-    }
-
-    // Straight tiles between crossroads and along edges
-    const tileStart = -span + S / 2;
-    const tileEnd   =  span - S / 2;
-
-    for (const rz of roadPos) {
-      for (let x = tileStart; x <= tileEnd + 0.001; x += S) {
-        if (roadPos.some(rx => Math.abs(rx - x) < 0.1)) continue; // crossroad covers this
-        models.push({ url: '/models/roads/road-straight.glb', x, z: rz, rotY: Math.PI / 2, scale: S });
-      }
-    }
-
-    for (const rx of roadPos) {
-      for (let z = tileStart; z <= tileEnd + 0.001; z += S) {
-        if (roadPos.some(rz => Math.abs(rz - z) < 0.1)) continue;
-        models.push({ url: '/models/roads/road-straight.glb', x: rx, z, rotY: 0, scale: S });
-      }
-    }
-
-    // Street lights — at every other crossroad, two lamps at opposite corners
-    for (let ri = 0; ri < roadPos.length; ri++) {
-      for (let rj = 0; rj < roadPos.length; rj++) {
-        if ((ri + rj) % 2 !== 0) continue; // every other intersection
-        const rx = roadPos[ri], rz = roadPos[rj];
-        models.push({ url: '/models/roads/light-square-double.glb', x: rx + S * 0.55, z: rz + S * 0.55, rotY: Math.PI * 1.25, scale: S });
-        models.push({ url: '/models/roads/light-square-double.glb', x: rx - S * 0.55, z: rz - S * 0.55, rotY: Math.PI * 0.25, scale: S });
-      }
-    }
-
-    const citySize = (2 * gr + 1) * TILE + 24;
+    const citySize = (2 * gr + 1) * PERIOD + 24;
     return { models, citySize, gridR };
   }, [followers, tokenId]);
 
@@ -210,16 +202,13 @@ function V2Scene({ metrics, tokenId }) {
       <directionalLight position={[-10, 15, -10]} intensity={0.4} color="#bbccff" />
       <hemisphereLight args={["#c8d8f0", "#223311", 0.5]} />
 
-      {/* Ground — base asphalt under everything */}
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.1, 0]}>
-        <planeGeometry args={[data.citySize + 30, data.citySize + 30]} />
+      {/* Base ground (shows at city edges) */}
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.05, 0]}>
+        <planeGeometry args={[data.citySize + 40, data.citySize + 40]} />
         <meshStandardMaterial color="#4a4e5a" roughness={1} />
       </mesh>
 
-      {/* Sidewalk blocks between roads */}
-      <BlockPaving gridR={data.gridR} />
-
-      {/* All GLB models: buildings + road tiles + lights */}
+      {/* All GLB: tile-low blocks + road tiles + lights + buildings */}
       {data.models.map((m, i) => (
         <GlbModel key={i} url={m.url} position={[m.x, 0, m.z]} rotY={m.rotY} scale={m.scale} />
       ))}
@@ -232,7 +221,7 @@ function V2Scene({ metrics, tokenId }) {
 function camPos(followers) {
   const level = cityLevel(followers);
   const gridR = level >= 9 ? 5 : level >= 7 ? 4 : level >= 5 ? 3 : level >= 3 ? 2 : level >= 1 ? 1 : 0;
-  const d = 40 + gridR * TILE * 1.4;
+  const d = 40 + gridR * PERIOD * 1.4;
   return [d, d * 0.75, d];
 }
 
@@ -273,7 +262,7 @@ export default function CityRendererV2({ city, tokenId }) {
             <Canvas camera={{ position: [cp[0] * 1.1, cp[1] * 1.1, cp[2] * 1.1], fov: 42 }}>
               <Suspense fallback={null}>
                 <V2Scene metrics={metrics} tokenId={tokenId || 0} />
-                <OrbitControls enablePan={false} minDistance={8} maxDistance={250} maxPolarAngle={Math.PI / 2 - 0.04} autoRotate autoRotateSpeed={0.35} />
+                <OrbitControls enablePan={false} minDistance={8} maxDistance={300} maxPolarAngle={Math.PI / 2 - 0.04} autoRotate autoRotateSpeed={0.35} />
               </Suspense>
             </Canvas>
             <button
