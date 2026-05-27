@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { ethers } from "ethers";
 import { API_BASE, LEVEL_NAMES, GIFT_TYPES, getContract, getGiftsContract, fetchConfig } from "../lib/contract";
-import CityRenderer from "../components/CityRenderer";
+import CityRendererV2 from "../components/CityRendererV2";
 
 // ─── Gift Components ─────────────────────────────────────────────────────────
 
@@ -401,7 +401,7 @@ export default function CityPage({ tokenId, signer, address }) {
 
       {/* City Visual */}
       <div className="city-visual">
-        <CityRenderer city={rendererCity} tokenId={tokenId} gifts={activeGifts} />
+        <CityRendererV2 city={rendererCity} tokenId={tokenId} />
       </div>
 
       <GiftStats stats={giftStats} />
