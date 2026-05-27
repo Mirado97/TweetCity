@@ -723,9 +723,9 @@ function CityScene({ metrics, style, colorPalette, tokenId, gifts = [] }) {
         const pz = bz + (rng() - 0.5) * 2 * safeHalf;
         if (placed.every(p => Math.hypot(p[0] - px, p[1] - pz) >= maxBW * 1.15)) {
           placed.push([px, pz]);
-          const h = minH + rng() * (maxH - minH);
-          const w = maxBW * 0.55 + rng() * maxBW * 0.45;
-          const d = maxBW * 0.55 + rng() * maxBW * 0.45;
+          const w = maxBW * 0.22 + rng() * maxBW * 0.28;
+          const d = maxBW * 0.22 + rng() * maxBW * 0.28;
+          const h = Math.max(minH + rng() * (maxH - minH), Math.max(w, d) * 2.5);
           const color = degreen(rng() > 0.45 ? primary : secondary);
           buildings.push({ pos: [px, pz], w, d, h, color, accent, prestige });
         }
