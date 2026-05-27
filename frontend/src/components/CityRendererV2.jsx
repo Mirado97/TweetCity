@@ -289,17 +289,32 @@ function V2Scene({ metrics, tokenId }) {
           models.push({ url: MODELS.commercialDetails[Math.floor(rng()*MODELS.commercialDetails.length)], x: cx+(rng()-0.5)*6, z: cz+(rng()-0.5)*6, rotY: Math.floor(rng()*4)*Math.PI/2, scale: 3.5 });
         }
         // Trees by zone: suburban 3-5, industrial 2-3, commercial/skyscraper 0
+        // Positions avoid house footprints: suburban houses at (±5,±5), industrial at center
         const numTrees = pack === 'suburban'  ? 3 + Math.floor(rng() * 3)
                        : pack === 'industrial' ? 2 + Math.floor(rng() * 2)
                        : 0;
-        for (let t = 0; t < numTrees; t++) {
-          models.push({
-            url:   MODELS.trees[rng() > 0.5 ? 0 : 1],
-            x:     cx + (rng() - 0.5) * HALF_B * 1.4,
-            z:     cz + (rng() - 0.5) * HALF_B * 1.4,
-            rotY:  rng() * Math.PI * 2,
-            scale: 8.0 + rng() * 6.0,
-          });
+        if (numTrees > 0) {
+          // Candidate spots chosen to not overlap buildings
+          const spots = pack === 'suburban'
+            // Mid-edges between corner houses + sidewalk strip near road
+            ? [ [0,-10],[0,10],[-10,0],[10,0], [-10,-10],[10,-10],[-10,10],[10,10] ]
+            // Industrial building fills center → trees only at block corners
+            : [ [-10,-10],[10,-10],[-10,10],[10,10] ];
+          // Shuffle via rng
+          for (let i = spots.length - 1; i > 0; i--) {
+            const j = Math.floor(rng() * (i + 1));
+            [spots[i], spots[j]] = [spots[j], spots[i]];
+          }
+          for (let t = 0; t < Math.min(numTrees, spots.length); t++) {
+            const [ox, oz] = spots[t];
+            models.push({
+              url:   MODELS.trees[rng() > 0.5 ? 0 : 1],
+              x:     cx + ox + (rng() - 0.5) * 1.5,
+              z:     cz + oz + (rng() - 0.5) * 1.5,
+              rotY:  rng() * Math.PI * 2,
+              scale: 8.0 + rng() * 6.0,
+            });
+          }
         }
       }
     }
