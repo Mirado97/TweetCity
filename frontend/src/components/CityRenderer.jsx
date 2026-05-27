@@ -825,19 +825,19 @@ function CityScene({ metrics, style, colorPalette, tokenId, gifts = [] }) {
         let w, d, h;
         if (isSkyZone) {
           w = maxBW * (0.28 + rng() * 0.18);
-          d = w * (0.55 + rng() * 0.65);
+          d = isMed ? w * (2.8 + rng() * 0.5) : w * (0.55 + rng() * 0.65);
           h = Math.max(w, d) * (7 + rng() * 9);
         } else if (isHighZone) {
           w = maxBW * (0.38 + rng() * 0.3);
-          d = w * (0.55 + rng() * 0.8);
+          d = isMed ? w * (2.8 + rng() * 0.5) : w * (0.55 + rng() * 0.8);
           h = Math.max(minH + rng() * (maxH - minH), Math.max(w, d) * 2.8);
         } else if (isMidZone) {
           w = maxBW * (0.45 + rng() * 0.35);
-          d = w * (0.55 + rng() * 0.75);
+          d = isMed ? w * (2.8 + rng() * 0.5) : w * (0.55 + rng() * 0.75);
           h = Math.max(minH, Math.max(w, d) * (1.8 + rng() * 1.6));
         } else {
           w = maxBW * (0.5 + rng() * 0.4);
-          d = w * (0.5 + rng() * 0.75);
+          d = isMed ? w * (2.8 + rng() * 0.5) : w * (0.5 + rng() * 0.75);
           h = Math.max(minH, Math.max(w, d) * (1.0 + rng() * 1.2));
         }
 
@@ -922,7 +922,7 @@ function CityScene({ metrics, style, colorPalette, tokenId, gifts = [] }) {
     });
 
     return { buildings, landmarks, roads, trees, lanterns, totalSize, gridR, pois };
-  }, [followers, tweetCount, engagement, following, tokenId, primary, secondary, accent, roofDeco, isCyber]);
+  }, [followers, tweetCount, engagement, following, tokenId, primary, secondary, accent, roofDeco, isCyber, isMed]);
 
   return (
     <>
@@ -941,11 +941,9 @@ function CityScene({ metrics, style, colorPalette, tokenId, gifts = [] }) {
       <ParkTile />
       <Statue gridR={data.gridR} />
 
-      {/* Regular buildings — detailed windows only for small cities (gridR ≤ 1) */}
+      {/* Regular buildings */}
       {data.buildings.map((b, i) =>
-        isMed
-          ? <MedTower key={i} pos={b.pos} w={b.w * 0.75} d={b.d * 0.75} h={b.h} color={b.color} accent={accent} />
-          : <Building key={`b${i}`} {...b} winEmI={cfg.winEmI} detailed={data.gridR <= 1} />
+        <Building key={`b${i}`} {...b} winEmI={cfg.winEmI} detailed={data.gridR <= 1} />
       )}
 
       {/* Landmark towers */}
