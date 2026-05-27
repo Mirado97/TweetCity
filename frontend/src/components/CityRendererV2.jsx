@@ -1,4 +1,4 @@
-// CityRendererV2 — city built ONLY from Kenney GLB models (no procedural geometry)
+// CityRendererV2 — city built from Kenney GLB models (commercial + industrial + suburban)
 import { useMemo, useState, Suspense } from "react";
 import { Canvas } from "@react-three/fiber";
 import { OrbitControls, useGLTF } from "@react-three/drei";
@@ -9,23 +9,72 @@ function mkRng(seed) {
   return () => { s = (Math.imul(s, 1664525) + 1013904223) >>> 0; return s / 0xffffffff; };
 }
 
+// ─── Model lists ─────────────────────────────────────────────────────────────
+
 const MODELS = {
+  // native ~1.36×1.36 → scale 4.0 → ~5.4 footprint
   skyscraper: ['a','b','c','d','e'].map(l => `/models/commercial/building-skyscraper-${l}.glb`),
+  // native ~1.36×1.0 → scale 4.0 → ~5.4 footprint
   commercial: ['a','b','c','d','e','f','g','h','i','j','k','l','m','n'].map(l => `/models/commercial/building-${l}.glb`),
+  // native ~2.1×1.2 → scale 2.5 → ~5.2 footprint
   industrial: ['a','b','c','d','e','f','g','h','i','j','k','l','m','n','o','p','q','r','s','t'].map(l => `/models/industrial/building-${l}.glb`),
+  // native ~1.3×1.0 → scale 4.0 → ~5.2 footprint
   suburban:   ['a','b','c','d','e','f','g','h','i','j','k','l','m','n','o','p','q','r','s','t','u'].map(l => `/models/suburban/building-type-${l}.glb`),
-  props:      ['chimney-basic','chimney-medium','chimney-small','detail-tank'].map(n => `/models/industrial/${n}.glb`),
+  // industrial props
+  chimneys:   ['chimney-basic','chimney-medium','chimney-small','detail-tank'].map(n => `/models/industrial/${n}.glb`),
+  // suburban details — placed near houses
+  driveways:  ['driveway-long','driveway-short'].map(n => `/models/suburban/${n}.glb`),
+  planters:   ['/models/suburban/planter.glb'],
+  // park trees
   trees:      ['/models/suburban/tree-large.glb', '/models/suburban/tree-small.glb'],
 };
 
-const TILE  = 9;   // distance between building centers
-const SCALE = 3.0; // uniform building scale
+// Scale per zone so all packs have similar real-world footprint (~5 units)
+const ZONE_SCALE = {
+  skyscraper: 5.0,
+  commercial: 4.0,
+  industrial: 2.5,
+  suburban:   4.0,
+};
+
+const TILE    = 7;   // distance between building centers
+const ROAD_W  = 2.0; // road strip width between tile rows/cols
+
+// ─── GLB model component ─────────────────────────────────────────────────────
 
 function GlbModel({ url, position, rotY = 0, scale = 1 }) {
   const { scene } = useGLTF(url);
   const clone = useMemo(() => scene.clone(true), [scene]);
   return <primitive object={clone} position={position} rotation={[0, rotY, 0]} scale={scale} />;
 }
+
+// ─── Road strip (procedural plane — no road pack available) ──────────────────
+
+function RoadGrid({ gridR }) {
+  const gr   = Math.max(gridR, 1);
+  const span = (2 * gr + 1) * TILE;
+  const strips = [];
+  for (let i = -gr; i < gr; i++) {
+    const t = (i + 0.5) * TILE;
+    // horizontal strip (along X)
+    strips.push(
+      <mesh key={`h${i}`} position={[0, 0.01, t]} rotation={[-Math.PI / 2, 0, 0]}>
+        <planeGeometry args={[span, ROAD_W]} />
+        <meshStandardMaterial color="#404552" roughness={1} />
+      </mesh>
+    );
+    // vertical strip (along Z)
+    strips.push(
+      <mesh key={`v${i}`} position={[t, 0.01, 0]} rotation={[-Math.PI / 2, 0, Math.PI / 2]}>
+        <planeGeometry args={[span, ROAD_W]} />
+        <meshStandardMaterial color="#404552" roughness={1} />
+      </mesh>
+    );
+  }
+  return <>{strips}</>;
+}
+
+// ─── City scene ──────────────────────────────────────────────────────────────
 
 function V2Scene({ metrics, tokenId }) {
   const { followers = 0 } = metrics;
@@ -40,74 +89,103 @@ function V2Scene({ metrics, tokenId }) {
 
     const models = [];
 
-    // Tile grid — one building per cell, zone determines model pack
     for (let row = -gridR; row <= gridR; row++) {
       for (let col = -gridR; col <= gridR; col++) {
-        if (row === 0 && col === 0) continue; // center reserved for trees
+        if (row === 0 && col === 0) continue; // center = park/trees
 
         const zone = Math.max(Math.abs(row), Math.abs(col));
-        const x = col * TILE;
-        const z = row * TILE;
+        const x    = col * TILE;
+        const z    = row * TILE;
 
+        // Zone → model pack
         const isSky  = zone <= 1 && level >= 6;
         const isHigh = zone <= 2 && level >= 4;
         const isMid  = zone <= gridR - 1;
         const pack   = isSky ? 'skyscraper' : isHigh ? 'commercial' : isMid ? 'industrial' : 'suburban';
         const list   = MODELS[pack];
+        const scale  = ZONE_SCALE[pack];
 
         models.push({
-          url:   list[Math.floor(rng() * list.length)],
+          url:  list[Math.floor(rng() * list.length)],
           x, z,
-          rotY:  Math.floor(rng() * 4) * Math.PI / 2,
-          scale: isSky ? 4.5 : SCALE,
+          rotY: Math.floor(rng() * 4) * Math.PI / 2,
+          scale,
         });
 
-        // Industrial zone: 30% chance of a chimney or tank prop nearby
+        // Industrial: chimney or tank prop nearby at 30%
         if (pack === 'industrial' && rng() < 0.3) {
           models.push({
-            url:   MODELS.props[Math.floor(rng() * MODELS.props.length)],
-            x:     x + (rng() - 0.5) * 5,
-            z:     z + (rng() - 0.5) * 5,
+            url:   MODELS.chimneys[Math.floor(rng() * MODELS.chimneys.length)],
+            x:     x + (rng() - 0.5) * 4,
+            z:     z + (rng() - 0.5) * 4,
             rotY:  rng() * Math.PI * 2,
             scale: 2.0,
+          });
+        }
+
+        // Suburban: driveway tile in front of house at 40%
+        if (pack === 'suburban' && rng() < 0.4) {
+          const dvUrl = MODELS.driveways[Math.floor(rng() * MODELS.driveways.length)];
+          models.push({
+            url:   dvUrl,
+            x:     x + (rng() - 0.5) * 2,
+            z:     z + (rng() - 0.5) * 2,
+            rotY:  Math.floor(rng() * 4) * Math.PI / 2,
+            scale: 5.0, // native 0.36 wide → 1.8 at scale 5
+          });
+        }
+
+        // Suburban: planter at 25%
+        if (pack === 'suburban' && rng() < 0.25) {
+          models.push({
+            url:   '/models/suburban/planter.glb',
+            x:     x + (rng() - 0.5) * 3,
+            z:     z + (rng() - 0.5) * 3,
+            rotY:  rng() * Math.PI * 2,
+            scale: 4.0,
           });
         }
       }
     }
 
-    // Trees (GLB) around center park
+    // GLB trees around center park
     const numTrees = 6 + gridR * 4;
     for (let i = 0; i < numTrees; i++) {
       const angle = (i / numTrees) * Math.PI * 2 + treeRng() * 0.5;
-      const r = 2.5 + treeRng() * 2;
+      const r     = 2 + treeRng() * 2;
       models.push({
         url:   MODELS.trees[treeRng() > 0.5 ? 0 : 1],
         x:     Math.cos(angle) * r,
         z:     Math.sin(angle) * r,
         rotY:  treeRng() * Math.PI * 2,
-        scale: 1.5 + treeRng() * 1.0,
+        scale: 2.5 + treeRng() * 1.5,
       });
     }
 
-    const citySize = (2 * Math.max(gridR, 1) + 1) * TILE + 24;
+    const gr       = Math.max(gridR, 1);
+    const citySize = (2 * gr + 1) * TILE + 24;
     return { models, citySize, gridR };
   }, [followers, tokenId]);
 
   return (
     <>
-      <color attach="background" args={["#9aaabb"]} />
-      <fog attach="fog" args={["#9aaabb", 80, 220]} />
-      <ambientLight intensity={1.6} />
+      <color attach="background" args={["#8899aa"]} />
+      <fog attach="fog" args={["#8899aa", 80, 220]} />
+      <ambientLight intensity={1.8} />
       <directionalLight position={[20, 28, 15]} intensity={1.4} />
-      <directionalLight position={[-10, 15, -10]} intensity={0.4} color="#aaccff" />
+      <directionalLight position={[-10, 15, -10]} intensity={0.4} color="#bbccff" />
       <hemisphereLight args={["#c8d8f0", "#223311", 0.5]} />
 
-      {/* Simple ground plane — dark asphalt */}
+      {/* Ground — asphalt grey */}
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.1, 0]}>
         <planeGeometry args={[data.citySize + 30, data.citySize + 30]} />
-        <meshStandardMaterial color="#2a2a2a" roughness={1} />
+        <meshStandardMaterial color="#4a4e5a" roughness={1} />
       </mesh>
 
+      {/* Road grid between building rows/cols */}
+      <RoadGrid gridR={data.gridR} />
+
+      {/* All GLB models */}
       {data.models.map((m, i) => (
         <GlbModel
           key={i}
@@ -121,12 +199,16 @@ function V2Scene({ metrics, tokenId }) {
   );
 }
 
+// ─── Camera ──────────────────────────────────────────────────────────────────
+
 function camPos(followers) {
   const level = cityLevel(followers);
   const gridR = level >= 9 ? 5 : level >= 7 ? 4 : level >= 5 ? 3 : level >= 3 ? 2 : level >= 1 ? 1 : 0;
-  const d = 32 + gridR * 14;
+  const d = 30 + gridR * 12;
   return [d, d * 0.75, d];
 }
+
+// ─── Public component ─────────────────────────────────────────────────────────
 
 export default function CityRendererV2({ city, tokenId }) {
   const [open, setOpen] = useState(false);
