@@ -298,7 +298,7 @@ function V2Scene({ metrics, tokenId }) {
             x:     cx + (rng() - 0.5) * HALF_B * 1.4,
             z:     cz + (rng() - 0.5) * HALF_B * 1.4,
             rotY:  rng() * Math.PI * 2,
-            scale: 3.5 + rng() * 2.0,
+            scale: 8.0 + rng() * 6.0,
           });
         }
       }
@@ -309,7 +309,7 @@ function V2Scene({ metrics, tokenId }) {
     for (let i = 0; i < parkTrees; i++) {
       const angle = (i / parkTrees) * Math.PI * 2 + treeRng() * 0.3;
       const r     = 8 + treeRng() * 3;
-      models.push({ url: MODELS.trees[treeRng()>0.5?0:1], x: Math.cos(angle)*r, z: Math.sin(angle)*r, rotY: treeRng()*Math.PI*2, scale: 4.0+treeRng()*2.0 });
+      models.push({ url: MODELS.trees[treeRng()>0.5?0:1], x: Math.cos(angle)*r, z: Math.sin(angle)*r, rotY: treeRng()*Math.PI*2, scale: 9.0+treeRng()*6.0 });
     }
 
     const citySize = (2 * gr + 1) * PERIOD + 24;
