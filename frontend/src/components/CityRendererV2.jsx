@@ -37,8 +37,8 @@ const ZONE_SCALE = {
   suburban:   4.0,
 };
 
-const TILE    = 7;   // distance between building centers
-const ROAD_W  = 2.0; // road strip width between tile rows/cols
+const TILE    = 28;  // distance between building centers
+const ROAD_W  = 6.0; // road strip width between tile rows/cols
 
 // ─── GLB model component ─────────────────────────────────────────────────────
 
@@ -204,7 +204,7 @@ function V2Scene({ metrics, tokenId }) {
 function camPos(followers) {
   const level = cityLevel(followers);
   const gridR = level >= 9 ? 5 : level >= 7 ? 4 : level >= 5 ? 3 : level >= 3 ? 2 : level >= 1 ? 1 : 0;
-  const d = 30 + gridR * 12;
+  const d = 40 + gridR * TILE * 1.4;
   return [d, d * 0.75, d];
 }
 
