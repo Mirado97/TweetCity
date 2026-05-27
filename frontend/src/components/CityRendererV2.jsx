@@ -27,6 +27,10 @@ const MODELS = {
   planters:   ['/models/suburban/planter.glb'],
   // park trees
   trees:      ['/models/suburban/tree-large.glb', '/models/suburban/tree-small.glb'],
+  // commercial street details
+  commercialDetails: ['detail-awning','detail-awning-wide','detail-overhang','detail-overhang-wide','detail-parasol-a','detail-parasol-b'].map(n => `/models/commercial/${n}.glb`),
+  // suburban path/sidewalk tiles
+  paths:      ['path-short','path-long','path-stones-short','path-stones-long','path-stones-messy'].map(n => `/models/suburban/${n}.glb`),
 };
 
 // Scale per zone so all packs have similar real-world footprint (~5 units)
@@ -89,7 +93,8 @@ function V2Scene({ metrics, tokenId }) {
 
     const models = [];
 
-    const JITTER = TILE * 0.35; // max positional offset within cell
+    // Max safe jitter: road edge at TILE/2 - ROAD_W/2 = 11, minus building half-footprint(2.5) and margin(2) = 6.5
+    const JITTER = TILE / 2 - ROAD_W / 2 - 4.5; // = 6.5
 
     for (let row = -gridR; row <= gridR; row++) {
       for (let col = -gridR; col <= gridR; col++) {
@@ -171,6 +176,39 @@ function V2Scene({ metrics, tokenId }) {
             z:     z + (rng() - 0.5) * 3,
             rotY:  rng() * Math.PI * 2,
             scale: 4.0,
+          });
+        }
+
+        // Suburban: path/sidewalk tile at 30%
+        if (pack === 'suburban' && rng() < 0.3) {
+          models.push({
+            url:   MODELS.paths[Math.floor(rng() * MODELS.paths.length)],
+            x:     x + (rng() - 0.5) * 5,
+            z:     z + (rng() - 0.5) * 5,
+            rotY:  Math.floor(rng() * 4) * Math.PI / 2,
+            scale: 4.0,
+          });
+        }
+
+        // Commercial: awning or parasol at 35%
+        if ((pack === 'commercial' || pack === 'skyscraper') && rng() < 0.35) {
+          models.push({
+            url:   MODELS.commercialDetails[Math.floor(rng() * MODELS.commercialDetails.length)],
+            x:     x + (rng() - 0.5) * 4,
+            z:     z + (rng() - 0.5) * 4,
+            rotY:  Math.floor(rng() * 4) * Math.PI / 2,
+            scale: 3.5,
+          });
+        }
+
+        // Scattered trees throughout city at 15%
+        if (rng() < 0.15) {
+          models.push({
+            url:   MODELS.trees[rng() > 0.5 ? 0 : 1],
+            x:     x + (rng() - 0.5) * TILE * 0.4,
+            z:     z + (rng() - 0.5) * TILE * 0.4,
+            rotY:  rng() * Math.PI * 2,
+            scale: 2.0 + rng() * 1.5,
           });
         }
       }
