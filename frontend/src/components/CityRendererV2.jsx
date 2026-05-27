@@ -221,10 +221,10 @@ function V2Scene({ metrics, tokenId }) {
   return (
     <>
       <color attach="background" args={["#8899aa"]} />
-      <ambientLight intensity={1.8} />
-      <directionalLight position={[20, 28, 15]} intensity={1.4} />
-      <directionalLight position={[-10, 15, -10]} intensity={0.4} color="#bbccff" />
-      <hemisphereLight args={["#c8d8f0", "#223311", 0.5]} />
+      <ambientLight intensity={0.35} />
+      <directionalLight position={[20, 28, 15]} intensity={2.8} />
+      <directionalLight position={[-10, 15, -10]} intensity={0.6} color="#cce0ff" />
+      <hemisphereLight args={["#d0e8ff", "#334400", 0.4]} />
 
       {/* Base ground (shows at city edges) */}
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.05, 0]}>
