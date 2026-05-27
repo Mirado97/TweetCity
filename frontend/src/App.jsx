@@ -5,6 +5,7 @@ import MintPage from "./pages/MintPage";
 import CityPage from "./pages/CityPage";
 import LeaderboardPage from "./pages/LeaderboardPage";
 import TestCitiesPage from "./pages/TestCitiesPage";
+import TestV2Page from "./pages/TestV2Page";
 import "./App.css";
 
 const LS_TOKEN = "tweetcity_my_token";
@@ -40,6 +41,7 @@ export default function App() {
     ...(cityTokenId ? [{ id: "city", label: "My City", tokenId: cityTokenId }] : []),
     { id: "leaderboard", label: "Leaderboard" },
     { id: "test", label: "Test", style: { opacity: 0.5, fontSize: 11 } },
+    { id: "testv2", label: "V2", style: { opacity: 0.5, fontSize: 11 } },
   ];
 
   return (
@@ -90,6 +92,7 @@ export default function App() {
           <LeaderboardPage onCityClick={(id) => nav("city", { tokenId: id })} />
         )}
         {page === "test" && <TestCitiesPage />}
+        {page === "testv2" && <TestV2Page />}
       </main>
 
       {walletError && <div className="global-error">{walletError}</div>}
