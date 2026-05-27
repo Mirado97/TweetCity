@@ -130,7 +130,7 @@ body::before {
 
 .main {
   flex: 1;
-  width: min(92vw, 1800px);
+  width: min(98vw, 1800px);
   margin: 0 auto;
   padding: var(--space-8) var(--space-6);
 }
