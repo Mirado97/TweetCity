@@ -90,19 +90,19 @@ function V2Scene({ metrics, tokenId }) {
     // Tile x/z range: from outer edge of leftmost block to outer edge of rightmost
     const tileHalfSpan = gr * PERIOD + HALF_B - S / 2; // = gr*32 + 8
 
-    // Horizontal straights (road runs along X → rotY = π/2)
+    // Horizontal straights (along X axis → rotY = 0, tile natively runs along X)
     for (const rz of roadPos) {
       for (let x = -tileHalfSpan; x <= tileHalfSpan + 0.001; x += S) {
-        if (roadPos.some(rx => Math.abs(rx - x) < 0.1)) continue; // crossroad handles it
-        models.push({ url: '/models/roads/road-straight.glb', x, z: rz, rotY: Math.PI / 2, scale: S });
+        if (roadPos.some(rx => Math.abs(rx - x) < 0.1)) continue;
+        models.push({ url: '/models/roads/road-straight.glb', x, z: rz, rotY: 0, scale: S });
       }
     }
 
-    // Vertical straights (road runs along Z → rotY = 0)
+    // Vertical straights (along Z axis → rotY = π/2)
     for (const rx of roadPos) {
       for (let z = -tileHalfSpan; z <= tileHalfSpan + 0.001; z += S) {
         if (roadPos.some(rz => Math.abs(rz - z) < 0.1)) continue;
-        models.push({ url: '/models/roads/road-straight.glb', x: rx, z, rotY: 0, scale: S });
+        models.push({ url: '/models/roads/road-straight.glb', x: rx, z, rotY: Math.PI / 2, scale: S });
       }
     }
 
