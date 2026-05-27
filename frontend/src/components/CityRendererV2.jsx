@@ -89,13 +89,18 @@ function V2Scene({ metrics, tokenId }) {
 
     const models = [];
 
+    const JITTER = TILE * 0.35; // max positional offset within cell
+
     for (let row = -gridR; row <= gridR; row++) {
       for (let col = -gridR; col <= gridR; col++) {
         if (row === 0 && col === 0) continue; // center = park/trees
 
+        // Skip ~12% of cells → open lots / breathing room
+        if (rng() < 0.12) continue;
+
         const zone = Math.max(Math.abs(row), Math.abs(col));
-        const x    = col * TILE;
-        const z    = row * TILE;
+        const cx   = col * TILE;
+        const cz   = row * TILE;
 
         // Zone → model pack
         const isSky  = zone <= 1 && level >= 6;
@@ -103,7 +108,31 @@ function V2Scene({ metrics, tokenId }) {
         const isMid  = zone <= gridR - 1;
         const pack   = isSky ? 'skyscraper' : isHigh ? 'commercial' : isMid ? 'industrial' : 'suburban';
         const list   = MODELS[pack];
-        const scale  = ZONE_SCALE[pack];
+        const baseScale = ZONE_SCALE[pack];
+
+        // Suburban split: 25% chance → 2 smaller houses offset to opposite corners
+        if (pack === 'suburban' && rng() < 0.25) {
+          const offsets = [
+            [JITTER * 0.5, JITTER * 0.5],
+            [-JITTER * 0.5, -JITTER * 0.5],
+          ];
+          for (const [ox, oz] of offsets) {
+            const sx = baseScale * (0.75 + rng() * 0.15);
+            models.push({
+              url:  list[Math.floor(rng() * list.length)],
+              x:    cx + ox + (rng() - 0.5) * 4,
+              z:    cz + oz + (rng() - 0.5) * 4,
+              rotY: Math.floor(rng() * 4) * Math.PI / 2,
+              scale: sx,
+            });
+          }
+          continue;
+        }
+
+        // Normal placement: jitter within cell + slight scale variation
+        const x     = cx + (rng() - 0.5) * JITTER * 2;
+        const z     = cz + (rng() - 0.5) * JITTER * 2;
+        const scale = baseScale * (0.85 + rng() * 0.3);
 
         models.push({
           url:  list[Math.floor(rng() * list.length)],
@@ -116,22 +145,21 @@ function V2Scene({ metrics, tokenId }) {
         if (pack === 'industrial' && rng() < 0.3) {
           models.push({
             url:   MODELS.chimneys[Math.floor(rng() * MODELS.chimneys.length)],
-            x:     x + (rng() - 0.5) * 4,
-            z:     z + (rng() - 0.5) * 4,
+            x:     x + (rng() - 0.5) * 6,
+            z:     z + (rng() - 0.5) * 6,
             rotY:  rng() * Math.PI * 2,
             scale: 2.0,
           });
         }
 
-        // Suburban: driveway tile in front of house at 40%
+        // Suburban: driveway at 40%
         if (pack === 'suburban' && rng() < 0.4) {
-          const dvUrl = MODELS.driveways[Math.floor(rng() * MODELS.driveways.length)];
           models.push({
-            url:   dvUrl,
+            url:   MODELS.driveways[Math.floor(rng() * MODELS.driveways.length)],
             x:     x + (rng() - 0.5) * 2,
             z:     z + (rng() - 0.5) * 2,
             rotY:  Math.floor(rng() * 4) * Math.PI / 2,
-            scale: 5.0, // native 0.36 wide → 1.8 at scale 5
+            scale: 5.0,
           });
         }
 
@@ -170,7 +198,6 @@ function V2Scene({ metrics, tokenId }) {
   return (
     <>
       <color attach="background" args={["#8899aa"]} />
-      <fog attach="fog" args={["#8899aa", 80, 220]} />
       <ambientLight intensity={1.8} />
       <directionalLight position={[20, 28, 15]} intensity={1.4} />
       <directionalLight position={[-10, 15, -10]} intensity={0.4} color="#bbccff" />
