@@ -10,6 +10,8 @@
     "start": "npx serve -s dist"
   },
   "devDependencies": {
+    "@tailwindcss/vite": "^4.3.0",
+    "tailwindcss": "^4.3.0",
     "typescript": "~6.0.2",
     "vite": "^8.0.12"
   },
@@ -17,9 +19,13 @@
     "@react-three/drei": "^10.7.7",
     "@react-three/fiber": "^9.6.1",
     "@vitejs/plugin-react": "^6.0.2",
+    "clsx": "^2.1.1",
     "ethers": "^6.16.0",
+    "framer-motion": "^12.40.0",
+    "lucide-react": "^1.16.0",
     "react": "^19.2.6",
     "react-dom": "^19.2.6",
+    "tailwind-merge": "^3.6.0",
     "three": "^0.184.0"
   }
 }

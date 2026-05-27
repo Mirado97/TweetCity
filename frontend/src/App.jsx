@@ -1,5 +1,9 @@
 import { useState } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import { useWallet } from "./hooks/useWallet";
+import { Navbar } from "./components/Navbar";
+import { BackgroundGrid } from "./components/BackgroundGrid";
+import { FloatingParticles } from "./components/FloatingParticles";
 import LandingPage from "./pages/LandingPage";
 import MintPage from "./pages/MintPage";
 import CityPage from "./pages/CityPage";
@@ -20,79 +24,69 @@ function getInitialState() {
   return { page: saved ? "city" : "home", tokenId: saved };
 }
 
+const pageVariants = {
+  initial: { opacity: 0, y: 20 },
+  animate: { opacity: 1, y: 0 },
+  exit:    { opacity: 0, y: -20 },
+};
+
 export default function App() {
   const init = getInitialState();
   const [page, setPage] = useState(init.page);
   const [cityTokenId, setCityTokenId] = useState(init.tokenId);
-  const { address, signer, error: walletError, connect } = useWallet();
+  const { address, signer, connect, disconnect } = useWallet();
 
-  function nav(p, extra) {
+  function nav(p, tokenId) {
     setPage(p);
-    if (extra?.tokenId) {
-      setCityTokenId(extra.tokenId);
-      localStorage.setItem(LS_TOKEN, extra.tokenId);
+    if (tokenId) {
+      setCityTokenId(tokenId);
+      localStorage.setItem(LS_TOKEN, tokenId);
     }
   }
 
-  const navItems = [
-    { id: "home", label: "Home" },
-    { id: "mint", label: "Mint" },
-    ...(cityTokenId ? [{ id: "city", label: "My City", tokenId: cityTokenId }] : []),
-    { id: "leaderboard", label: "Leaderboard" },
-    { id: "testv2", label: "V2", style: { opacity: 0.5, fontSize: 11 } },
-  ];
-
   return (
-    <div className="app">
-      <nav className="navbar">
-        <div className="navbar-inner">
-          <div className="nav-logo" onClick={() => nav("home")}>
-            TweetCity
-          </div>
-          
-          <div className="nav-links">
-            {navItems.map((item) => (
-              <button
-                key={item.id}
-                onClick={() => nav(item.id, item.tokenId ? { tokenId: item.tokenId } : undefined)}
-                className={page === item.id ? "active" : ""}
-                style={item.style}
-              >
-                {item.label}
-              </button>
-            ))}
-          </div>
-          
-          <div className="nav-wallet">
-            {address ? (
-              <span className="addr-pill">
-                <span>●</span>
-                <span>{address.slice(0, 6)}...{address.slice(-4)}</span>
-              </span>
-            ) : (
-              <button className="btn btn-connect" onClick={connect}>
-                Connect
-              </button>
-            )}
-          </div>
-        </div>
-      </nav>
+    <div className="min-h-screen bg-[#0a0a0f] relative noise-bg">
+      <BackgroundGrid />
+      <FloatingParticles />
 
-      <main className="main">
-        {page === "home" && <LandingPage onMintClick={() => nav("mint")} />}
-        {page === "mint" && (
-          <MintPage address={address} onConnect={connect} onMinted={(id) => nav("city", { tokenId: id })} />
-        )}
-        {page === "city" && cityTokenId && (
-          <CityPage tokenId={cityTokenId} signer={signer} address={address} />
-        )}
-        {page === "leaderboard" && (
-          <LeaderboardPage onCityClick={(id) => nav("city", { tokenId: id })} />
-        )}
-        {page === "testv2" && <TestV2Page />}
+      <Navbar
+        currentPage={page}
+        onNavigate={nav}
+        tokenId={cityTokenId}
+        address={address}
+        onConnect={connect}
+        onDisconnect={disconnect}
+      />
+
+      <main className="relative z-10">
+        <AnimatePresence mode="wait">
+          {page === "home" && (
+            <motion.div key="home" variants={pageVariants} initial="initial" animate="animate" exit="exit" transition={{ duration: 0.35 }}>
+              <LandingPage onMintClick={() => nav("mint")} />
+            </motion.div>
+          )}
+          {page === "mint" && (
+            <motion.div key="mint" variants={pageVariants} initial="initial" animate="animate" exit="exit" transition={{ duration: 0.35 }}>
+              <MintPage address={address} onConnect={connect} onMinted={(id) => nav("city", id)} />
+            </motion.div>
+          )}
+          {page === "city" && cityTokenId && (
+            <motion.div key="city" variants={pageVariants} initial="initial" animate="animate" exit="exit" transition={{ duration: 0.35 }}>
+              <CityPage tokenId={cityTokenId} signer={signer} address={address} />
+            </motion.div>
+          )}
+          {page === "leaderboard" && (
+            <motion.div key="leaderboard" variants={pageVariants} initial="initial" animate="animate" exit="exit" transition={{ duration: 0.35 }}>
+              <LeaderboardPage onCityClick={(id) => nav("city", id)} />
+            </motion.div>
+          )}
+          {page === "testv2" && (
+            <motion.div key="testv2" variants={pageVariants} initial="initial" animate="animate" exit="exit" transition={{ duration: 0.35 }}>
+              <TestV2Page />
+            </motion.div>
+          )}
+        </AnimatePresence>
       </main>
-
-      {walletError && <div className="global-error">{walletError}</div>}
     </div>
   );
 }
