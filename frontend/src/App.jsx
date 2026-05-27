@@ -34,25 +34,47 @@ export default function App() {
     }
   }
 
+  const navItems = [
+    { id: "home", label: "Home" },
+    { id: "mint", label: "Mint" },
+    ...(cityTokenId ? [{ id: "city", label: "My City", tokenId: cityTokenId }] : []),
+    { id: "leaderboard", label: "Leaderboard" },
+    { id: "test", label: "Test", style: { opacity: 0.5, fontSize: 11 } },
+  ];
+
   return (
     <div className="app">
       <nav className="navbar">
-        <div className="nav-logo" onClick={() => nav("home")}>TweetCity</div>
-        <div className="nav-links">
-          <button onClick={() => nav("home")}>Home</button>
-          <button onClick={() => nav("mint")}>Mint</button>
-          {cityTokenId && (
-            <button onClick={() => nav("city", { tokenId: cityTokenId })}>My City</button>
-          )}
-          <button onClick={() => nav("leaderboard")}>Leaderboard</button>
-          <button onClick={() => nav("test")} style={{ opacity: 0.5, fontSize: 11 }}>Test</button>
-        </div>
-        <div className="nav-wallet">
-          {address ? (
-            <span className="addr-pill">{address.slice(0, 6)}...{address.slice(-4)}</span>
-          ) : (
-            <button className="btn-connect" onClick={connect}>Connect Wallet</button>
-          )}
+        <div className="navbar-inner">
+          <div className="nav-logo" onClick={() => nav("home")}>
+            TweetCity
+          </div>
+          
+          <div className="nav-links">
+            {navItems.map((item) => (
+              <button
+                key={item.id}
+                onClick={() => nav(item.id, item.tokenId ? { tokenId: item.tokenId } : undefined)}
+                className={page === item.id ? "active" : ""}
+                style={item.style}
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>
+          
+          <div className="nav-wallet">
+            {address ? (
+              <span className="addr-pill">
+                <span>●</span>
+                <span>{address.slice(0, 6)}...{address.slice(-4)}</span>
+              </span>
+            ) : (
+              <button className="btn btn-connect" onClick={connect}>
+                Connect
+              </button>
+            )}
+          </div>
         </div>
       </nav>
 

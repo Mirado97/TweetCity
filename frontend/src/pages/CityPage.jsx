@@ -3,7 +3,7 @@ import { ethers } from "ethers";
 import { API_BASE, LEVEL_NAMES, GIFT_TYPES, getContract, getGiftsContract, fetchConfig } from "../lib/contract";
 import CityRenderer from "../components/CityRenderer";
 
-// ─── Gift sub-components ──────────────────────────────────────────────────────
+// ─── Gift Components ─────────────────────────────────────────────────────────
 
 function fmt(wei) {
   if (!wei) return "—";
@@ -18,7 +18,6 @@ function timeLeft(deadline) {
   return h > 0 ? `${h}h ${m}m` : `${m}m`;
 }
 
-// Owner sets their own price list
 function PriceManager({ tokenId, signer, giftsAddr, currentPrices, onSaved }) {
   const [inputs, setInputs] = useState(
     currentPrices.map(p => p > 0n ? ethers.formatEther(p) : "")
@@ -45,11 +44,14 @@ function PriceManager({ tokenId, signer, giftsAddr, currentPrices, onSaved }) {
 
   return (
     <div className="gift-panel">
-      <h3>My Price List</h3>
+      <div className="gift-header">
+        <span>💰</span>
+        <span>My Price List</span>
+      </div>
       <p className="gift-hint">Set 0 or leave empty to disable a gift type.</p>
-      <div className="price-grid">
+      <div className="price-list">
         {GIFT_TYPES.map((t, i) => (
-          <label key={i} className="price-row">
+          <div key={i} className="price-row">
             <span className="price-icon">{t.icon}</span>
             <span className="price-name">{t.name}</span>
             <input
@@ -61,21 +63,20 @@ function PriceManager({ tokenId, signer, giftsAddr, currentPrices, onSaved }) {
               onChange={e => setInputs(prev => { const n=[...prev]; n[i]=e.target.value; return n; })}
               className="price-input"
             />
-            <span className="price-obligation">{t.obligation} · {t.days}d</span>
-          </label>
+            <span className="price-info">{t.obligation} · {t.days}d</span>
+          </div>
         ))}
       </div>
-      {err && <div className="gift-err">{err}</div>}
-      <button className="btn-primary" onClick={save} disabled={saving}>
+      {err && <div className="error">{err}</div>}
+      <button className="btn btn-primary" onClick={save} disabled={saving}>
         {saving ? "Saving..." : "Save Prices"}
       </button>
     </div>
   );
 }
 
-// Owner inbox: approve or reject pending gifts
 function GiftInbox({ tokenId, signer, giftsAddr, pendingGifts, onAction }) {
-  const [busy, setBusy] = useState(null); // giftId being processed
+  const [busy, setBusy] = useState(null);
 
   async function act(giftId, approve) {
     setBusy(giftId);
@@ -94,8 +95,12 @@ function GiftInbox({ tokenId, signer, giftsAddr, pendingGifts, onAction }) {
   if (pendingGifts.length === 0) return null;
 
   return (
-    <div className="gift-panel gift-inbox">
-      <h3>Inbox <span className="badge">{pendingGifts.length}</span></h3>
+    <div className="gift-panel" style={{ borderColor: 'rgba(251, 191, 36, 0.3)' }}>
+      <div className="gift-header">
+        <span>📬</span>
+        <span>Inbox</span>
+        <span className="inbox-badge">{pendingGifts.length}</span>
+      </div>
       {pendingGifts.map(g => {
         const t = GIFT_TYPES[Number(g.giftType)];
         return (
@@ -111,14 +116,14 @@ function GiftInbox({ tokenId, signer, giftsAddr, pendingGifts, onAction }) {
             <p className="inbox-obligation">Obligation: {t?.obligation}</p>
             <div className="inbox-actions">
               <button
-                className="btn-primary"
+                className="btn btn-primary"
                 disabled={busy === g.id}
                 onClick={() => act(g.id, true)}
               >
                 {busy === g.id ? "..." : "Accept"}
               </button>
               <button
-                className="btn-ghost"
+                className="btn btn-ghost"
                 disabled={busy === g.id}
                 onClick={() => act(g.id, false)}
               >
@@ -132,7 +137,6 @@ function GiftInbox({ tokenId, signer, giftsAddr, pendingGifts, onAction }) {
   );
 }
 
-// Visitor: send a gift to this city
 function GiftShop({ tokenId, signer, giftsAddr, prices, ownerHandle, onSent }) {
   const [type, setType] = useState(0);
   const [tweetUrl, setTweetUrl] = useState("");
@@ -162,22 +166,25 @@ function GiftShop({ tokenId, signer, giftsAddr, prices, ownerHandle, onSent }) {
   }
 
   return (
-    <div className="gift-panel gift-shop">
-      <h3>Send a Gift to {ownerHandle ? `@${ownerHandle}` : "this city"}</h3>
+    <div className="gift-panel">
+      <div className="gift-header">
+        <span>🎁</span>
+        <span>Send a Gift to {ownerHandle ? `@${ownerHandle}` : "this city"}</span>
+      </div>
 
-      <div className="gift-type-grid">
+      <div className="gift-grid">
         {GIFT_TYPES.map((t, i) => {
           const p = prices[i];
           const on = p > 0n;
           return (
             <button
               key={i}
-              className={`gift-type-btn ${type === i ? "selected" : ""} ${!on ? "disabled" : ""}`}
+              className={`gift-type ${type === i ? "selected" : ""} ${!on ? "disabled" : ""}`}
               onClick={() => on && setType(i)}
             >
-              <span className="gt-icon">{t.icon}</span>
-              <span className="gt-name">{t.name}</span>
-              <span className="gt-price">{on ? fmt(p) : "—"}</span>
+              <span className="gift-icon">{t.icon}</span>
+              <span className="gift-name">{t.name}</span>
+              <span className="gift-price">{on ? fmt(p) : "—"}</span>
             </button>
           );
         })}
@@ -185,7 +192,7 @@ function GiftShop({ tokenId, signer, giftsAddr, prices, ownerHandle, onSent }) {
 
       {enabled ? (
         <>
-          <div className="gift-obligation-note">
+          <div className="obligation-box">
             Owner must: <b>{GIFT_TYPES[type].obligation}</b> within {GIFT_TYPES[type].days} days
           </div>
           <input
@@ -194,32 +201,33 @@ function GiftShop({ tokenId, signer, giftsAddr, prices, ownerHandle, onSent }) {
             value={tweetUrl}
             onChange={e => setTweetUrl(e.target.value)}
           />
-          {err && <div className="gift-err">{err}</div>}
-          <button className="btn-primary" onClick={send} disabled={sending || !signer}>
+          {err && <div className="error">{err}</div>}
+          <button className="btn btn-primary" onClick={send} disabled={sending || !signer}>
             {sending ? "Sending..." : `Send for ${fmt(price)}`}
           </button>
-          <p className="gift-refund-note">Funds locked until owner engages · refund if they decline or miss deadline</p>
+          <p className="refund-note">Funds locked until owner engages · refund if they decline or miss deadline</p>
         </>
       ) : (
-        <p className="gift-disabled">Owner hasn't enabled this gift type</p>
+        <p style={{ color: 'var(--text-muted)', textAlign: 'center', padding: 'var(--space-4)' }}>
+          Owner hasn't enabled this gift type
+        </p>
       )}
     </div>
   );
 }
 
-// Quick stats bar for gift activity
 function GiftStats({ stats }) {
   if (!stats || stats.totalGifts === 0n) return null;
   return (
-    <div className="gift-stats-bar">
+    <div className="gift-stats">
       <span>🎁 {stats.totalGifts.toString()} gifts received</span>
       <span>💰 {fmt(stats.totalEarned)} earned</span>
-      {stats.pendingCount > 0n && <span className="pending-badge">⏳ {stats.pendingCount.toString()} pending</span>}
+      {stats.pendingCount > 0n && <span className="pending-tag">⏳ {stats.pendingCount.toString()} pending</span>}
     </div>
   );
 }
 
-// ─── Main page ────────────────────────────────────────────────────────────────
+// ─── City Page ───────────────────────────────────────────────────────────────
 
 export default function CityPage({ tokenId, signer, address }) {
   const [city, setCity] = useState(null);
@@ -231,7 +239,6 @@ export default function CityPage({ tokenId, signer, address }) {
   const [likeCount, setLikeCount] = useState(0);
   const [isOwner, setIsOwner] = useState(false);
 
-  // Gift state
   const [giftsContractAddr, setGiftsContractAddr] = useState("");
   const [prices, setPrices] = useState([0n, 0n, 0n, 0n, 0n, 0n]);
   const [activeGifts, setActiveGifts] = useState([]);
@@ -348,7 +355,7 @@ export default function CityPage({ tokenId, signer, address }) {
     }
   }
 
-  if (loading) return <div className="page-loading">Loading city...</div>;
+  if (loading) return <div className="loading">Loading city...</div>;
   if (error && !city) return <div className="page-error">{error}</div>;
   if (!city) return <div className="page-error">City not found</div>;
 
@@ -377,65 +384,99 @@ export default function CityPage({ tokenId, signer, address }) {
   })();
 
   return (
-    <div className="city-page">
+    <div className="city-page fade-in">
+      {/* Header */}
       <div className="city-header">
-        <h1>{rendererCity.cityName}</h1>
-        <div className="city-level-badge">{LEVEL_NAMES[level]}</div>
+        <h1 className="city-name">{rendererCity.cityName}</h1>
+        <div className="city-badge">
+          <span>⭐</span>
+          <span>{LEVEL_NAMES[level]}</span>
+        </div>
         {twitterHandle && (
-          <a href={`https://twitter.com/${twitterHandle}`} target="_blank" rel="noreferrer" className="handle-link">
+          <a href={`https://twitter.com/${twitterHandle}`} target="_blank" rel="noreferrer" className="city-handle">
             @{twitterHandle}
           </a>
         )}
       </div>
 
-      <CityRenderer city={rendererCity} tokenId={tokenId} gifts={activeGifts} />
+      {/* City Visual */}
+      <div className="city-visual">
+        <CityRenderer city={rendererCity} tokenId={tokenId} gifts={activeGifts} />
+      </div>
 
       <GiftStats stats={giftStats} />
 
-      {city.ipfsData?.city?.motto    && <p className="city-motto">"{city.ipfsData.city.motto}"</p>}
-      {city.ipfsData?.description    && <p className="city-lore">{city.ipfsData.description}</p>}
-
-      <div className="city-stats">
-        <div className="stat"><span>Population</span>{Number(cityMeta?.followers  || 0).toLocaleString()}</div>
-        <div className="stat"><span>Tweets</span>{Number(cityMeta?.tweetCount || 0).toLocaleString()}</div>
-        <div className="stat"><span>Trade Routes</span>{Number(cityMeta?.following  || 0).toLocaleString()}</div>
-        <div className="stat"><span>Engagement</span>{Number(cityMeta?.engagement || 0).toLocaleString()}</div>
-        <div className="stat"><span>Likes</span>{likeCount.toLocaleString()}</div>
-      </div>
-
-      {syncResult?.levelUp && (
-        <div className="level-up-banner">
-          Level Up! {LEVEL_NAMES[syncResult.oldLevel]} → {LEVEL_NAMES[syncResult.newLevel]}
-          {syncResult.narrative && <p>{syncResult.narrative}</p>}
+      {/* City Info */}
+      {(city.ipfsData?.city?.motto || city.ipfsData?.description) && (
+        <div className="city-info">
+          {city.ipfsData?.city?.motto && <p className="city-motto">"{city.ipfsData.city.motto}"</p>}
+          {city.ipfsData?.description && <p className="city-lore">{city.ipfsData.description}</p>}
         </div>
       )}
 
+      {/* Stats */}
+      <div className="stats-grid">
+        <div className="stat-card">
+          <div className="stat-value">{Number(cityMeta?.followers  || 0).toLocaleString()}</div>
+          <div className="stat-label">Population</div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-value">{Number(cityMeta?.tweetCount || 0).toLocaleString()}</div>
+          <div className="stat-label">Tweets</div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-value">{Number(cityMeta?.following  || 0).toLocaleString()}</div>
+          <div className="stat-label">Trade Routes</div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-value">{Number(cityMeta?.engagement || 0).toLocaleString()}</div>
+          <div className="stat-label">Engagement</div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-value">{likeCount.toLocaleString()}</div>
+          <div className="stat-label">Likes</div>
+        </div>
+      </div>
+
+      {/* Level Up */}
+      {syncResult?.levelUp && (
+        <div className="level-up">
+          <div className="level-up-icon">🚀</div>
+          <div className="level-up-content">
+            <h4>Level Up! {LEVEL_NAMES[syncResult.oldLevel]} → {LEVEL_NAMES[syncResult.newLevel]}</h4>
+            {syncResult.narrative && <p>{syncResult.narrative}</p>}
+          </div>
+        </div>
+      )}
+
+      {/* Error */}
       {error && <div className="error">{error}</div>}
 
+      {/* Actions */}
       <div className="city-actions">
         {isOwner && (
-          <button className="btn-secondary" onClick={sync} disabled={syncing}>
-            {syncing ? "Syncing..." : "Sync City"}
+          <button className="btn btn-secondary" onClick={sync} disabled={syncing}>
+            {syncing ? "Syncing..." : "🔄 Sync City"}
           </button>
         )}
-        <button className="btn-secondary" onClick={likeCity} disabled={liking || !signer}>
-          {liking ? "..." : `Like (${likeCount})`}
+        <button className="btn btn-secondary" onClick={likeCity} disabled={liking || !signer}>
+          {liking ? "..." : `❤️ Like (${likeCount})`}
         </button>
-        <a className="btn-secondary" target="_blank" rel="noreferrer"
+        <a className="btn btn-secondary" target="_blank" rel="noreferrer"
           href={`https://twitter.com/intent/tweet?text=${encodeURIComponent(shareText)}&url=${encodeURIComponent(`${API_BASE}/share/city/${tokenId}`)}&hashtags=TweetCity,Mantle,NFT`}>
           Share on Twitter
         </a>
         {isOwner && (
           <button
-            className="btn-secondary"
+            className="btn btn-secondary"
             onClick={() => setShowPriceManager(v => !v)}
           >
-            {showPriceManager ? "Hide Price List" : "Set Gift Prices"}
+            {showPriceManager ? "Hide Price List" : "💰 Set Gift Prices"}
           </button>
         )}
       </div>
 
-      {/* Owner: set gift prices */}
+      {/* Gift Sections */}
       {isOwner && showPriceManager && (
         <PriceManager
           tokenId={tokenId}
@@ -446,7 +487,6 @@ export default function CityPage({ tokenId, signer, address }) {
         />
       )}
 
-      {/* Owner: approve / reject incoming gift requests */}
       {isOwner && (
         <GiftInbox
           tokenId={tokenId}
@@ -457,7 +497,6 @@ export default function CityPage({ tokenId, signer, address }) {
         />
       )}
 
-      {/* Visitor: send a gift */}
       {!isOwner && (
         <GiftShop
           tokenId={tokenId}

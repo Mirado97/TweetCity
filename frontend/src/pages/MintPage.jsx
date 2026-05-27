@@ -22,6 +22,14 @@ function getShareUrl(name, level, style, tokenId) {
   return `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}&hashtags=${hashtags}`;
 }
 
+const STEPS = {
+  wallet: { num: "1 / 3", title: "Connect Wallet" },
+  handle: { num: "2 / 3", title: "Enter Twitter Handle" },
+  tweet: { num: "3 / 3", title: "Verify Ownership" },
+  minting: { num: "—", title: "Building Your City" },
+  done: { num: "✓", title: "City Minted!" },
+};
+
 export default function MintPage({ address, onConnect, onMinted }) {
   const [step, setStep] = useState(address ? "handle" : "wallet");
   const [handle, setHandle] = useState("");
@@ -86,103 +94,173 @@ export default function MintPage({ address, onConnect, onMinted }) {
     cityName: city.name,
   } : null;
 
+  const currentStep = STEPS[step];
+
   return (
-    <div className="mint-page">
-      <h1>Mint Your City</h1>
-      <p className="subtitle">Transform your Twitter presence into a living city on Mantle</p>
+    <div className="mint-page fade-in">
+      <div className="mint-header">
+        <h1>Mint Your City</h1>
+        <p>Transform your Twitter presence into a living city NFT on Mantle</p>
+      </div>
 
-      {step === "wallet" && (
-        <div className="step-card">
-          <div className="step-num">1 / 3</div>
-          <h2>Connect Wallet</h2>
-          <p>Connect MetaMask to get started. We'll switch you to Mantle Testnet automatically.</p>
-          <button className="btn-primary" onClick={async () => { await onConnect(); setStep("handle"); }}>
-            Connect MetaMask
-          </button>
-        </div>
-      )}
+      <div className="mint-step">
+        <div className="step-badge">{currentStep.num}</div>
+        <h2>{currentStep.title}</h2>
 
-      {step === "handle" && (
-        <div className="step-card">
-          <div className="step-num">2 / 3</div>
-          <h2>Enter Twitter Handle</h2>
-          <p>Connected: <span className="addr">{address?.slice(0, 6)}...{address?.slice(-4)}</span></p>
-          <div className="input-row">
-            <span className="at">@</span>
-            <input
-              value={handle}
-              onChange={(e) => setHandle(e.target.value.replace("@", ""))}
-              placeholder="your_handle"
-              onKeyDown={(e) => e.key === "Enter" && handle && getVerifyText()}
-            />
-          </div>
-          {error && <div className="error">{error}</div>}
-          <button className="btn-primary" onClick={getVerifyText} disabled={!handle || loading}>
-            {loading ? "Loading..." : "Continue"}
-          </button>
-        </div>
-      )}
-
-      {step === "tweet" && (
-        <div className="step-card">
-          <div className="step-num">3 / 3</div>
-          <h2>Verify Ownership</h2>
-          <div className="verify-steps">
-            <div className="vstep"><span className="vnum">1</span> Log in to Twitter as <strong>@{handle}</strong> — <a href="https://twitter.com/login" target="_blank" rel="noreferrer" className="handle-link">open Twitter →</a></div>
-            <div className="vstep"><span className="vnum">2</span> Post this exact text from that account:</div>
-          </div>
-          <div className="verify-text">{verifyText}</div>
-          <div className="verify-steps">
-            <div className="vstep"><span className="vnum">3</span> Come back here and click "I've Posted — Mint Now"</div>
-          </div>
-          <p className="verify-hint">Your wallet address is not exposed — just a unique code linking your Twitter to this mint.</p>
-          <div className="btn-row">
-            <a className="btn-primary"
-              href={`https://twitter.com/intent/tweet?text=${encodeURIComponent(verifyText)}`}
-              target="_blank" rel="noreferrer">
-              Open Compose (as @{handle})
-            </a>
-            <button className="btn-secondary" onClick={mint} disabled={loading}>
-              {loading ? "Verifying..." : "I've Posted — Mint Now"}
+        {/* Step 1: Wallet */}
+        {step === "wallet" && (
+          <>
+            <p>Connect MetaMask to get started. We'll switch you to Mantle Testnet automatically.</p>
+            <button 
+              className="btn btn-primary" 
+              style={{ marginTop: 'var(--space-6)' }}
+              onClick={async () => { await onConnect(); setStep("handle"); }}
+            >
+              Connect MetaMask
             </button>
-          </div>
-          {error && <div className="error">{error}</div>}
-        </div>
-      )}
+          </>
+        )}
 
-      {step === "minting" && (
-        <div className="step-card minting-card">
-          <div className="spinner" />
-          <h2>Building Your City...</h2>
-          <p>Analyzing tweets · Generating city AI · Uploading to IPFS · Minting on Mantle...</p>
-        </div>
-      )}
+        {/* Step 2: Handle */}
+        {step === "handle" && (
+          <>
+            <p>Connected: <span className="addr">{address?.slice(0, 6)}...{address?.slice(-4)}</span></p>
+            <div className="input-group" style={{ marginTop: 'var(--space-6)' }}>
+              <span className="input-prefix">@</span>
+              <input
+                value={handle}
+                onChange={(e) => setHandle(e.target.value.replace("@", ""))}
+                placeholder="your_handle"
+                onKeyDown={(e) => e.key === "Enter" && handle && getVerifyText()}
+              />
+            </div>
+            {error && <div className="error">{error}</div>}
+            <button 
+              className="btn btn-primary" 
+              style={{ marginTop: 'var(--space-6)' }}
+              onClick={getVerifyText} 
+              disabled={!handle || loading}
+            >
+              {loading ? "Loading..." : "Continue"}
+            </button>
+          </>
+        )}
 
-      {step === "done" && city && cityConfig && (
-        <div className="step-card done-card">
-          <h2>{city.name} Minted!</h2>
-          <CityRenderer city={cityConfig} width={500} height={260} />
-          <div className="result-meta">
-            <div><span>Level</span>{LEVEL_NAMES[city.city?.level]}</div>
-            <div><span>Token ID</span>#{result.tokenId}</div>
-            <div><span>Style</span>{city.city?.style}</div>
-            <div><span>Motto</span>{city.city?.motto}</div>
+        {/* Step 3: Verify */}
+        {step === "tweet" && (
+          <>
+            <div className="verify-list">
+              <div className="verify-item">
+                <span className="verify-num">1</span>
+                <span>Log in to Twitter as <strong>@{handle}</strong> — <a href="https://twitter.com/login" target="_blank" rel="noreferrer" className="handle-link">open Twitter →</a></span>
+              </div>
+              <div className="verify-item">
+                <span className="verify-num">2</span>
+                <span>Post this exact text from that account:</span>
+              </div>
+            </div>
+            
+            <div className="verify-text">{verifyText}</div>
+            
+            <div className="verify-list" style={{ marginTop: 'var(--space-4)' }}>
+              <div className="verify-item">
+                <span className="verify-num">3</span>
+                <span>Come back here and click "I've Posted — Mint Now"</span>
+              </div>
+            </div>
+            
+            <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginTop: 'var(--space-4)' }}>
+              Your wallet address is not exposed — just a unique code linking your Twitter to this mint.
+            </p>
+            
+            {error && <div className="error">{error}</div>}
+            
+            <div className="btn-row" style={{ justifyContent: 'center' }}>
+              <a 
+                className="btn btn-primary"
+                href={`https://twitter.com/intent/tweet?text=${encodeURIComponent(verifyText)}`}
+                target="_blank" 
+                rel="noreferrer"
+              >
+                📝 Open Compose
+              </a>
+              <button 
+                className="btn btn-secondary" 
+                onClick={mint} 
+                disabled={loading}
+              >
+                {loading ? "Verifying..." : "I've Posted — Mint Now"}
+              </button>
+            </div>
+          </>
+        )}
+
+        {/* Minting */}
+        {step === "minting" && (
+          <div style={{ textAlign: 'center' }}>
+            <div className="spinner" />
+            <h2 style={{ marginBottom: 'var(--space-4)' }}>Building Your City...</h2>
+            <ul className="mint-progress">
+              <li>Analyzing your tweets</li>
+              <li>Generating city with AI</li>
+              <li>Uploading to IPFS</li>
+              <li>Minting on Mantle</li>
+            </ul>
           </div>
-          <p className="lore">{city.description}</p>
-          <div className="btn-row">
-            <a className="btn-primary"
-              href={`https://explorer.sepolia.mantle.xyz/tx/${result.txHash}`}
-              target="_blank" rel="noreferrer">
-              View Transaction
-            </a>
-            <a className="btn-secondary"
-              href={getShareUrl(city.name, city.city?.level, city.city?.style, result.tokenId)}
-              target="_blank" rel="noreferrer">
-              Share on Twitter
-            </a>
+        )}
+
+        {/* Done */}
+        {step === "done" && city && cityConfig && (
+          <div className="done-card">
+            <div className="done-emoji">🎉</div>
+            <h2 className="done-title">{city.name} Minted!</h2>
+            
+            <div style={{ margin: 'var(--space-8) 0', borderRadius: 'var(--radius-xl)', overflow: 'hidden' }}>
+              <CityRenderer city={cityConfig} width={520} height={280} />
+            </div>
+            
+            <div className="result-grid">
+              <div className="result-item">
+                <span>Level</span>
+                <strong>{LEVEL_NAMES[city.city?.level]}</strong>
+              </div>
+              <div className="result-item">
+                <span>Token ID</span>
+                <strong>#{result.tokenId}</strong>
+              </div>
+              <div className="result-item">
+                <span>Style</span>
+                <strong>{city.city?.style}</strong>
+              </div>
+              <div className="result-item">
+                <span>Motto</span>
+                <strong>{city.city?.motto}</strong>
+              </div>
+            </div>
+            
+            <p className="lore-text">{city.description}</p>
+            
+            <div className="btn-row" style={{ justifyContent: 'center' }}>
+              <a 
+                className="btn btn-primary"
+                href={`https://explorer.sepolia.mantle.xyz/tx/${result.txHash}`}
+                target="_blank" 
+                rel="noreferrer"
+              >
+                View Transaction
+              </a>
+              <a 
+                className="btn btn-secondary"
+                href={getShareUrl(city.name, city.city?.level, city.city?.style, result.tokenId)}
+                target="_blank" 
+                rel="noreferrer"
+              >
+                Share on Twitter
+              </a>
+            </div>
           </div>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 }
