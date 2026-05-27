@@ -52,7 +52,25 @@ function GlbModel({ url, position, rotY = 0, scale = 1 }) {
   return <primitive object={clone} position={position} rotation={[0, rotY, 0]} scale={scale} />;
 }
 
-// ─── Road strip (procedural plane — no road pack available) ──────────────────
+// ─── Paved blocks between roads ──────────────────────────────────────────────
+
+function BlockPaving({ gridR }) {
+  const size = TILE - ROAD_W; // 22 units — exactly fills between road strips
+  const blocks = [];
+  for (let row = -gridR; row <= gridR; row++) {
+    for (let col = -gridR; col <= gridR; col++) {
+      blocks.push(
+        <mesh key={`p${row}_${col}`} position={[col * TILE, 0.02, row * TILE]} rotation={[-Math.PI / 2, 0, 0]}>
+          <planeGeometry args={[size, size]} />
+          <meshStandardMaterial color="#8a8e98" roughness={0.95} />
+        </mesh>
+      );
+    }
+  }
+  return <>{blocks}</>;
+}
+
+// ─── Road strip (procedural plane) ───────────────────────────────────────────
 
 function RoadGrid({ gridR }) {
   const gr   = Math.max(gridR, 1);
@@ -179,22 +197,6 @@ function V2Scene({ metrics, tokenId }) {
           });
         }
 
-        // Suburban: 2 path tiles per house — placed between house and road edge
-        if (pack === 'suburban') {
-          for (let t = 0; t < 2; t++) {
-            // offset toward nearest road (half-tile distance), then slight lateral jitter
-            const toRoadX = cx > 0 ? JITTER + 2 : -(JITTER + 2);
-            const toRoadZ = cz > 0 ? JITTER + 2 : -(JITTER + 2);
-            models.push({
-              url:   MODELS.paths[Math.floor(rng() * MODELS.paths.length)],
-              x:     cx + (t === 0 ? toRoadX : 0) + (rng() - 0.5) * 3,
-              z:     cz + (t === 0 ? 0 : toRoadZ) + (rng() - 0.5) * 3,
-              rotY:  Math.floor(rng() * 4) * Math.PI / 2,
-              scale: 7.0,
-            });
-          }
-        }
-
         // Commercial: awning or parasol at 40%
         if ((pack === 'commercial' || pack === 'skyscraper') && rng() < 0.4) {
           models.push({
@@ -253,6 +255,9 @@ function V2Scene({ metrics, tokenId }) {
         <planeGeometry args={[data.citySize + 30, data.citySize + 30]} />
         <meshStandardMaterial color="#4a4e5a" roughness={1} />
       </mesh>
+
+      {/* Paved blocks (sidewalk/pavement between roads) */}
+      <BlockPaving gridR={data.gridR} />
 
       {/* Road grid between building rows/cols */}
       <RoadGrid gridR={data.gridR} />
