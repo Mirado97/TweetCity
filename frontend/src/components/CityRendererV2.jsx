@@ -65,6 +65,87 @@ function SuburbanGlbModel({ url, position, rotY = 0, scale = 1, colorIdx = 0 }) 
   return <primitive object={clone} position={position} rotation={[0, rotY, 0]} scale={scale} />;
 }
 
+// ─── Procedural monument (center landmark, scales with city level) ────────────
+
+function Monument({ level }) {
+  const gold   = <meshStandardMaterial color="#d4a017" metalness={0.8} roughness={0.25} />;
+  const stone  = <meshStandardMaterial color="#8a8a7a" metalness={0.1} roughness={0.8} />;
+  const bronze = <meshStandardMaterial color="#7c5a2a" metalness={0.6} roughness={0.4} />;
+  const chrome = <meshStandardMaterial color="#c8d8e8" metalness={0.95} roughness={0.05} />;
+
+  if (level <= 2) {
+    // Simple obelisk
+    return (
+      <group position={[0, 0, 0]}>
+        <mesh position={[0, 0.6, 0]}><boxGeometry args={[1.4, 1.2, 1.4]} />{stone}</mesh>
+        <mesh position={[0, 3.0, 0]}><boxGeometry args={[0.7, 4.0, 0.7]} />{stone}</mesh>
+        <mesh position={[0, 5.2, 0]}><coneGeometry args={[0.45, 1.0, 4]} />{gold}</mesh>
+      </group>
+    );
+  }
+  if (level <= 4) {
+    // Pillar with statue on top
+    return (
+      <group>
+        <mesh position={[0, 0.5, 0]}><boxGeometry args={[3, 1, 3]} />{stone}</mesh>
+        <mesh position={[0, 1.8, 0]}><boxGeometry args={[1.8, 1.6, 1.8]} />{stone}</mesh>
+        <mesh position={[0, 4.8, 0]}><cylinderGeometry args={[0.5, 0.6, 5, 8]} />{stone}</mesh>
+        <mesh position={[0, 7.8, 0]}><sphereGeometry args={[0.8, 12, 8]} />{bronze}</mesh>
+        <mesh position={[0, 9.0, 0]}><coneGeometry args={[0.4, 1.2, 8]} />{bronze}</mesh>
+      </group>
+    );
+  }
+  if (level <= 6) {
+    // Tiered tower with golden top
+    return (
+      <group>
+        <mesh position={[0, 0.6, 0]}><cylinderGeometry args={[4.0, 4.5, 1.2, 8]} />{stone}</mesh>
+        <mesh position={[0, 2.5, 0]}><cylinderGeometry args={[2.5, 3.5, 2.5, 8]} />{stone}</mesh>
+        <mesh position={[0, 5.5, 0]}><cylinderGeometry args={[1.5, 2.2, 3.5, 8]} />{stone}</mesh>
+        <mesh position={[0, 8.5, 0]}><cylinderGeometry args={[0.7, 1.2, 3.0, 8]} />{bronze}</mesh>
+        <mesh position={[0, 10.5, 0]}><sphereGeometry args={[1.0, 12, 8]} />{gold}</mesh>
+        <mesh position={[0, 12.0, 0]}><coneGeometry args={[0.5, 2.0, 8]} />{gold}</mesh>
+      </group>
+    );
+  }
+  if (level <= 8) {
+    // Arch monument
+    return (
+      <group>
+        <mesh position={[0, 0.5, 0]}><boxGeometry args={[14, 1, 5]} />{stone}</mesh>
+        <mesh position={[-5.5, 6.5, 0]}><boxGeometry args={[2.5, 12, 4]} />{stone}</mesh>
+        <mesh position={[5.5, 6.5, 0]}><boxGeometry args={[2.5, 12, 4]} />{stone}</mesh>
+        <mesh position={[0, 13.5, 0]}><boxGeometry args={[15, 2.5, 4.5]} />{stone}</mesh>
+        <mesh position={[0, 15.5, 0]}><boxGeometry args={[10, 1.0, 3.5]} />{bronze}</mesh>
+        <mesh position={[0, 7.0, 0]}><boxGeometry args={[1.2, 10, 1.2]} />{bronze}</mesh>
+        <mesh position={[0, 12.6, 0]}><sphereGeometry args={[0.9, 12, 8]} />{gold}</mesh>
+      </group>
+    );
+  }
+  // Level 9-10: Epic multi-spire tower
+  return (
+    <group>
+      <mesh position={[0, 0.8, 0]}><cylinderGeometry args={[7, 8, 1.5, 12]} />{stone}</mesh>
+      <mesh position={[0, 3.0, 0]}><cylinderGeometry args={[5, 6.5, 3, 12]} />{stone}</mesh>
+      <mesh position={[0, 7.0, 0]}><cylinderGeometry args={[3.5, 4.5, 6, 12]} />{stone}</mesh>
+      <mesh position={[0, 13.0, 0]}><cylinderGeometry args={[2, 3, 8, 12]} />{bronze}</mesh>
+      <mesh position={[0, 19.5, 0]}><cylinderGeometry args={[1.0, 1.8, 5, 12]} />{chrome}</mesh>
+      <mesh position={[0, 23.0, 0]}><sphereGeometry args={[1.4, 16, 10]} />{gold}</mesh>
+      <mesh position={[0, 25.5, 0]}><coneGeometry args={[0.6, 4.0, 8]} />{gold}</mesh>
+      {/* Side spires */}
+      {[0,1,2,3].map(i => {
+        const a = i * Math.PI / 2;
+        return (
+          <group key={i} position={[Math.cos(a)*5, 0, Math.sin(a)*5]}>
+            <mesh position={[0, 2.5, 0]}><cylinderGeometry args={[0.5, 0.8, 5, 8]} />{stone}</mesh>
+            <mesh position={[0, 6.0, 0]}><coneGeometry args={[0.5, 3.0, 8]} />{chrome}</mesh>
+          </group>
+        );
+      })}
+    </group>
+  );
+}
+
 // ─── City scene ──────────────────────────────────────────────────────────────
 
 function V2Scene({ metrics, tokenId }) {
@@ -156,9 +237,16 @@ function V2Scene({ metrics, tokenId }) {
         const cz   = bc_row * PERIOD;
         const zone = Math.max(Math.abs(bc_row), Math.abs(bc_col));
 
+        // Zone assignment by level:
+        // lv 1-2 → all suburban
+        // lv 3   → center ring = 1 industrial, rest suburban
+        // lv 4+  → full commercial/industrial/suburban logic
         const isSky  = zone === 1 && level >= 6;
-        const isComm = zone <= 1 || (zone === 2 && gridR >= 4);
-        const isInd  = zone >= 2 && zone <= gridR - 1;
+        const isComm = level >= 4 && (zone <= 1 || (zone === 2 && gridR >= 4));
+        const isInd  = level >= 3 && (
+          level === 3 ? (zone === 1 && bc_row === 0 && bc_col === 1) // one industrial at lv3
+                     : (zone >= 2 && zone <= gridR - 1)
+        );
         const pack   = isSky ? 'skyscraper' : isComm ? 'commercial' : isInd ? 'industrial' : 'suburban';
         const list   = MODELS[pack];
         const baseScale = ZONE_SCALE[pack];
@@ -200,22 +288,32 @@ function V2Scene({ metrics, tokenId }) {
         if ((pack === 'commercial' || pack === 'skyscraper') && rng() < 0.4) {
           models.push({ url: MODELS.commercialDetails[Math.floor(rng()*MODELS.commercialDetails.length)], x: cx+(rng()-0.5)*6, z: cz+(rng()-0.5)*6, rotY: Math.floor(rng()*4)*Math.PI/2, scale: 3.5 });
         }
-        // Scattered trees
-        if (rng() < 0.3) {
-          models.push({ url: MODELS.trees[rng()>0.5?0:1], x: cx+(rng()-0.5)*HALF_B, z: cz+(rng()-0.5)*HALF_B, rotY: rng()*Math.PI*2, scale: 4.0+rng()*2.0 });
+        // Trees by zone: suburban 3-5, industrial 2-3, commercial/skyscraper 0
+        const numTrees = pack === 'suburban'  ? 3 + Math.floor(rng() * 3)
+                       : pack === 'industrial' ? 2 + Math.floor(rng() * 2)
+                       : 0;
+        for (let t = 0; t < numTrees; t++) {
+          models.push({
+            url:   MODELS.trees[rng() > 0.5 ? 0 : 1],
+            x:     cx + (rng() - 0.5) * HALF_B * 1.4,
+            z:     cz + (rng() - 0.5) * HALF_B * 1.4,
+            rotY:  rng() * Math.PI * 2,
+            scale: 3.5 + rng() * 2.0,
+          });
         }
       }
     }
 
-    // Center park trees
-    for (let i = 0; i < 6; i++) {
-      const angle = (i / 6) * Math.PI * 2 + treeRng() * 0.8;
-      const r     = 4 + treeRng() * 6;
-      models.push({ url: MODELS.trees[treeRng()>0.5?0:1], x: Math.cos(angle)*r, z: Math.sin(angle)*r, rotY: treeRng()*Math.PI*2, scale: 4.5+treeRng()*2.0 });
+    // Center park: ring of trees around monument
+    const parkTrees = 4 + Math.min(level, 6);
+    for (let i = 0; i < parkTrees; i++) {
+      const angle = (i / parkTrees) * Math.PI * 2 + treeRng() * 0.3;
+      const r     = 8 + treeRng() * 3;
+      models.push({ url: MODELS.trees[treeRng()>0.5?0:1], x: Math.cos(angle)*r, z: Math.sin(angle)*r, rotY: treeRng()*Math.PI*2, scale: 4.0+treeRng()*2.0 });
     }
 
     const citySize = (2 * gr + 1) * PERIOD + 24;
-    return { models, citySize, gridR };
+    return { models, citySize, gridR, level };
   }, [followers, tokenId]);
 
   return (
@@ -238,6 +336,9 @@ function V2Scene({ metrics, tokenId }) {
           ? <SuburbanGlbModel key={i} url={m.url} position={[m.x, 0, m.z]} rotY={m.rotY} scale={m.scale} colorIdx={m.colorIdx} />
           : <GlbModel        key={i} url={m.url} position={[m.x, 0, m.z]} rotY={m.rotY} scale={m.scale} />
       )}
+
+      {/* Central monument */}
+      <Monument level={data.level} />
     </>
   );
 }
