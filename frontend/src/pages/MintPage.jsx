@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { API_BASE, LEVEL_NAMES } from "../lib/contract";
-import CityRenderer from "../components/CityRenderer";
+import CityRendererV2 from "../components/CityRendererV2";
 
 const VIRAL_TEXTS = [
   (name, level, style) => `Just minted ${name} — a ${LEVEL_NAMES[level]} ${style} city on Mantle! My Twitter is now an NFT 🏙 Join TweetCity and mint yours!`,
@@ -87,11 +87,10 @@ export default function MintPage({ address, onConnect, onMinted }) {
 
   const city = result?.cityData;
   const cityConfig = city ? {
-    level: city.city?.level,
-    style: city.city?.style,
-    colorPalette: city.city?.colorPalette,
-    followers: city.metrics?.followers,
-    cityName: city.name,
+    followers:  Number(city.metrics?.followers  || 0),
+    tweetCount: Number(city.metrics?.tweetCount || 0),
+    following:  Number(city.metrics?.following  || 0),
+    engagement: Number(city.metrics?.engagement || 0),
   } : null;
 
   const currentStep = STEPS[step];
@@ -216,7 +215,7 @@ export default function MintPage({ address, onConnect, onMinted }) {
             <h2 className="done-title">{city.name} Minted!</h2>
             
             <div style={{ margin: 'var(--space-8) 0', borderRadius: 'var(--radius-xl)', overflow: 'hidden' }}>
-              <CityRenderer city={cityConfig} width={520} height={280} />
+              <CityRendererV2 city={cityConfig} tokenId={result?.tokenId || 0} />
             </div>
             
             <div className="result-grid">

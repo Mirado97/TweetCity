@@ -1,4 +1,4 @@
-import CityRenderer, { LEVEL_NAMES, LEVEL_THRESHOLDS } from "../components/CityRenderer";
+import CityRendererV2, { LEVEL_NAMES, LEVEL_THRESHOLDS } from "../components/CityRendererV2";
 
 const LEVEL_RANGES = [
   "0–49", "50–249", "250–999", "1K–3K", "3K–10K",
@@ -78,7 +78,7 @@ export default function LandingPage({ onMintClick }) {
         <div className="demo-grid stagger">
           {DEMO_CITIES.map((city, i) => (
             <div key={i} className="demo-card">
-              <CityRenderer city={city} width={300} height={180} />
+              <CityRendererV2 city={city} tokenId={i + 100} />
               <div className="demo-name">{city.cityName}</div>
               <div className="demo-style">{city.style} · Level {city.level}</div>
               <span className="demo-link">

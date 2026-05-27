@@ -2,7 +2,16 @@
 import { useMemo, useState, Suspense } from "react";
 import { Canvas } from "@react-three/fiber";
 import { OrbitControls, useGLTF, useTexture } from "@react-three/drei";
-import { cityLevel } from "./CityRenderer";
+export const LEVEL_NAMES = [
+  "Hamlet", "Village", "Borough", "Town", "Township",
+  "City", "Metropolis", "Megalopolis", "Megacity", "World Capital",
+];
+export const LEVEL_THRESHOLDS = [0, 50, 250, 1000, 3000, 10000, 30000, 100000, 300000, 1000000];
+export function cityLevel(followers) {
+  let l = 0;
+  for (let i = 0; i < LEVEL_THRESHOLDS.length; i++) if (followers >= LEVEL_THRESHOLDS[i]) l = i;
+  return l;
+}
 
 function mkRng(seed) {
   let s = ((seed >>> 0) || 1337);
@@ -148,7 +157,7 @@ function Monument({ level }) {
 
 // ─── City scene ──────────────────────────────────────────────────────────────
 
-function V2Scene({ metrics, tokenId }) {
+export function V2Scene({ metrics, tokenId }) {
   const { followers = 0 } = metrics;
 
   const data = useMemo(() => {

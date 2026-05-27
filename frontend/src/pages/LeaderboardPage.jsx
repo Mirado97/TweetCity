@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { API_BASE, LEVEL_NAMES } from "../lib/contract";
-import CityRenderer from "../components/CityRenderer";
+import CityThumbnail from "../components/CityThumbnail";
 
 const RANK_STYLES = {
   1: { bg: "linear-gradient(135deg, #ffd700, #ffb700)", color: "#1a1a2e" },
@@ -72,21 +72,20 @@ export default function LeaderboardPage({ onCityClick }) {
         {board.map((entry, i) => {
           const rank = i + 1;
           const level = Number(entry.level || 1);
-          const rendererCity = {
-            level,
-            style: "Cyberpunk",
-            colorPalette: { primary: "#334", secondary: "#667", accent: "#f0f" },
-            followers: Number(entry.followers || 0),
-            cityName: entry.twitterHandle ? `@${entry.twitterHandle}` : `#${entry.tokenId}`,
+          const thumbCity = {
+            followers:   Number(entry.followers  || 0),
+            tweetCount:  Number(entry.tweetCount || 0),
+            following:   Number(entry.following  || 0),
+            engagement:  Number(entry.engagement || 0),
           };
           return (
-            <div 
-              key={entry.tokenId} 
+            <div
+              key={entry.tokenId}
               className="leader-card"
               onClick={() => onCityClick(entry.tokenId)}
             >
               <RankBadge rank={rank} />
-              <CityRenderer city={rendererCity} width={240} height={140} />
+              <CityThumbnail city={thumbCity} tokenId={entry.tokenId} width={240} height={140} />
               <div className="leader-info">
                 <div className="leader-handle">@{entry.twitterHandle || "unknown"}</div>
                 <div className="leader-level">{LEVEL_NAMES[level]}</div>
