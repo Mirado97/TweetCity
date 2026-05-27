@@ -1,7 +1,7 @@
 // CityRendererV2 — tile-grid city: tile-low blocks + road tiles + buildings
 import { useMemo, useState, Suspense } from "react";
 import { Canvas } from "@react-three/fiber";
-import { OrbitControls, useGLTF } from "@react-three/drei";
+import { OrbitControls, useGLTF, useTexture } from "@react-three/drei";
 import { cityLevel } from "./CityRenderer";
 
 function mkRng(seed) {
@@ -31,11 +31,37 @@ const BLOCK_N = 3;               // tiles per building-block side (3×3 = 9 tile
 const PERIOD  = (BLOCK_N + 1) * S;  // = 32 — block center spacing
 const HALF_B  = (BLOCK_N / 2) * S; // = 12 — half block size
 
-// ─── GLB model component ─────────────────────────────────────────────────────
+const SUBURBAN_COLORMAPS = [
+  '/models/suburban/variation-a.png',
+  '/models/suburban/variation-b.png',
+  '/models/suburban/variation-c.png',
+];
+
+// ─── GLB model components ─────────────────────────────────────────────────────
 
 function GlbModel({ url, position, rotY = 0, scale = 1 }) {
   const { scene } = useGLTF(url);
   const clone = useMemo(() => scene.clone(true), [scene]);
+  return <primitive object={clone} position={position} rotation={[0, rotY, 0]} scale={scale} />;
+}
+
+// Suburban variant — swaps colormap texture so each house gets its own color
+function SuburbanGlbModel({ url, position, rotY = 0, scale = 1, colorIdx = 0 }) {
+  const { scene } = useGLTF(url);
+  const texture = useTexture(SUBURBAN_COLORMAPS[colorIdx]);
+  const clone = useMemo(() => {
+    const cloned = scene.clone(true);
+    cloned.traverse(node => {
+      if (node.isMesh && node.material) {
+        const mat = node.material.clone();
+        mat.map = texture;
+        mat.map.flipY = false; // glTF UV convention
+        mat.needsUpdate = true;
+        node.material = mat;
+      }
+    });
+    return cloned;
+  }, [scene, texture]);
   return <primitive object={clone} position={position} rotation={[0, rotY, 0]} scale={scale} />;
 }
 
@@ -156,10 +182,11 @@ function V2Scene({ metrics, tokenId }) {
 
         for (const [ox, oz] of clusterOffsets) {
           models.push({
-            url:   list[Math.floor(rng() * list.length)],
+            url:      list[Math.floor(rng() * list.length)],
             x: cx + ox, z: cz + oz,
-            rotY:  Math.floor(rng() * 4) * Math.PI / 2,
-            scale: clusterScale * (0.9 + rng() * 0.2),
+            rotY:     Math.floor(rng() * 4) * Math.PI / 2,
+            scale:    clusterScale * (0.9 + rng() * 0.2),
+            colorIdx: pack === 'suburban' ? Math.floor(rng() * 3) : undefined,
           });
         }
 
@@ -206,9 +233,11 @@ function V2Scene({ metrics, tokenId }) {
       </mesh>
 
       {/* All GLB: tile-low blocks + road tiles + lights + buildings */}
-      {data.models.map((m, i) => (
-        <GlbModel key={i} url={m.url} position={[m.x, 0, m.z]} rotY={m.rotY} scale={m.scale} />
-      ))}
+      {data.models.map((m, i) =>
+        m.colorIdx !== undefined
+          ? <SuburbanGlbModel key={i} url={m.url} position={[m.x, 0, m.z]} rotY={m.rotY} scale={m.scale} colorIdx={m.colorIdx} />
+          : <GlbModel        key={i} url={m.url} position={[m.x, 0, m.z]} rotY={m.rotY} scale={m.scale} />
+      )}
     </>
   );
 }
