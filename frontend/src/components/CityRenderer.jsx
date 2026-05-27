@@ -56,12 +56,13 @@ const MODELS = {
   commercial: ['a','b','c','d','e','f','g','h','i','j','k','l','m','n'].map(l => `/models/commercial/building-${l}.glb`),
   industrial: ['a','b','c','d','e','f','g','h','i','j','k','l','m','n','o','p','q','r','s','t'].map(l => `/models/industrial/building-${l}.glb`),
   suburban:   ['a','b','c','d','e','f','g','h','i','j','k','l','m','n','o','p','q','r','s','t','u'].map(l => `/models/suburban/building-type-${l}.glb`),
+  props:      ['chimney-basic','chimney-medium','chimney-small','detail-tank'].map(n => `/models/industrial/${n}.glb`),
 };
 
-// Uniform scale per zone — adjust after visual testing
-const ZONE_SCALE = { sky: 5.0, high: 3.5, mid: 3.0, residential: 2.5 };
-// Landmark scale per gridR (0-5)
-const LM_SCALE   = [0, 6, 9, 12, 16, 20];
+// All models at the same scale — Kenney tiles are designed to be uniform
+const ZONE_SCALE = { sky: 3.5, high: 3.0, mid: 3.0, residential: 3.0 };
+// Landmark scale per gridR (0-5) — modest, not crazy tall
+const LM_SCALE   = [0, 5, 6, 7, 8, 9];
 
 // ─── Geometry primitives ────────────────────────────────────────────────────
 
@@ -562,8 +563,6 @@ function CityScene({ metrics, style, colorPalette, tokenId, gifts = [] }) {
             blockOffsets.push({ bx: col * STEP, bz: row * STEP, zone: Math.max(Math.abs(row), Math.abs(col)) });
     }
 
-    const safeHalf = (BLOCK - 6) / 2;
-
     const poiChance  = [0, 0, 0.06, 0.08, 0.10, 0.12, 0.14, 0.16, 0.18, 0.22][level];
     const poiBlocks  = new Set(
       blockOffsets.map((_, i) => (level >= 2 && poiRng() < poiChance ? i : -1)).filter(i => i >= 0)
@@ -573,6 +572,7 @@ function CityScene({ metrics, style, colorPalette, tokenId, gifts = [] }) {
     const buildings = [];
     const pois      = [];
 
+    // Tile-based: one Kenney model centered per block, no collision logic
     blockOffsets.forEach(({ bx, bz, zone }, idx) => {
       if (poiBlocks.has(idx)) {
         const pt = poiTypeRng();
@@ -583,27 +583,23 @@ function CityScene({ metrics, style, colorPalette, tokenId, gifts = [] }) {
       const isSkyZone  = zone <= 1 && level >= 6;
       const isHighZone = zone <= 2 && level >= 4;
       const isMidZone  = zone <= gridR - 1;
+      const category   = isSkyZone ? 'sky' : isHighZone ? 'high' : isMidZone ? 'mid' : 'residential';
+      const modelKey   = category === 'sky' ? 'skyscraper' : category === 'high' ? 'commercial' : category === 'mid' ? 'industrial' : 'suburban';
 
-      const category  = isSkyZone ? 'sky' : isHighZone ? 'high' : isMidZone ? 'mid' : 'residential';
-      const modelKey  = category === 'sky' ? 'skyscraper' : category === 'high' ? 'commercial' : category === 'mid' ? 'industrial' : 'suburban';
-      const modelList = MODELS[modelKey];
-      const count     = isSkyZone ? 1 : (1 + (rng() > 0.45 ? 1 : 0));
-      const minDist   = isSkyZone ? 12 : isHighZone ? 9 : isMidZone ? 7 : 5;
-      const placed    = [];
+      const url  = MODELS[modelKey][Math.floor(buildRng() * MODELS[modelKey].length)];
+      const rotY = Math.floor(buildRng() * 4) * Math.PI / 2;
+      buildings.push({ pos: [bx, bz], url, rotY, scale: ZONE_SCALE[category] });
 
-      for (let attempt = 0; placed.length < count && attempt < 30; attempt++) {
-        const px = bx + (rng() - 0.5) * 2 * safeHalf;
-        const pz = bz + (rng() - 0.5) * 2 * safeHalf;
-        if (placed.every(p => Math.hypot(p[0] - px, p[1] - pz) >= minDist)) {
-          placed.push([px, pz]);
-          const url  = modelList[Math.floor(buildRng() * modelList.length)];
-          const rotY = Math.floor(buildRng() * 4) * Math.PI / 2;
-          buildings.push({ pos: [px, pz], url, rotY, scale: ZONE_SCALE[category] });
-        }
+      // Industrial zone: add a random prop (chimney/tank) nearby at 30% chance
+      if (category === 'mid' && buildRng() < 0.3) {
+        const propUrl = MODELS.props[Math.floor(buildRng() * MODELS.props.length)];
+        const offX = (buildRng() - 0.5) * BLOCK * 0.6;
+        const offZ = (buildRng() - 0.5) * BLOCK * 0.6;
+        buildings.push({ pos: [bx + offX, bz + offZ], url: propUrl, rotY: buildRng() * Math.PI * 2, scale: 2.5 });
       }
     });
 
-    // Landmarks — prominent skyscrapers at fixed positions
+    // Landmark: tallest skyscraper near center — at gridR 1+ only
     const landmarks = [];
     if (gridR >= 1) {
       const lmScale = LM_SCALE[gridR];
