@@ -1,4 +1,4 @@
-// CityRendererV2 — city built from Kenney GLB models (commercial + industrial + suburban)
+// CityRendererV2 — city built from Kenney GLB models (commercial + industrial + suburban + roads)
 import { useMemo, useState, Suspense } from "react";
 import { Canvas } from "@react-three/fiber";
 import { OrbitControls, useGLTF } from "@react-three/drei";
@@ -12,28 +12,16 @@ function mkRng(seed) {
 // ─── Model lists ─────────────────────────────────────────────────────────────
 
 const MODELS = {
-  // native ~1.36×1.36 → scale 4.0 → ~5.4 footprint
   skyscraper: ['a','b','c','d','e'].map(l => `/models/commercial/building-skyscraper-${l}.glb`),
-  // native ~1.36×1.0 → scale 4.0 → ~5.4 footprint
   commercial: ['a','b','c','d','e','f','g','h','i','j','k','l','m','n'].map(l => `/models/commercial/building-${l}.glb`),
-  // native ~2.1×1.2 → scale 2.5 → ~5.2 footprint
   industrial: ['a','b','c','d','e','f','g','h','i','j','k','l','m','n','o','p','q','r','s','t'].map(l => `/models/industrial/building-${l}.glb`),
-  // native ~1.3×1.0 → scale 4.0 → ~5.2 footprint
   suburban:   ['a','b','c','d','e','f','g','h','i','j','k','l','m','n','o','p','q','r','s','t','u'].map(l => `/models/suburban/building-type-${l}.glb`),
-  // industrial props
   chimneys:   ['chimney-basic','chimney-medium','chimney-small','detail-tank'].map(n => `/models/industrial/${n}.glb`),
-  // suburban details — placed near houses
   driveways:  ['driveway-long','driveway-short'].map(n => `/models/suburban/${n}.glb`),
-  planters:   ['/models/suburban/planter.glb'],
-  // park trees
   trees:      ['/models/suburban/tree-large.glb', '/models/suburban/tree-small.glb'],
-  // commercial street details
   commercialDetails: ['detail-awning','detail-awning-wide','detail-overhang','detail-overhang-wide','detail-parasol-a','detail-parasol-b'].map(n => `/models/commercial/${n}.glb`),
-  // suburban path/sidewalk tiles
-  paths:      ['path-short','path-long','path-stones-short','path-stones-long','path-stones-messy'].map(n => `/models/suburban/${n}.glb`),
 };
 
-// Scale per zone so all packs have similar real-world footprint (~5 units)
 const ZONE_SCALE = {
   skyscraper: 5.0,
   commercial: 4.0,
@@ -41,8 +29,8 @@ const ZONE_SCALE = {
   suburban:   4.0,
 };
 
-const TILE    = 28;  // distance between building centers
-const ROAD_W  = 6.0; // road strip width between tile rows/cols
+const TILE   = 28; // distance between building cell centers
+const ROAD_W = 7;  // = TILE/4 → road tiles (1×1 native) at scale 7 tile perfectly: 3 straights between crossroads
 
 // ─── GLB model component ─────────────────────────────────────────────────────
 
@@ -52,10 +40,10 @@ function GlbModel({ url, position, rotY = 0, scale = 1 }) {
   return <primitive object={clone} position={position} rotation={[0, rotY, 0]} scale={scale} />;
 }
 
-// ─── Paved blocks between roads ──────────────────────────────────────────────
+// ─── Paved blocks (sidewalk between roads) ────────────────────────────────────
 
 function BlockPaving({ gridR }) {
-  const size = TILE - ROAD_W; // 22 units — exactly fills between road strips
+  const size = TILE - ROAD_W; // 21 units — fits exactly between road tile edges
   const blocks = [];
   for (let row = -gridR; row <= gridR; row++) {
     for (let col = -gridR; col <= gridR; col++) {
@@ -70,32 +58,6 @@ function BlockPaving({ gridR }) {
   return <>{blocks}</>;
 }
 
-// ─── Road strip (procedural plane) ───────────────────────────────────────────
-
-function RoadGrid({ gridR }) {
-  const gr   = Math.max(gridR, 1);
-  const span = (2 * gr + 1) * TILE;
-  const strips = [];
-  for (let i = -gr; i < gr; i++) {
-    const t = (i + 0.5) * TILE;
-    // horizontal strip (along X)
-    strips.push(
-      <mesh key={`h${i}`} position={[0, 0.01, t]} rotation={[-Math.PI / 2, 0, 0]}>
-        <planeGeometry args={[span, ROAD_W]} />
-        <meshStandardMaterial color="#404552" roughness={1} />
-      </mesh>
-    );
-    // vertical strip (along Z)
-    strips.push(
-      <mesh key={`v${i}`} position={[t, 0.01, 0]} rotation={[-Math.PI / 2, 0, Math.PI / 2]}>
-        <planeGeometry args={[span, ROAD_W]} />
-        <meshStandardMaterial color="#404552" roughness={1} />
-      </mesh>
-    );
-  }
-  return <>{strips}</>;
-}
-
 // ─── City scene ──────────────────────────────────────────────────────────────
 
 function V2Scene({ metrics, tokenId }) {
@@ -108,25 +70,24 @@ function V2Scene({ metrics, tokenId }) {
 
     const level = cityLevel(followers);
     const gridR = level >= 9 ? 5 : level >= 7 ? 4 : level >= 5 ? 3 : level >= 3 ? 2 : level >= 1 ? 1 : 0;
+    const gr    = Math.max(gridR, 1);
 
     const models = [];
 
-    // Max safe jitter: road edge at TILE/2 - ROAD_W/2 = 11, minus building half-footprint(2.5) and margin(2) = 6.5
-    const JITTER = TILE / 2 - ROAD_W / 2 - 4.5; // = 6.5
+    // Safe jitter: road edge = TILE/2 - ROAD_W/2 = 10.5, minus building half(2.5) and margin(2) = 6.0
+    const JITTER = TILE / 2 - ROAD_W / 2 - 4.5; // = 6.0
+
+    // ── Buildings ────────────────────────────────────────────────────────────
 
     for (let row = -gridR; row <= gridR; row++) {
       for (let col = -gridR; col <= gridR; col++) {
-        if (row === 0 && col === 0) continue; // center = park/trees
-
-        // Skip ~12% of cells → open lots / breathing room
-        if (rng() < 0.12) continue;
+        if (row === 0 && col === 0) continue;
+        if (rng() < 0.12) continue; // ~12% empty lots
 
         const zone = Math.max(Math.abs(row), Math.abs(col));
         const cx   = col * TILE;
         const cz   = row * TILE;
 
-        // Zone → model pack (zone = Chebyshev distance from center)
-        // zone=1: commercial always; zone=2 commercial for large cities; middle rings: industrial; outer: suburban
         const isSky  = zone === 1 && level >= 6;
         const isComm = zone <= 1 || (zone === 2 && gridR >= 4);
         const isInd  = zone >= 2 && zone <= gridR - 1;
@@ -134,13 +95,7 @@ function V2Scene({ metrics, tokenId }) {
         const list   = MODELS[pack];
         const baseScale = ZONE_SCALE[pack];
 
-        // ── Cluster placement ─────────────────────────────────────────
-        // commercial/skyscraper: 1 large building centred
-        // industrial: 2 buildings side by side
-        // suburban: 3-4 small houses at cell corners
-
-        let clusterOffsets;
-        let clusterScale;
+        let clusterOffsets, clusterScale;
 
         if (pack === 'commercial' || pack === 'skyscraper') {
           clusterOffsets = [[(rng() - 0.5) * JITTER, (rng() - 0.5) * JITTER]];
@@ -153,9 +108,8 @@ function V2Scene({ metrics, tokenId }) {
             : [[(rng() - 0.5) * 3, -off], [(rng() - 0.5) * 3, off]];
           clusterScale = baseScale * (0.85 + rng() * 0.2);
         } else {
-          // suburban: 4 corners, sometimes drop one → 3 houses
           const corners = [[-4, -4], [4, -4], [-4, 4], [4, 4]];
-          if (rng() < 0.35) corners.splice(Math.floor(rng() * 4) | 0, 1); // 3 houses
+          if (rng() < 0.35) corners.splice(Math.floor(rng() * 4) | 0, 1);
           clusterOffsets = corners.map(([ox, oz]) => [ox + (rng() - 0.5) * 1.5, oz + (rng() - 0.5) * 1.5]);
           clusterScale   = 2.8 + rng() * 0.5;
         }
@@ -163,85 +117,87 @@ function V2Scene({ metrics, tokenId }) {
         for (const [ox, oz] of clusterOffsets) {
           models.push({
             url:  list[Math.floor(rng() * list.length)],
-            x:    cx + ox,
-            z:    cz + oz,
+            x: cx + ox, z: cz + oz,
             rotY: Math.floor(rng() * 4) * Math.PI / 2,
             scale: clusterScale * (0.9 + rng() * 0.2),
           });
         }
 
-        // Props use cell centre as reference
-        // Industrial: chimney at 35%
         if (pack === 'industrial' && rng() < 0.35) {
           models.push({
-            url:   MODELS.chimneys[Math.floor(rng() * MODELS.chimneys.length)],
-            x:     cx + (rng() - 0.5) * 6,
-            z:     cz + (rng() - 0.5) * 6,
-            rotY:  rng() * Math.PI * 2,
-            scale: 2.0,
+            url: MODELS.chimneys[Math.floor(rng() * MODELS.chimneys.length)],
+            x: cx + (rng() - 0.5) * 6, z: cz + (rng() - 0.5) * 6,
+            rotY: rng() * Math.PI * 2, scale: 2.0,
           });
         }
 
-        // Suburban: driveway at 40% + planter at 25%
         if (pack === 'suburban') {
-          if (rng() < 0.4) {
-            models.push({
-              url:  MODELS.driveways[Math.floor(rng() * MODELS.driveways.length)],
-              x:    cx + (rng() - 0.5) * 5,
-              z:    cz + (rng() - 0.5) * 5,
-              rotY: Math.floor(rng() * 4) * Math.PI / 2,
-              scale: 5.0,
-            });
-          }
-          if (rng() < 0.25) {
-            models.push({
-              url:  '/models/suburban/planter.glb',
-              x:    cx + (rng() - 0.5) * 4,
-              z:    cz + (rng() - 0.5) * 4,
-              rotY: rng() * Math.PI * 2,
-              scale: 4.0,
-            });
-          }
+          if (rng() < 0.4) models.push({ url: MODELS.driveways[Math.floor(rng() * MODELS.driveways.length)], x: cx + (rng()-0.5)*5, z: cz + (rng()-0.5)*5, rotY: Math.floor(rng()*4)*Math.PI/2, scale: 5.0 });
+          if (rng() < 0.25) models.push({ url: '/models/suburban/planter.glb', x: cx+(rng()-0.5)*4, z: cz+(rng()-0.5)*4, rotY: rng()*Math.PI*2, scale: 4.0 });
         }
 
-        // Commercial: awning/parasol at 40%
         if ((pack === 'commercial' || pack === 'skyscraper') && rng() < 0.4) {
-          models.push({
-            url:  MODELS.commercialDetails[Math.floor(rng() * MODELS.commercialDetails.length)],
-            x:    cx + (rng() - 0.5) * 5,
-            z:    cz + (rng() - 0.5) * 5,
-            rotY: Math.floor(rng() * 4) * Math.PI / 2,
-            scale: 3.5,
-          });
+          models.push({ url: MODELS.commercialDetails[Math.floor(rng()*MODELS.commercialDetails.length)], x: cx+(rng()-0.5)*5, z: cz+(rng()-0.5)*5, rotY: Math.floor(rng()*4)*Math.PI/2, scale: 3.5 });
         }
 
-        // Tree: 35% per cell, placed near road edge
         if (rng() < 0.35) {
-          models.push({
-            url:   MODELS.trees[rng() > 0.5 ? 0 : 1],
-            x:     cx + (rng() > 0.5 ? 1 : -1) * (JITTER + 1 + rng() * 2),
-            z:     cz + (rng() - 0.5) * JITTER,
-            rotY:  rng() * Math.PI * 2,
-            scale: 4.0 + rng() * 2.0,
-          });
+          models.push({ url: MODELS.trees[rng()>0.5?0:1], x: cx+(rng()>0.5?1:-1)*(JITTER+1+rng()*2), z: cz+(rng()-0.5)*JITTER, rotY: rng()*Math.PI*2, scale: 4.0+rng()*2.0 });
         }
       }
     }
 
-    // Center park: 6 trees spread in radius 5-12, clearly visible
+    // Center park trees
     for (let i = 0; i < 6; i++) {
       const angle = (i / 6) * Math.PI * 2 + treeRng() * 0.8;
       const r     = 5 + treeRng() * 7;
-      models.push({
-        url:   MODELS.trees[treeRng() > 0.5 ? 0 : 1],
-        x:     Math.cos(angle) * r,
-        z:     Math.sin(angle) * r,
-        rotY:  treeRng() * Math.PI * 2,
-        scale: 4.5 + treeRng() * 2.0,
-      });
+      models.push({ url: MODELS.trees[treeRng()>0.5?0:1], x: Math.cos(angle)*r, z: Math.sin(angle)*r, rotY: treeRng()*Math.PI*2, scale: 4.5+treeRng()*2.0 });
     }
 
-    const gr       = Math.max(gridR, 1);
+    // ── Road tiles (Kenney road pack) ─────────────────────────────────────────
+    // ROAD_W=7 = tile scale. TILE/ROAD_W = 4 → between crossroads: exactly 3 straight tiles.
+
+    const S = ROAD_W; // tile scale
+    const span = gr * TILE; // half-span of entire road grid
+
+    // Road strip centers
+    const roadPos = [];
+    for (let i = -gr; i < gr; i++) roadPos.push((i + 0.5) * TILE);
+
+    // Crossroads at every (rx, rz) intersection
+    for (const rx of roadPos) {
+      for (const rz of roadPos) {
+        models.push({ url: '/models/roads/road-crossroad-path.glb', x: rx, z: rz, rotY: 0, scale: S });
+      }
+    }
+
+    // Straight tiles between crossroads and along edges
+    const tileStart = -span + S / 2;
+    const tileEnd   =  span - S / 2;
+
+    for (const rz of roadPos) {
+      for (let x = tileStart; x <= tileEnd + 0.001; x += S) {
+        if (roadPos.some(rx => Math.abs(rx - x) < 0.1)) continue; // crossroad covers this
+        models.push({ url: '/models/roads/road-straight.glb', x, z: rz, rotY: Math.PI / 2, scale: S });
+      }
+    }
+
+    for (const rx of roadPos) {
+      for (let z = tileStart; z <= tileEnd + 0.001; z += S) {
+        if (roadPos.some(rz => Math.abs(rz - z) < 0.1)) continue;
+        models.push({ url: '/models/roads/road-straight.glb', x: rx, z, rotY: 0, scale: S });
+      }
+    }
+
+    // Street lights — at every other crossroad, two lamps at opposite corners
+    for (let ri = 0; ri < roadPos.length; ri++) {
+      for (let rj = 0; rj < roadPos.length; rj++) {
+        if ((ri + rj) % 2 !== 0) continue; // every other intersection
+        const rx = roadPos[ri], rz = roadPos[rj];
+        models.push({ url: '/models/roads/light-square-double.glb', x: rx + S * 0.55, z: rz + S * 0.55, rotY: Math.PI * 1.25, scale: S });
+        models.push({ url: '/models/roads/light-square-double.glb', x: rx - S * 0.55, z: rz - S * 0.55, rotY: Math.PI * 0.25, scale: S });
+      }
+    }
+
     const citySize = (2 * gr + 1) * TILE + 24;
     return { models, citySize, gridR };
   }, [followers, tokenId]);
@@ -254,27 +210,18 @@ function V2Scene({ metrics, tokenId }) {
       <directionalLight position={[-10, 15, -10]} intensity={0.4} color="#bbccff" />
       <hemisphereLight args={["#c8d8f0", "#223311", 0.5]} />
 
-      {/* Ground — asphalt grey */}
+      {/* Ground — base asphalt under everything */}
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.1, 0]}>
         <planeGeometry args={[data.citySize + 30, data.citySize + 30]} />
         <meshStandardMaterial color="#4a4e5a" roughness={1} />
       </mesh>
 
-      {/* Paved blocks (sidewalk/pavement between roads) */}
+      {/* Sidewalk blocks between roads */}
       <BlockPaving gridR={data.gridR} />
 
-      {/* Road grid between building rows/cols */}
-      <RoadGrid gridR={data.gridR} />
-
-      {/* All GLB models */}
+      {/* All GLB models: buildings + road tiles + lights */}
       {data.models.map((m, i) => (
-        <GlbModel
-          key={i}
-          url={m.url}
-          position={[m.x, 0, m.z]}
-          rotY={m.rotY}
-          scale={m.scale}
-        />
+        <GlbModel key={i} url={m.url} position={[m.x, 0, m.z]} rotY={m.rotY} scale={m.scale} />
       ))}
     </>
   );
