@@ -179,19 +179,24 @@ function V2Scene({ metrics, tokenId }) {
           });
         }
 
-        // Suburban: path/sidewalk tile at 30%
-        if (pack === 'suburban' && rng() < 0.3) {
-          models.push({
-            url:   MODELS.paths[Math.floor(rng() * MODELS.paths.length)],
-            x:     x + (rng() - 0.5) * 5,
-            z:     z + (rng() - 0.5) * 5,
-            rotY:  Math.floor(rng() * 4) * Math.PI / 2,
-            scale: 4.0,
-          });
+        // Suburban: 2 path tiles per house — placed between house and road edge
+        if (pack === 'suburban') {
+          for (let t = 0; t < 2; t++) {
+            // offset toward nearest road (half-tile distance), then slight lateral jitter
+            const toRoadX = cx > 0 ? JITTER + 2 : -(JITTER + 2);
+            const toRoadZ = cz > 0 ? JITTER + 2 : -(JITTER + 2);
+            models.push({
+              url:   MODELS.paths[Math.floor(rng() * MODELS.paths.length)],
+              x:     cx + (t === 0 ? toRoadX : 0) + (rng() - 0.5) * 3,
+              z:     cz + (t === 0 ? 0 : toRoadZ) + (rng() - 0.5) * 3,
+              rotY:  Math.floor(rng() * 4) * Math.PI / 2,
+              scale: 7.0,
+            });
+          }
         }
 
-        // Commercial: awning or parasol at 35%
-        if ((pack === 'commercial' || pack === 'skyscraper') && rng() < 0.35) {
+        // Commercial: awning or parasol at 40%
+        if ((pack === 'commercial' || pack === 'skyscraper') && rng() < 0.4) {
           models.push({
             url:   MODELS.commercialDetails[Math.floor(rng() * MODELS.commercialDetails.length)],
             x:     x + (rng() - 0.5) * 4,
@@ -201,30 +206,32 @@ function V2Scene({ metrics, tokenId }) {
           });
         }
 
-        // Scattered trees throughout city at 15%
-        if (rng() < 0.15) {
+        // Trees scattered throughout city — 1 tree every ~3 cells, big enough to see
+        if (rng() < 0.35) {
+          // place near road edge, not behind building
+          const tx = cx + (rng() > 0.5 ? 1 : -1) * (JITTER + 1 + rng() * 3);
+          const tz = cz + (rng() - 0.5) * JITTER;
           models.push({
             url:   MODELS.trees[rng() > 0.5 ? 0 : 1],
-            x:     x + (rng() - 0.5) * TILE * 0.4,
-            z:     z + (rng() - 0.5) * TILE * 0.4,
+            x:     tx,
+            z:     tz,
             rotY:  rng() * Math.PI * 2,
-            scale: 2.0 + rng() * 1.5,
+            scale: 4.0 + rng() * 2.0,
           });
         }
       }
     }
 
-    // GLB trees around center park
-    const numTrees = 6 + gridR * 4;
-    for (let i = 0; i < numTrees; i++) {
-      const angle = (i / numTrees) * Math.PI * 2 + treeRng() * 0.5;
-      const r     = 2 + treeRng() * 2;
+    // Center park: 6 trees spread in radius 5-12, clearly visible
+    for (let i = 0; i < 6; i++) {
+      const angle = (i / 6) * Math.PI * 2 + treeRng() * 0.8;
+      const r     = 5 + treeRng() * 7;
       models.push({
         url:   MODELS.trees[treeRng() > 0.5 ? 0 : 1],
         x:     Math.cos(angle) * r,
         z:     Math.sin(angle) * r,
         rotY:  treeRng() * Math.PI * 2,
-        scale: 2.5 + treeRng() * 1.5,
+        scale: 4.5 + treeRng() * 2.0,
       });
     }
 
