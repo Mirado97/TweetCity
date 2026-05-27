@@ -415,33 +415,33 @@ function Building({ pos, w, d, h, color, accent, winEmI, prestige = 0.25, detail
 }
 
 // Medieval tower — box + arrow slits + battlements + cone roof
-function MedTower({ pos, w, h, color, accent }) {
+function MedTower({ pos, w, d, h, color, accent }) {
   const slitFloors = Math.max(2, Math.floor(h / 3));
+  const roofR = Math.max(w, d) * 0.65;
+  const roofH = Math.max(w, d) * 1.0;
   return (
     <group position={[pos[0], 0, pos[1]]}>
       <mesh position={[0, h / 2, 0]}>
-        <boxGeometry args={[w, h, w]} />
+        <boxGeometry args={[w, h, d]} />
         <meshStandardMaterial color={color} roughness={0.95} />
       </mesh>
-      {/* Arrow slits on all 4 faces per floor */}
       {Array.from({ length: slitFloors }, (_, f) => {
         const sy = h * ((f + 1) / (slitFloors + 1));
         return [
-          <mesh key={`f${f}`} position={[0,      sy,  w / 2 + 0.02]}><boxGeometry args={[0.19, 0.58, 0.07]} /><meshStandardMaterial color="#1a1028" roughness={0.95} /></mesh>,
-          <mesh key={`b${f}`} position={[0,      sy, -w / 2 - 0.02]}><boxGeometry args={[0.19, 0.58, 0.07]} /><meshStandardMaterial color="#1a1028" roughness={0.95} /></mesh>,
+          <mesh key={`f${f}`} position={[0,        sy,  d / 2 + 0.02]}><boxGeometry args={[0.19, 0.58, 0.07]} /><meshStandardMaterial color="#1a1028" roughness={0.95} /></mesh>,
+          <mesh key={`b${f}`} position={[0,        sy, -d / 2 - 0.02]}><boxGeometry args={[0.19, 0.58, 0.07]} /><meshStandardMaterial color="#1a1028" roughness={0.95} /></mesh>,
           <mesh key={`l${f}`} position={[-w / 2 - 0.02, sy, 0]}><boxGeometry args={[0.07, 0.58, 0.19]} /><meshStandardMaterial color="#1a1028" roughness={0.95} /></mesh>,
           <mesh key={`r${f}`} position={[ w / 2 + 0.02, sy, 0]}><boxGeometry args={[0.07, 0.58, 0.19]} /><meshStandardMaterial color="#1a1028" roughness={0.95} /></mesh>,
         ];
       })}
-      {/* Battlements */}
-      {[[-w*0.3,-w*0.3],[w*0.3,-w*0.3],[-w*0.3,w*0.3],[w*0.3,w*0.3]].map(([bx,bz],i) => (
+      {[[-w*0.3,-d*0.3],[w*0.3,-d*0.3],[-w*0.3,d*0.3],[w*0.3,d*0.3]].map(([bx,bz],i) => (
         <mesh key={i} position={[bx, h + 0.4, bz]}>
-          <boxGeometry args={[w * 0.28, 0.8, w * 0.28]} />
+          <boxGeometry args={[w * 0.28, 0.8, d * 0.28]} />
           <meshStandardMaterial color={color} roughness={0.95} />
         </mesh>
       ))}
       <mesh position={[0, h + 1.2, 0]}>
-        <coneGeometry args={[w * 0.65, w * 1.1, 4]} />
+        <coneGeometry args={[roofR, roofH, 4]} />
         <meshStandardMaterial color={accent} roughness={0.8} />
       </mesh>
     </group>
@@ -944,7 +944,7 @@ function CityScene({ metrics, style, colorPalette, tokenId, gifts = [] }) {
       {/* Regular buildings — detailed windows only for small cities (gridR ≤ 1) */}
       {data.buildings.map((b, i) =>
         isMed
-          ? <MedTower key={i} pos={b.pos} w={b.w * 0.75} h={b.h} color={b.color} accent={accent} />
+          ? <MedTower key={i} pos={b.pos} w={b.w * 0.75} d={b.d * 0.75} h={b.h} color={b.color} accent={accent} />
           : <Building key={`b${i}`} {...b} winEmI={cfg.winEmI} detailed={data.gridR <= 1} />
       )}
 

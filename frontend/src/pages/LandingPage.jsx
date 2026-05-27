@@ -1,4 +1,15 @@
-import CityRenderer from "../components/CityRenderer";
+import CityRenderer, { LEVEL_NAMES, LEVEL_THRESHOLDS } from "../components/CityRenderer";
+
+const LEVEL_RANGES = [
+  "0–49", "50–249", "250–999", "1K–3K", "3K–10K",
+  "10K–30K", "30K–100K", "100K–300K", "300K–1M", "1M+",
+];
+
+const LEVELS = LEVEL_NAMES.map((name, i) => ({
+  name,
+  level: i + 1,
+  range: LEVEL_RANGES[i],
+}));
 
 const DEMO_CITIES = [
   { 
@@ -24,13 +35,6 @@ const DEMO_CITIES = [
   },
 ];
 
-const LEVELS = [
-  { name: "Village", range: "< 100", level: 1 },
-  { name: "Town", range: "100–1K", level: 2 },
-  { name: "City", range: "1K–10K", level: 3 },
-  { name: "Metropolis", range: "10K–100K", level: 4 },
-  { name: "Megacity", range: "100K+", level: 5 },
-];
 
 export default function LandingPage({ onMintClick }) {
   return (
