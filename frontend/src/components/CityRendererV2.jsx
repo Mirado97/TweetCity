@@ -22,7 +22,7 @@ const MODELS = {
   commercialDetails: ['detail-awning','detail-awning-wide','detail-overhang','detail-overhang-wide','detail-parasol-a','detail-parasol-b'].map(n => `/models/commercial/${n}.glb`),
 };
 
-const ZONE_SCALE = { skyscraper: 5.0, commercial: 4.0, industrial: 2.5, suburban: 3.2 };
+const ZONE_SCALE = { skyscraper: 8.0, commercial: 7.5, industrial: 11.0, suburban: 5.5 };
 
 // ─── Tile grid constants ──────────────────────────────────────────────────────
 // All Kenney road/sidewalk tiles: native 1×1 → scale S → S×S world units
@@ -143,12 +143,9 @@ function V2Scene({ metrics, tokenId }) {
           clusterOffsets = [[(rng() - 0.5) * JITTER, (rng() - 0.5) * JITTER]];
           clusterScale   = baseScale * (0.9 + rng() * 0.2);
         } else if (pack === 'industrial') {
-          const off  = 4 + rng() * 2;
-          const useX = rng() > 0.5;
-          clusterOffsets = useX
-            ? [[-off, (rng() - 0.5) * 3], [off, (rng() - 0.5) * 3]]
-            : [[(rng() - 0.5) * 3, -off], [(rng() - 0.5) * 3, off]];
-          clusterScale = baseScale * (0.85 + rng() * 0.2);
+          // one large factory fills the whole 24×24 block
+          clusterOffsets = [[(rng() - 0.5) * 2, (rng() - 0.5) * 2]];
+          clusterScale = baseScale * (0.9 + rng() * 0.1);
         } else {
           // suburban: 3-4 small houses in block corners
           const corners = [[-5, -5], [5, -5], [-5, 5], [5, 5]];
