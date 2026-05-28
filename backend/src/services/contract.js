@@ -416,28 +416,38 @@ async function getTweetCitySettings() {
   });
 }
 
-// Labelled read: surfaces *which* function failed instead of a generic ethers error.
+// Labelled read with one retry — Mantle RPC drops some parallel eth_calls,
+// returning empty data which ethers surfaces as "missing revert data".
 async function _read(label, fn) {
-  try { return await fn(); }
-  catch (e) { throw new Error(`${label}: ${e.shortMessage || e.message}`); }
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try { return await fn(); }
+    catch (e) {
+      const msg = String(e.message || "");
+      const transient = msg.includes("missing revert data")
+        || msg.includes("ECONNRESET")
+        || e.code === "CALL_EXCEPTION"
+        || e.code === "ECONNRESET";
+      if (!transient || attempt === 1) {
+        throw new Error(`${label}: ${e.shortMessage || e.message}`);
+      }
+      await new Promise((r) => setTimeout(r, 400));
+    }
+  }
 }
 
 async function getGiftsSettings() {
   const gc = getGiftsContract();
   if (!gc) return null;
-  const [owner, oracle, feeBps, acceptW, nextId, ew0, ew1, ew2, ew3, ew4, ew5] = await Promise.all([
-    _read("owner",          () => gc.owner()),
-    _read("oracle",         () => gc.oracle()),
-    _read("protocolFeeBps", () => gc.protocolFeeBps()),
-    _read("acceptWindow",   () => gc.acceptWindow()),
-    _read("nextGiftId",     () => gc.nextGiftId()),
-    _read("engageWindows[0]", () => gc.engageWindows(0)),
-    _read("engageWindows[1]", () => gc.engageWindows(1)),
-    _read("engageWindows[2]", () => gc.engageWindows(2)),
-    _read("engageWindows[3]", () => gc.engageWindows(3)),
-    _read("engageWindows[4]", () => gc.engageWindows(4)),
-    _read("engageWindows[5]", () => gc.engageWindows(5)),
-  ]);
+  // Sequential — parallel reads on Mantle RPC drop randomly.
+  const owner   = await _read("owner",          () => gc.owner());
+  const oracle  = await _read("oracle",         () => gc.oracle());
+  const feeBps  = await _read("protocolFeeBps", () => gc.protocolFeeBps());
+  const acceptW = await _read("acceptWindow",   () => gc.acceptWindow());
+  const nextId  = await _read("nextGiftId",     () => gc.nextGiftId());
+  const ew = [];
+  for (let i = 0; i < 6; i++) {
+    ew.push(await _read(`engageWindows[${i}]`, () => gc.engageWindows(i)));
+  }
   return {
     address:        process.env.GIFTS_CONTRACT_ADDRESS,
     owner,
@@ -445,7 +455,7 @@ async function getGiftsSettings() {
     protocolFeeBps: Number(feeBps),
     acceptWindow:   Number(acceptW),
     nextGiftId:     Number(nextId),
-    engageWindows:  [ew0, ew1, ew2, ew3, ew4, ew5].map(Number),
+    engageWindows:  ew.map(Number),
   };
 }
 
