@@ -88,7 +88,7 @@ export default function MintPage({ address, onConnect, onMinted }) {
   const currentStep = STEPS[step];
 
   return (
-    <div className="pt-24 md:pt-28 px-4 sm:px-6 lg:px-8 pb-20 relative">
+    <div className="w-full pt-24 md:pt-28 px-4 sm:px-6 lg:px-8 pb-20 relative">
       <div className="absolute top-1/3 left-0 w-72 h-72 bg-[#00d4ff]/5 rounded-full blur-3xl pointer-events-none" />
       <div className="absolute bottom-1/4 right-0 w-72 h-72 bg-[#a855f7]/5 rounded-full blur-3xl pointer-events-none" />
 

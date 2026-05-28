@@ -211,11 +211,11 @@ export default function CityPage({ tokenId, signer, address }) {
   const shareText = `My Twitter became a ${cityStyle} ${LEVEL_NAMES[level]} called ${cityName} on Mantle! Every tweet builds the city 🏙️`;
 
   return (
-    <div className="pt-20 md:pt-24 px-4 sm:px-6 lg:px-8 pb-20 relative">
+    <div className="w-full pt-20 md:pt-24 px-4 sm:px-8 lg:px-16 xl:px-24 pb-20 relative">
       <div className="absolute top-1/3 left-0 w-96 h-96 bg-[#00d4ff]/5 rounded-full blur-3xl pointer-events-none" />
       <div className="absolute bottom-1/4 right-0 w-96 h-96 bg-[#a855f7]/5 rounded-full blur-3xl pointer-events-none" />
 
-      <div className="max-w-6xl mx-auto relative">
+      <div className="w-full relative">
         {/* Header */}
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="mb-8">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">

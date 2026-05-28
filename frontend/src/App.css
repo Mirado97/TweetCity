@@ -23,6 +23,13 @@
 }
 
 @layer base {
+  *, *::before, *::after { box-sizing: border-box; }
+
+  html, body, #root {
+    width: 100%;
+    min-height: 100vh;
+  }
+
   body {
     background-color: var(--color-bg-primary);
     color: var(--color-text-primary);

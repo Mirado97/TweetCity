@@ -24,13 +24,13 @@ const cityLevels = [
 
 export default function LandingPage({ onMintClick }) {
   return (
-    <div className="pt-20 md:pt-24">
+    <div className="w-full pt-20 md:pt-24">
       {/* Hero */}
       <section className="relative px-4 sm:px-6 lg:px-8 py-16 md:py-24 overflow-hidden">
         <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-[#00d4ff]/10 rounded-full blur-3xl pointer-events-none" />
         <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-[#a855f7]/10 rounded-full blur-3xl pointer-events-none" />
 
-        <div className="max-w-6xl mx-auto">
+        <div className="w-full">
           <div className="grid lg:grid-cols-2 gap-12 items-center">
             <motion.div initial={{ opacity: 0, x: -40 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: 0.8, ease: 'easeOut' }}>
               <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-[#00d4ff]/10 border border-[#00d4ff]/20 text-[#00d4ff] text-xs font-semibold mb-6">
@@ -121,7 +121,7 @@ export default function LandingPage({ onMintClick }) {
 
       {/* Features */}
       <section className="px-4 sm:px-6 lg:px-8 py-20" id="how-it-works">
-        <div className="max-w-6xl mx-auto">
+        <div className="w-full">
           <motion.div initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} className="text-center mb-16">
             <span className="text-[#00d4ff] text-sm font-semibold uppercase tracking-wider">Features</span>
             <h2 className="text-3xl sm:text-4xl font-bold mt-3 mb-4">How it works</h2>
@@ -147,7 +147,7 @@ export default function LandingPage({ onMintClick }) {
 
       {/* City Levels */}
       <section className="px-4 sm:px-6 lg:px-8 py-20">
-        <div className="max-w-6xl mx-auto">
+        <div className="w-full">
           <motion.div initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} className="text-center mb-16">
             <span className="text-[#a855f7] text-sm font-semibold uppercase tracking-wider">Progression</span>
             <h2 className="text-3xl sm:text-4xl font-bold mt-3 mb-4">City Levels</h2>
@@ -171,7 +171,7 @@ export default function LandingPage({ onMintClick }) {
 
       {/* CTA */}
       <section className="px-4 sm:px-6 lg:px-8 py-20">
-        <motion.div initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} className="max-w-3xl mx-auto text-center">
+        <motion.div initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} className="w-full text-center">
           <div className="glass rounded-3xl p-10 md:p-16 relative overflow-hidden">
             <div className="absolute inset-0 bg-gradient-to-br from-[#00d4ff]/5 to-[#a855f7]/5" />
             <div className="relative z-10">
@@ -195,7 +195,7 @@ export default function LandingPage({ onMintClick }) {
 
       {/* Footer */}
       <footer className="px-4 sm:px-6 lg:px-8 py-8 border-t border-[rgba(255,255,255,0.06)]">
-        <div className="max-w-6xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
+        <div className="w-full flex flex-col sm:flex-row items-center justify-between gap-4">
           <div className="flex items-center gap-2">
             <Building2 className="w-5 h-5 text-[#00d4ff]" />
             <span className="font-bold text-[#f1f5f9]">TweetCity</span>

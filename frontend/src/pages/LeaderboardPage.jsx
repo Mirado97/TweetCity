@@ -59,10 +59,10 @@ export default function LeaderboardPage({ onCityClick }) {
   );
 
   return (
-    <div className="pt-20 md:pt-24 px-4 sm:px-6 lg:px-8 pb-20 relative">
+    <div className="w-full pt-20 md:pt-24 px-4 sm:px-6 lg:px-8 pb-20 relative">
       <div className="absolute top-1/4 right-0 w-96 h-96 bg-[#f59e0b]/5 rounded-full blur-3xl pointer-events-none" />
 
-      <div className="max-w-5xl mx-auto relative">
+      <div className="w-full relative">
         {/* Header */}
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="text-center mb-12">
           <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-[#f59e0b]/10 border border-[#f59e0b]/20 text-[#f59e0b] text-xs font-semibold mb-4">

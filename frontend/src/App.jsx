@@ -45,7 +45,7 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen bg-[#0a0a0f] relative noise-bg">
+    <div className="w-full min-h-screen bg-[#0a0a0f] relative noise-bg">
       <BackgroundGrid />
       <FloatingParticles />
 
@@ -58,30 +58,30 @@ export default function App() {
         onDisconnect={disconnect}
       />
 
-      <main className="relative z-10">
+      <main className="w-full relative z-10">
         <AnimatePresence mode="wait">
           {page === "home" && (
-            <motion.div key="home" variants={pageVariants} initial="initial" animate="animate" exit="exit" transition={{ duration: 0.35 }}>
+            <motion.div key="home" className="w-full" variants={pageVariants} initial="initial" animate="animate" exit="exit" transition={{ duration: 0.35 }}>
               <LandingPage onMintClick={() => nav("mint")} />
             </motion.div>
           )}
           {page === "mint" && (
-            <motion.div key="mint" variants={pageVariants} initial="initial" animate="animate" exit="exit" transition={{ duration: 0.35 }}>
+            <motion.div key="mint" className="w-full" variants={pageVariants} initial="initial" animate="animate" exit="exit" transition={{ duration: 0.35 }}>
               <MintPage address={address} onConnect={connect} onMinted={(id) => nav("city", id)} />
             </motion.div>
           )}
           {page === "city" && cityTokenId && (
-            <motion.div key="city" variants={pageVariants} initial="initial" animate="animate" exit="exit" transition={{ duration: 0.35 }}>
+            <motion.div key="city" className="w-full" variants={pageVariants} initial="initial" animate="animate" exit="exit" transition={{ duration: 0.35 }}>
               <CityPage tokenId={cityTokenId} signer={signer} address={address} />
             </motion.div>
           )}
           {page === "leaderboard" && (
-            <motion.div key="leaderboard" variants={pageVariants} initial="initial" animate="animate" exit="exit" transition={{ duration: 0.35 }}>
+            <motion.div key="leaderboard" className="w-full" variants={pageVariants} initial="initial" animate="animate" exit="exit" transition={{ duration: 0.35 }}>
               <LeaderboardPage onCityClick={(id) => nav("city", id)} />
             </motion.div>
           )}
           {page === "testv2" && (
-            <motion.div key="testv2" variants={pageVariants} initial="initial" animate="animate" exit="exit" transition={{ duration: 0.35 }}>
+            <motion.div key="testv2" className="w-full" variants={pageVariants} initial="initial" animate="animate" exit="exit" transition={{ duration: 0.35 }}>
               <TestV2Page />
             </motion.div>
           )}
