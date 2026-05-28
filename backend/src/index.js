@@ -3,6 +3,8 @@ const express = require("express");
 const cors = require("cors");
 const helmet = require("helmet");
 const cityRoutes = require("./routes/city");
+const adminRoutes = require("./routes/admin");
+const { isHidden } = require("./routes/admin");
 const { getCityData } = require("./services/contract");
 const { getCachedMetadata } = require("./services/ipfs");
 
@@ -26,6 +28,11 @@ app.get("/share/city/:tokenId", async (req, res) => {
   const frontendUrl = (process.env.FRONTEND_URL || "http://localhost:3000").replace(/\/$/, "");
   const selfUrl = `${req.protocol}://${req.get("host")}/share/city/${tokenId}`;
   const redirectUrl = `${frontendUrl}/?city=${tokenId}`;
+
+  if (isHidden(tokenId)) {
+    res.setHeader("Content-Type", "text/html; charset=utf-8");
+    return res.status(404).send("<!DOCTYPE html><html><body>City unavailable.</body></html>");
+  }
 
   let cityName = `City #${tokenId}`;
   let desc = "A Twitter-powered city NFT on Mantle Network. Mint yours — your tweets become a living city on-chain!";
@@ -78,6 +85,7 @@ app.use(cors({ origin: process.env.FRONTEND_URL || "http://localhost:3000" }));
 app.use(express.json());
 
 app.use("/api", cityRoutes);
+app.use("/api", adminRoutes);
 
 app.get("/health", (_, res) => res.json({ ok: true }));
 

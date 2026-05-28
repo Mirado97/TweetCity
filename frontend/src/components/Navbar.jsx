@@ -1,6 +1,8 @@
+import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
-import { Building2, Home, Trophy, PlusCircle, Wallet, LogOut, BookOpen } from 'lucide-react';
+import { Building2, Home, Trophy, PlusCircle, Wallet, LogOut, BookOpen, Shield } from 'lucide-react';
 import { cn } from '../utils/cn';
+import { fetchOwner } from '../lib/adminApi';
 
 const navItems = [
   { id: 'home', label: 'Home', icon: Home },
@@ -10,6 +12,11 @@ const navItems = [
 ];
 
 export function Navbar({ currentPage, onNavigate, tokenId, address, onConnect, onDisconnect }) {
+  const [owner, setOwner] = useState(null);
+  useEffect(() => {
+    fetchOwner().then(({ owner }) => setOwner(owner)).catch(() => {});
+  }, []);
+  const isOwner = address && owner && address.toLowerCase() === owner.toLowerCase();
   return (
     <motion.nav
       initial={{ y: -20, opacity: 0 }}
@@ -74,6 +81,27 @@ export function Navbar({ currentPage, onNavigate, tokenId, address, onConnect, o
                   <motion.div
                     layoutId="activeNav"
                     className="absolute inset-0 rounded-lg bg-[#00d4ff]/10 border border-[#00d4ff]/20"
+                    transition={{ type: 'spring', bounce: 0.2, duration: 0.6 }}
+                  />
+                )}
+              </motion.button>
+            )}
+            {isOwner && (
+              <motion.button
+                onClick={() => onNavigate('admin')}
+                className={cn(
+                  'relative flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors',
+                  currentPage === 'admin' ? 'text-rose-400' : 'text-[#94a3b8] hover:text-[#f1f5f9]'
+                )}
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
+              >
+                <Shield className="w-4 h-4" />
+                Admin
+                {currentPage === 'admin' && (
+                  <motion.div
+                    layoutId="activeNav"
+                    className="absolute inset-0 rounded-lg bg-rose-500/10 border border-rose-500/20"
                     transition={{ type: 'spring', bounce: 0.2, duration: 0.6 }}
                   />
                 )}

@@ -9,6 +9,7 @@ import MintPage from "./pages/MintPage";
 import CityPage from "./pages/CityPage";
 import LeaderboardPage from "./pages/LeaderboardPage";
 import GuidePage from "./pages/GuidePage";
+import AdminPage from "./pages/AdminPage";
 import TestV2Page from "./pages/TestV2Page";
 import "./App.css";
 
@@ -84,6 +85,11 @@ export default function App() {
           {page === "guide" && (
             <motion.div key="guide" className="w-full" variants={pageVariants} initial="initial" animate="animate" exit="exit" transition={{ duration: 0.35 }}>
               <GuidePage />
+            </motion.div>
+          )}
+          {page === "admin" && (
+            <motion.div key="admin" className="w-full" variants={pageVariants} initial="initial" animate="animate" exit="exit" transition={{ duration: 0.35 }}>
+              <AdminPage address={address} signer={signer} onConnect={connect} />
             </motion.div>
           )}
           {page === "testv2" && (

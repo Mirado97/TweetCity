@@ -12,6 +12,10 @@ const GIFTS_ABI = [
   "function gifts(uint256 giftId) external view returns (uint256 id, address buyer, uint256 cityTokenId, uint8 giftType, string tweetUrl, uint256 amount, uint256 ownerAmount, uint8 status, uint64 createdAt, uint64 acceptDeadline, uint64 engageDeadline)",
   "function acceptWindow() external view returns (uint64)",
   "function engageWindows(uint256) external view returns (uint64)",
+  "function protocolFeeBps() external view returns (uint256)",
+  "function nextGiftId() external view returns (uint256)",
+  "function oracle() external view returns (address)",
+  "function owner() external view returns (address)",
 ];
 
 // GiftStatus enum mirror (must match CityGifts.sol)
@@ -391,6 +395,110 @@ async function getTotalCities() {
   });
 }
 
+// ─── Admin helpers ────────────────────────────────────────────────────────
+
+async function getTweetCitySettings() {
+  return rpcCall(async () => {
+    const c = getContract();
+    const [owner, oracle, registry, totalSupply] = await Promise.all([
+      c.owner(),
+      c.oracle(),
+      c.agentIdentityRegistry(),
+      c.totalSupply(),
+    ]);
+    return {
+      address:                process.env.CONTRACT_ADDRESS,
+      owner,
+      oracle,
+      agentIdentityRegistry:  registry,
+      totalSupply:            Number(totalSupply),
+    };
+  });
+}
+
+async function getGiftsSettings() {
+  const gc = getGiftsContract();
+  if (!gc) return null;
+  const [owner, oracle, feeBps, acceptW, nextId, ew0, ew1, ew2, ew3, ew4, ew5] = await Promise.all([
+    gc.owner(),
+    gc.oracle(),
+    gc.protocolFeeBps(),
+    gc.acceptWindow(),
+    gc.nextGiftId(),
+    gc.engageWindows(0),
+    gc.engageWindows(1),
+    gc.engageWindows(2),
+    gc.engageWindows(3),
+    gc.engageWindows(4),
+    gc.engageWindows(5),
+  ]);
+  return {
+    address:        process.env.GIFTS_CONTRACT_ADDRESS,
+    owner,
+    oracle,
+    protocolFeeBps: Number(feeBps),
+    acceptWindow:   Number(acceptW),
+    nextGiftId:     Number(nextId),
+    engageWindows:  [ew0, ew1, ew2, ew3, ew4, ew5].map(Number),
+  };
+}
+
+// Aggregates gift counts and verified volume by scanning all gifts.
+// For a hackathon scale (few hundred gifts) this is fine.
+async function getGiftsStats() {
+  const gc = getGiftsContract();
+  if (!gc) return { totalGifts: 0, pending: 0, accepted: 0, verified: 0, rejected: 0, expired: 0, volumeWei: "0" };
+  const total = Number(await gc.nextGiftId());
+  if (total === 0) return { totalGifts: 0, pending: 0, accepted: 0, verified: 0, rejected: 0, expired: 0, volumeWei: "0" };
+
+  const counts = { pending: 0, accepted: 0, verified: 0, rejected: 0, expired: 0 };
+  let volume = 0n;
+
+  // Fetch in parallel batches of 25 to avoid hammering RPC
+  const batchSize = 25;
+  for (let from = 0; from < total; from += batchSize) {
+    const to = Math.min(total, from + batchSize);
+    const slice = await Promise.all(
+      Array.from({ length: to - from }, (_, i) => gc.gifts(from + i).catch(() => null))
+    );
+    for (const g of slice) {
+      if (!g) continue;
+      const status = Number(g[7]);
+      const amount = g[5];
+      if (status === 0) counts.pending++;
+      else if (status === 1) { counts.accepted++; volume += BigInt(amount); }
+      else if (status === 2) { counts.verified++; volume += BigInt(amount); }
+      else if (status === 3) counts.rejected++;
+      else if (status === 4) counts.expired++;
+    }
+  }
+
+  return { totalGifts: total, ...counts, volumeWei: volume.toString() };
+}
+
+// Lightweight list of all cities for the admin moderation tab.
+async function listAllCities() {
+  return rpcCall(async () => {
+    const contract = getContract();
+    const total = Number(await contract.totalSupply());
+    const out = [];
+    const batch = 20;
+    for (let from = 1; from <= total; from += batch) {
+      const to = Math.min(total, from + batch - 1);
+      const ids = Array.from({ length: to - from + 1 }, (_, i) => from + i);
+      const pairs = await Promise.all(ids.map(async (id) => {
+        const [city, handle] = await Promise.all([
+          contract.cities(id),
+          contract.tokenToHandle(id),
+        ]);
+        return { tokenId: id, twitterHandle: handle || "", ...serializeCity(city) };
+      }));
+      out.push(...pairs);
+    }
+    return out;
+  });
+}
+
 module.exports = {
   mintCity, updateCity, getCityData, getLeaderboard,
   getTokenIdByHandle, getHandleByTokenId,
@@ -398,5 +506,7 @@ module.exports = {
   registerCityManager, getCityManagerWallet,
   // gifts oracle
   getGiftsForCity, getGift, verifyGiftEngagement, getTotalCities,
+  // admin
+  getTweetCitySettings, getGiftsSettings, getGiftsStats, listAllCities,
   GIFT_STATUS, GIFT_TYPE,
 };

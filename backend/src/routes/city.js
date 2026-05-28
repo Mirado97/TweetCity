@@ -16,6 +16,7 @@ const { uploadMetadata, getCachedMetadata } = require("../services/ipfs");
 const { mintCity, updateCity, getCityData, getLeaderboard, getTokenIdByHandle, getHandleByTokenId, registerERC8004Agent, recordValidation, getTokenAgentId, registerCityManager, getCityManagerWallet, getGiftsForCity, getGift, verifyGiftEngagement } = require("../services/contract");
 const { runSweep, verifyGiftAction } = require("../services/giftOracle");
 const { checkSyncCooldown, mintLimiter } = require("../middleware/rateLimit");
+const { isHidden, loadHidden } = require("./admin");
 
 // POST /api/verify-tweet
 // Returns the text the user must tweet to prove account ownership
@@ -208,6 +209,9 @@ router.post("/sync", checkSyncCooldown, async (req, res) => {
 // GET /api/city/:tokenId
 router.get("/city/:tokenId", async (req, res) => {
   try {
+    if (isHidden(req.params.tokenId)) {
+      return res.status(404).json({ error: "City unavailable" });
+    }
     const data = await getCityData(req.params.tokenId);
 
     // Fetch IPFS metadata — in-memory cache first, then gateways
@@ -264,8 +268,10 @@ router.post("/city/:tokenId/claim-manager", async (req, res) => {
 // GET /api/leaderboard
 router.get("/leaderboard", async (req, res) => {
   try {
-    const board = await getLeaderboard(10);
-    res.json(board);
+    const board = await getLeaderboard(50); // fetch more, filter, then slice
+    const hidden = loadHidden();
+    const filtered = board.filter((c) => !hidden[String(c.tokenId)]).slice(0, 10);
+    res.json(filtered);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
