@@ -256,11 +256,45 @@ export default function CityPage({ tokenId, signer, address }) {
           </div>
         </motion.div>
 
-        {/* 3D City */}
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} className="mb-8 relative">
-          <div className="absolute -inset-1 bg-gradient-to-r from-[#00d4ff]/20 to-[#a855f7]/20 rounded-2xl blur-xl opacity-50" />
-          <div className="relative">
-            <CityRendererV2 city={rendererCity} tokenId={tokenId} />
+        {/* 3D City + Sidebar */}
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} className="grid lg:grid-cols-3 gap-6 mb-8">
+          {/* 3D City */}
+          <div className="lg:col-span-2 relative">
+            <div className="absolute -inset-1 bg-gradient-to-r from-[#00d4ff]/20 to-[#a855f7]/20 rounded-2xl blur-xl opacity-50" />
+            <div className="relative">
+              <CityRendererV2 city={rendererCity} tokenId={tokenId} />
+            </div>
+          </div>
+
+          {/* Sidebar */}
+          <div className="space-y-4">
+            <div className="glass rounded-2xl p-5">
+              <h3 className="font-bold text-[#f1f5f9] mb-3">City Details</h3>
+              <div className="space-y-3 text-sm">
+                {[
+                  { label: 'Token ID', value: `#${tokenId}`,           mono: true },
+                  { label: 'Style',    value: cityStyle },
+                  { label: 'Level',    value: level,                   accent: true },
+                  { label: 'Owner',    value: city.managerWallet ? `${city.managerWallet.slice(0,6)}...${city.managerWallet.slice(-4)}` : '—', mono: true },
+                ].map(r => (
+                  <div key={r.label} className="flex justify-between">
+                    <span className="text-[#64748b]">{r.label}</span>
+                    <span className={`${r.mono ? 'font-mono' : ''} ${r.accent ? 'text-[#00d4ff] font-bold' : 'text-[#f1f5f9]'}`}>{r.value}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {Object.keys(colorPalette).length > 0 && (
+              <div className="glass rounded-2xl p-5">
+                <h3 className="font-bold text-[#f1f5f9] mb-3">Color Palette</h3>
+                <div className="flex gap-2 flex-wrap">
+                  {Object.values(colorPalette).map((color, i) => (
+                    <div key={i} className="w-10 h-10 rounded-lg border border-white/20" style={{ backgroundColor: color }} />
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         </motion.div>
 
@@ -285,189 +319,156 @@ export default function CityPage({ tokenId, signer, address }) {
         </motion.div>
 
         {/* Info & Actions */}
-        <div className="grid lg:grid-cols-3 gap-6">
-          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }} className="lg:col-span-2 space-y-6">
-            {(city.ipfsData?.city?.motto || city.ipfsData?.description) && (
-              <div className="glass rounded-2xl p-6">
-                {city.ipfsData?.city?.motto && <p className="text-lg italic text-[#94a3b8] mb-3">"{city.ipfsData.city.motto}"</p>}
-                {city.ipfsData?.description && <p className="text-sm text-[#64748b]">{city.ipfsData.description}</p>}
-              </div>
-            )}
-
-            {/* Gift stats */}
-            {giftStats && giftStats.totalGifts > 0n && (
-              <div className="flex items-center gap-4 text-sm text-[#64748b]">
-                <span>🎁 {giftStats.totalGifts.toString()} gifts received</span>
-                <span>💰 {fmt(giftStats.totalEarned)} earned</span>
-                {giftStats.pendingCount > 0n && <span className="text-[#f59e0b]">⏳ {giftStats.pendingCount.toString()} pending</span>}
-              </div>
-            )}
-
-            {/* Level Up */}
-            <AnimatePresence>
-              {syncResult?.levelUp && (
-                <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}
-                  className="glass rounded-2xl p-6 border border-[#00d4ff]/30 bg-[#00d4ff]/5">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-full bg-gradient-to-br from-[#00d4ff] to-[#a855f7] flex items-center justify-center text-lg">🚀</div>
-                    <div>
-                      <h4 className="font-bold text-[#f1f5f9]">Level Up! {LEVEL_NAMES[syncResult.oldLevel]} → {LEVEL_NAMES[syncResult.newLevel]}</h4>
-                      {syncResult.narrative && <p className="text-sm text-[#94a3b8]">{syncResult.narrative}</p>}
-                    </div>
-                  </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
-
-            {/* Error */}
-            <AnimatePresence>
-              {error && (
-                <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-                  className="flex items-center gap-2 p-4 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-sm">
-                  <AlertCircle className="w-4 h-4 shrink-0" />{error}
-                </motion.div>
-              )}
-            </AnimatePresence>
-
-            {/* Actions */}
-            <div className="flex flex-wrap gap-3">
-              {isOwner && (
-                <motion.button onClick={sync} disabled={syncing}
-                  className="flex items-center gap-2 px-5 py-2.5 rounded-lg glass hover:bg-[#16161f] transition-colors text-[#f1f5f9] font-medium disabled:opacity-50"
-                  whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
-                  <RefreshCw className={`w-4 h-4 ${syncing ? 'animate-spin' : ''}`} />
-                  {syncing ? 'Syncing...' : 'Sync City'}
-                </motion.button>
-              )}
-              {!isOwner && (
-                <motion.button onClick={() => setShowGiftPanel(!showGiftPanel)}
-                  className="flex items-center gap-2 px-5 py-2.5 rounded-lg glass hover:bg-[#16161f] transition-colors text-[#f1f5f9] font-medium"
-                  whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
-                  <Gift className="w-4 h-4" />
-                  {showGiftPanel ? 'Hide Gifts' : 'Send Gift'}
-                </motion.button>
-              )}
-              {isOwner && (
-                <motion.button onClick={() => setShowPriceManager(!showPriceManager)}
-                  className="flex items-center gap-2 px-5 py-2.5 rounded-lg glass hover:bg-[#16161f] transition-colors text-[#f1f5f9] font-medium"
-                  whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
-                  <Settings className="w-4 h-4" />
-                  Gift Prices
-                </motion.button>
-              )}
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }} className="space-y-6">
+          {(city.ipfsData?.city?.motto || city.ipfsData?.description) && (
+            <div className="glass rounded-2xl p-6">
+              {city.ipfsData?.city?.motto && <p className="text-lg italic text-[#94a3b8] mb-3">"{city.ipfsData.city.motto}"</p>}
+              {city.ipfsData?.description && <p className="text-sm text-[#64748b]">{city.ipfsData.description}</p>}
             </div>
+          )}
 
-            {/* Gift Shop (visitors) */}
-            <AnimatePresence>
-              {showGiftPanel && !isOwner && (
-                <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} className="glass rounded-2xl p-6">
-                  <h3 className="font-bold text-[#f1f5f9] mb-4">Send a Gift to {twitterHandle ? `@${twitterHandle}` : 'this city'}</h3>
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-4">
-                    {GIFT_TYPES.map((t, i) => {
-                      const p = prices[i];
-                      const on = p > 0n;
-                      return (
-                        <button key={i}
-                          onClick={() => on && setGiftType(i)}
-                          className={`p-4 rounded-xl transition-colors text-center border ${giftType === i ? 'border-[#00d4ff]/50 bg-[#00d4ff]/10' : 'border-[rgba(255,255,255,0.06)] bg-[#0a0a0f]/50'} ${!on ? 'opacity-40 cursor-not-allowed' : 'hover:bg-[#0a0a0f] cursor-pointer'}`}
-                        >
-                          <div className="text-2xl mb-1">{t.icon}</div>
-                          <div className="text-sm font-medium text-[#f1f5f9]">{t.name}</div>
-                          <div className="text-xs text-[#64748b]">{on ? fmt(p) : '—'}</div>
-                        </button>
-                      );
-                    })}
+          {/* Gift stats */}
+          {giftStats && giftStats.totalGifts > 0n && (
+            <div className="flex items-center gap-4 text-sm text-[#64748b]">
+              <span>🎁 {giftStats.totalGifts.toString()} gifts received</span>
+              <span>💰 {fmt(giftStats.totalEarned)} earned</span>
+              {giftStats.pendingCount > 0n && <span className="text-[#f59e0b]">⏳ {giftStats.pendingCount.toString()} pending</span>}
+            </div>
+          )}
+
+          {/* Level Up */}
+          <AnimatePresence>
+            {syncResult?.levelUp && (
+              <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}
+                className="glass rounded-2xl p-6 border border-[#00d4ff]/30 bg-[#00d4ff]/5">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-full bg-gradient-to-br from-[#00d4ff] to-[#a855f7] flex items-center justify-center text-lg">🚀</div>
+                  <div>
+                    <h4 className="font-bold text-[#f1f5f9]">Level Up! {LEVEL_NAMES[syncResult.oldLevel]} → {LEVEL_NAMES[syncResult.newLevel]}</h4>
+                    {syncResult.narrative && <p className="text-sm text-[#94a3b8]">{syncResult.narrative}</p>}
                   </div>
-                  {prices[giftType] > 0n && (
-                    <div className="space-y-3">
-                      <input
-                        className="w-full px-4 py-3 rounded-xl bg-[#0a0a0f] border border-[rgba(255,255,255,0.06)] text-[#f1f5f9] placeholder-[#64748b] focus:outline-none focus:border-[#00d4ff]/50 transition-colors"
-                        placeholder="https://twitter.com/... (your tweet link)"
-                        value={tweetUrl}
-                        onChange={e => setTweetUrl(e.target.value)}
-                      />
-                      <motion.button onClick={sendGift} disabled={sending || !signer}
-                        className="w-full flex items-center justify-center gap-2 px-6 py-3 rounded-xl bg-gradient-to-r from-[#00d4ff] to-[#a855f7] text-white font-semibold disabled:opacity-50"
-                        whileHover={{ scale: 1.01 }} whileTap={{ scale: 0.99 }}>
-                        {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : `Send for ${fmt(prices[giftType])}`}
-                      </motion.button>
-                    </div>
-                  )}
-                </motion.div>
-              )}
-            </AnimatePresence>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
 
-            {/* Price Manager (owner) */}
-            <AnimatePresence>
-              {showPriceManager && isOwner && (
-                <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} className="glass rounded-2xl p-6">
-                  <h3 className="font-bold text-[#f1f5f9] mb-4">Set Gift Prices</h3>
-                  <PriceManager tokenId={tokenId} signer={signer} giftsAddr={giftsContractAddr} currentPrices={prices}
-                    onSaved={p => { setPrices(p); setShowPriceManager(false); }} />
-                </motion.div>
-              )}
-            </AnimatePresence>
+          {/* Error */}
+          <AnimatePresence>
+            {error && (
+              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                className="flex items-center gap-2 p-4 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-sm">
+                <AlertCircle className="w-4 h-4 shrink-0" />{error}
+              </motion.div>
+            )}
+          </AnimatePresence>
 
-            {/* Inbox (owner) */}
-            {isOwner && pendingGifts.length > 0 && (
-              <div className="glass rounded-2xl p-6">
-                <h3 className="font-bold text-[#f1f5f9] mb-4">📬 Inbox <span className="ml-2 px-2 py-0.5 rounded-full bg-[#f59e0b]/20 text-[#f59e0b] text-xs">{pendingGifts.length}</span></h3>
-                <div className="space-y-3">
-                  {pendingGifts.map(g => {
-                    const t = GIFT_TYPES[Number(g.giftType)];
+          {/* Actions */}
+          <div className="flex flex-wrap gap-3">
+            {isOwner && (
+              <motion.button onClick={sync} disabled={syncing}
+                className="flex items-center gap-2 px-5 py-2.5 rounded-lg glass hover:bg-[#16161f] transition-colors text-[#f1f5f9] font-medium disabled:opacity-50"
+                whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
+                <RefreshCw className={`w-4 h-4 ${syncing ? 'animate-spin' : ''}`} />
+                {syncing ? 'Syncing...' : 'Sync City'}
+              </motion.button>
+            )}
+            {!isOwner && (
+              <motion.button onClick={() => setShowGiftPanel(!showGiftPanel)}
+                className="flex items-center gap-2 px-5 py-2.5 rounded-lg glass hover:bg-[#16161f] transition-colors text-[#f1f5f9] font-medium"
+                whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
+                <Gift className="w-4 h-4" />
+                {showGiftPanel ? 'Hide Gifts' : 'Send Gift'}
+              </motion.button>
+            )}
+            {isOwner && (
+              <motion.button onClick={() => setShowPriceManager(!showPriceManager)}
+                className="flex items-center gap-2 px-5 py-2.5 rounded-lg glass hover:bg-[#16161f] transition-colors text-[#f1f5f9] font-medium"
+                whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
+                <Settings className="w-4 h-4" />
+                Gift Prices
+              </motion.button>
+            )}
+          </div>
+
+          {/* Gift Shop (visitors) */}
+          <AnimatePresence>
+            {showGiftPanel && !isOwner && (
+              <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} className="glass rounded-2xl p-6">
+                <h3 className="font-bold text-[#f1f5f9] mb-4">Send a Gift to {twitterHandle ? `@${twitterHandle}` : 'this city'}</h3>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-4">
+                  {GIFT_TYPES.map((t, i) => {
+                    const p = prices[i];
+                    const on = p > 0n;
                     return (
-                      <div key={g.id.toString()} className="p-4 rounded-xl bg-[#0a0a0f]/50 border border-[rgba(255,255,255,0.06)]">
-                        <div className="flex items-center gap-2 mb-2">
-                          <span className="text-[#f1f5f9] font-medium">{t?.icon} {t?.name}</span>
-                          <span className="text-[#00d4ff] text-sm">{fmt(g.ownerAmount)}</span>
-                          <span className="text-[#64748b] text-xs ml-auto">⏱ {timeLeft(g.acceptDeadline)}</span>
-                        </div>
-                        <a className="text-[#00d4ff] text-xs hover:underline" href={g.tweetUrl} target="_blank" rel="noreferrer">View tweet ↗</a>
-                        <div className="flex gap-2 mt-3">
-                          <button onClick={() => actOnGift(g.id, true)}
-                            className="flex-1 py-1.5 rounded-lg bg-gradient-to-r from-[#00d4ff] to-[#a855f7] text-white text-sm font-medium">Accept</button>
-                          <button onClick={() => actOnGift(g.id, false)}
-                            className="flex-1 py-1.5 rounded-lg glass text-[#94a3b8] text-sm font-medium">Reject</button>
-                        </div>
-                      </div>
+                      <button key={i}
+                        onClick={() => on && setGiftType(i)}
+                        className={`p-4 rounded-xl transition-colors text-center border ${giftType === i ? 'border-[#00d4ff]/50 bg-[#00d4ff]/10' : 'border-white/20 bg-[#0a0a0f]/50'} ${!on ? 'opacity-40 cursor-not-allowed' : 'hover:bg-[#0a0a0f] cursor-pointer'}`}
+                      >
+                        <div className="text-2xl mb-1">{t.icon}</div>
+                        <div className="text-sm font-medium text-[#f1f5f9]">{t.name}</div>
+                        <div className="text-xs text-[#64748b]">{on ? fmt(p) : '—'}</div>
+                      </button>
                     );
                   })}
                 </div>
-              </div>
-            )}
-          </motion.div>
-
-          {/* Sidebar */}
-          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.4 }} className="space-y-4">
-            <div className="glass rounded-2xl p-5">
-              <h3 className="font-bold text-[#f1f5f9] mb-3">City Details</h3>
-              <div className="space-y-3 text-sm">
-                {[
-                  { label: 'Token ID',  value: `#${tokenId}`,           mono: true },
-                  { label: 'Style',     value: cityStyle },
-                  { label: 'Level',     value: level,                   accent: true },
-                  { label: 'Owner',     value: city.managerWallet ? `${city.managerWallet.slice(0,6)}...${city.managerWallet.slice(-4)}` : '—', mono: true },
-                ].map(r => (
-                  <div key={r.label} className="flex justify-between">
-                    <span className="text-[#64748b]">{r.label}</span>
-                    <span className={`${r.mono ? 'font-mono' : ''} ${r.accent ? 'text-[#00d4ff] font-bold' : 'text-[#f1f5f9]'}`}>{r.value}</span>
+                {prices[giftType] > 0n && (
+                  <div className="space-y-3">
+                    <input
+                      className="w-full px-4 py-3 rounded-xl bg-[#0a0a0f] border border-white/20 text-[#f1f5f9] placeholder-[#64748b] focus:outline-none focus:border-[#00d4ff]/50 transition-colors"
+                      placeholder="https://twitter.com/... (your tweet link)"
+                      value={tweetUrl}
+                      onChange={e => setTweetUrl(e.target.value)}
+                    />
+                    <motion.button onClick={sendGift} disabled={sending || !signer}
+                      className="w-full flex items-center justify-center gap-2 px-6 py-3 rounded-xl bg-gradient-to-r from-[#00d4ff] to-[#a855f7] text-white font-semibold disabled:opacity-50"
+                      whileHover={{ scale: 1.01 }} whileTap={{ scale: 0.99 }}>
+                      {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : `Send for ${fmt(prices[giftType])}`}
+                    </motion.button>
                   </div>
-                ))}
+                )}
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          {/* Price Manager (owner) */}
+          <AnimatePresence>
+            {showPriceManager && isOwner && (
+              <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} className="glass rounded-2xl p-6">
+                <h3 className="font-bold text-[#f1f5f9] mb-4">Set Gift Prices</h3>
+                <PriceManager tokenId={tokenId} signer={signer} giftsAddr={giftsContractAddr} currentPrices={prices}
+                  onSaved={p => { setPrices(p); setShowPriceManager(false); }} />
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          {/* Inbox (owner) */}
+          {isOwner && pendingGifts.length > 0 && (
+            <div className="glass rounded-2xl p-6">
+              <h3 className="font-bold text-[#f1f5f9] mb-4">📬 Inbox <span className="ml-2 px-2 py-0.5 rounded-full bg-[#f59e0b]/20 text-[#f59e0b] text-xs">{pendingGifts.length}</span></h3>
+              <div className="space-y-3">
+                {pendingGifts.map(g => {
+                  const t = GIFT_TYPES[Number(g.giftType)];
+                  return (
+                    <div key={g.id.toString()} className="p-4 rounded-xl bg-[#0a0a0f]/50 border border-white/20">
+                      <div className="flex items-center gap-2 mb-2">
+                        <span className="text-[#f1f5f9] font-medium">{t?.icon} {t?.name}</span>
+                        <span className="text-[#00d4ff] text-sm">{fmt(g.ownerAmount)}</span>
+                        <span className="text-[#64748b] text-xs ml-auto">⏱ {timeLeft(g.acceptDeadline)}</span>
+                      </div>
+                      <a className="text-[#00d4ff] text-xs hover:underline" href={g.tweetUrl} target="_blank" rel="noreferrer">View tweet ↗</a>
+                      <div className="flex gap-2 mt-3">
+                        <button onClick={() => actOnGift(g.id, true)}
+                          className="flex-1 py-1.5 rounded-lg bg-gradient-to-r from-[#00d4ff] to-[#a855f7] text-white text-sm font-medium">Accept</button>
+                        <button onClick={() => actOnGift(g.id, false)}
+                          className="flex-1 py-1.5 rounded-lg glass text-[#94a3b8] text-sm font-medium">Reject</button>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             </div>
-
-            {Object.keys(colorPalette).length > 0 && (
-              <div className="glass rounded-2xl p-5">
-                <h3 className="font-bold text-[#f1f5f9] mb-3">Color Palette</h3>
-                <div className="flex gap-2">
-                  {Object.values(colorPalette).map((color, i) => (
-                    <div key={i} className="w-10 h-10 rounded-lg border border-[rgba(255,255,255,0.06)]" style={{ backgroundColor: color }} />
-                  ))}
-                </div>
-              </div>
-            )}
-          </motion.div>
-        </div>
+          )}
+        </motion.div>
       </div>
     </div>
   );
@@ -502,7 +503,7 @@ function PriceManager({ tokenId, signer, giftsAddr, currentPrices, onSaved }) {
             type="number" min="0" step="0.001" placeholder="MNT"
             value={inputs[i]}
             onChange={e => setInputs(prev => { const n=[...prev]; n[i]=e.target.value; return n; })}
-            className="w-24 px-3 py-1.5 rounded-lg bg-[#0a0a0f] border border-[rgba(255,255,255,0.06)] text-[#f1f5f9] text-sm focus:outline-none focus:border-[#00d4ff]/50"
+            className="w-24 px-3 py-1.5 rounded-lg bg-[#0a0a0f] border border-white/20 text-[#f1f5f9] text-sm focus:outline-none focus:border-[#00d4ff]/50"
           />
         </div>
       ))}
