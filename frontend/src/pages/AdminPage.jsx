@@ -84,31 +84,37 @@ function StatsTab({ signer }) {
 
   const tc = data.tweetCity;
   const g = data.gifts;
-  const gs = data.giftsStats;
+  const gs = data.giftsStats || {};
 
   return (
     <div className="space-y-6">
+      {data.tweetCityError && <ErrorBox msg={`TweetCity: ${data.tweetCityError}`} />}
+      {data.giftsError      && <ErrorBox msg={`CityGifts: ${data.giftsError}`} />}
+      {data.giftsStatsError && <ErrorBox msg={`Gift stats: ${data.giftsStatsError}`} />}
+
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <StatCard label="Total Cities" value={tc.totalSupply} />
-        <StatCard label="Total Gifts"  value={gs.totalGifts} />
-        <StatCard label="Verified" value={gs.verified} hint={`${fmtMNT(gs.volumeWei)} MNT volume`} />
+        <StatCard label="Total Cities" value={tc?.totalSupply ?? "—"} />
+        <StatCard label="Total Gifts"  value={gs.totalGifts ?? "—"} />
+        <StatCard label="Verified" value={gs.verified ?? "—"} hint={`${fmtMNT(gs.volumeWei)} MNT volume`} />
         <StatCard label="Hidden" value={data.hiddenCount} hint="moderated cities" />
       </div>
       <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-        <StatCard label="Pending"  value={gs.pending} />
-        <StatCard label="Accepted" value={gs.accepted} />
-        <StatCard label="Verified" value={gs.verified} />
-        <StatCard label="Rejected" value={gs.rejected} />
-        <StatCard label="Expired"  value={gs.expired} />
+        <StatCard label="Pending"  value={gs.pending  ?? "—"} />
+        <StatCard label="Accepted" value={gs.accepted ?? "—"} />
+        <StatCard label="Verified" value={gs.verified ?? "—"} />
+        <StatCard label="Rejected" value={gs.rejected ?? "—"} />
+        <StatCard label="Expired"  value={gs.expired  ?? "—"} />
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div className="glass rounded-xl p-5 border border-[rgba(255,255,255,0.06)]">
-          <div className="flex items-center gap-2 mb-3 text-[#00d4ff]"><FileCode className="w-4 h-4" /> TweetCity</div>
-          <Row label="Address" value={fmtAddr(tc.address)} mono />
-          <Row label="Owner" value={fmtAddr(tc.owner)} mono />
-          <Row label="Oracle" value={fmtAddr(tc.oracle)} mono />
-          <Row label="Agent Registry" value={fmtAddr(tc.agentIdentityRegistry)} mono />
-        </div>
+        {tc && (
+          <div className="glass rounded-xl p-5 border border-[rgba(255,255,255,0.06)]">
+            <div className="flex items-center gap-2 mb-3 text-[#00d4ff]"><FileCode className="w-4 h-4" /> TweetCity</div>
+            <Row label="Address" value={fmtAddr(tc.address)} mono />
+            <Row label="Owner" value={fmtAddr(tc.owner)} mono />
+            <Row label="Oracle" value={fmtAddr(tc.oracle)} mono />
+            <Row label="Agent Registry" value={fmtAddr(tc.agentIdentityRegistry)} mono />
+          </div>
+        )}
         {g && (
           <div className="glass rounded-xl p-5 border border-[rgba(255,255,255,0.06)]">
             <div className="flex items-center gap-2 mb-3 text-[#a855f7]"><FileCode className="w-4 h-4" /> CityGifts</div>

@@ -39,22 +39,23 @@ router.get("/admin/owner", async (req, res) => {
 router.use("/admin", adminAuth);
 
 router.get("/admin/stats", async (req, res) => {
-  try {
-    const [tweetCity, gifts, giftsStats] = await Promise.all([
-      getTweetCitySettings(),
-      getGiftsSettings(),
-      getGiftsStats(),
-    ]);
-    const hidden = loadHidden();
-    res.json({
-      tweetCity,
-      gifts,
-      giftsStats,
-      hiddenCount: Object.keys(hidden).length,
-    });
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
+  // Each fetch is independent — failure of one shouldn't blank the whole panel.
+  const settle = async (fn) => { try { return { ok: await fn() }; } catch (e) { return { err: e.shortMessage || e.message }; } };
+  const [tc, g, gs] = await Promise.all([
+    settle(getTweetCitySettings),
+    settle(getGiftsSettings),
+    settle(getGiftsStats),
+  ]);
+  const hidden = loadHidden();
+  res.json({
+    tweetCity:  tc.ok || null,
+    tweetCityError: tc.err || null,
+    gifts:      g.ok  || null,
+    giftsError: g.err || null,
+    giftsStats: gs.ok || { totalGifts: 0, pending: 0, accepted: 0, verified: 0, rejected: 0, expired: 0, volumeWei: "0" },
+    giftsStatsError: gs.err || null,
+    hiddenCount: Object.keys(hidden).length,
+  });
 });
 
 // Surface backend env state (without leaking secrets — only presence flags).
