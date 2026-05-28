@@ -256,34 +256,66 @@ export default function CityPage({ tokenId, signer, address }) {
           </div>
         </motion.div>
 
-        {/* 3D City + (optional middle panel) + Sidebar — always 3 cols on lg */}
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} className="grid lg:grid-cols-3 gap-6 mb-8">
-          {/* 3D City */}
-          <div className="relative">
-            <div className="absolute -inset-1 bg-gradient-to-r from-[#00d4ff]/20 to-[#a855f7]/20 rounded-2xl blur-xl opacity-50" />
-            <div className="relative">
+        {/* 3D City + Middle + Sidebar — 3 equal cols, stretch to tallest */}
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}
+          className="grid lg:grid-cols-3 gap-6 mb-8 items-stretch">
+
+          {/* Col 1: 3D City */}
+          <div className="relative glass rounded-2xl overflow-hidden">
+            <div className="absolute -inset-1 bg-gradient-to-r from-[#00d4ff]/20 to-[#a855f7]/20 rounded-2xl blur-xl opacity-50 pointer-events-none" />
+            <div className="relative h-full">
               <CityRendererV2 city={rendererCity} tokenId={tokenId} />
             </div>
           </div>
 
-          {/* Middle: Set Gift Prices panel (when open) */}
-          <AnimatePresence mode="wait">
-            {showPriceManager && isOwner ? (
-              <motion.div key="price-panel"
-                initial={{ opacity: 0, scale: 0.97 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.97 }}
-                className="glass rounded-2xl p-5 self-start">
-                <h3 className="font-bold text-[#f1f5f9] mb-4">Set Gift Prices</h3>
-                <PriceManager tokenId={tokenId} signer={signer} giftsAddr={giftsContractAddr} currentPrices={prices}
-                  onSaved={p => { setPrices(p); setShowPriceManager(false); }} />
-              </motion.div>
-            ) : (
-              <div key="empty" />
-            )}
-          </AnimatePresence>
+          {/* Col 2: Buttons + Set Gift Prices panel (always rendered for height) */}
+          <div className="glass rounded-2xl p-5 flex flex-col gap-4">
+            {/* Buttons at top */}
+            <div className="flex flex-col gap-2">
+              {isOwner && (
+                <motion.button onClick={sync} disabled={syncing}
+                  className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-[#0a0a0f] border border-white/20 hover:bg-[#16161f] transition-colors text-[#f1f5f9] font-medium disabled:opacity-50"
+                  whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
+                  <RefreshCw className={`w-4 h-4 ${syncing ? 'animate-spin' : ''}`} />
+                  {syncing ? 'Syncing...' : 'Sync City'}
+                </motion.button>
+              )}
+              {!isOwner && (
+                <motion.button onClick={() => setShowGiftPanel(!showGiftPanel)}
+                  className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-[#0a0a0f] border border-white/20 hover:bg-[#16161f] transition-colors text-[#f1f5f9] font-medium"
+                  whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
+                  <Gift className="w-4 h-4" />
+                  {showGiftPanel ? 'Hide Gifts' : 'Send Gift'}
+                </motion.button>
+              )}
+              {isOwner && (
+                <motion.button onClick={() => setShowPriceManager(!showPriceManager)}
+                  className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-[#0a0a0f] border border-white/20 hover:bg-[#16161f] transition-colors text-[#f1f5f9] font-medium"
+                  whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
+                  <Settings className="w-4 h-4" />
+                  {showPriceManager ? 'Close Prices' : 'Gift Prices'}
+                </motion.button>
+              )}
+            </div>
 
-          {/* Sidebar */}
-          <div className="space-y-4">
-            <div className="glass rounded-2xl p-5">
+            {/* Set Gift Prices panel below buttons */}
+            <AnimatePresence>
+              {showPriceManager && isOwner && (
+                <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}
+                  className="overflow-hidden">
+                  <div className="border-t border-white/20 pt-4">
+                    <h3 className="font-bold text-[#f1f5f9] mb-4">Set Gift Prices</h3>
+                    <PriceManager tokenId={tokenId} signer={signer} giftsAddr={giftsContractAddr} currentPrices={prices}
+                      onSaved={p => { setPrices(p); setShowPriceManager(false); }} />
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+
+          {/* Col 3: City Details + Color Palette */}
+          <div className="glass rounded-2xl p-5 flex flex-col gap-4">
+            <div>
               <h3 className="font-bold text-[#f1f5f9] mb-3">City Details</h3>
               <div className="space-y-3 text-sm">
                 {[
@@ -301,43 +333,15 @@ export default function CityPage({ tokenId, signer, address }) {
             </div>
 
             {Object.keys(colorPalette).length > 0 && (
-              <div className="glass rounded-2xl p-5">
+              <div className="border-t border-white/20 pt-4">
                 <h3 className="font-bold text-[#f1f5f9] mb-3">Color Palette</h3>
                 <div className="flex gap-2 flex-wrap">
                   {Object.values(colorPalette).map((color, i) => (
-                    <div key={i} className="w-10 h-10 rounded-lg border border-white/20" style={{ backgroundColor: color }} />
+                    <div key={i} className="w-10 h-10 rounded-lg border border-white/45" style={{ backgroundColor: color }} />
                   ))}
                 </div>
               </div>
             )}
-
-            {/* Action buttons */}
-            <div className="flex flex-col gap-2">
-              {isOwner && (
-                <motion.button onClick={sync} disabled={syncing}
-                  className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg glass hover:bg-[#16161f] transition-colors text-[#f1f5f9] font-medium disabled:opacity-50 w-full"
-                  whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
-                  <RefreshCw className={`w-4 h-4 ${syncing ? 'animate-spin' : ''}`} />
-                  {syncing ? 'Syncing...' : 'Sync City'}
-                </motion.button>
-              )}
-              {!isOwner && (
-                <motion.button onClick={() => setShowGiftPanel(!showGiftPanel)}
-                  className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg glass hover:bg-[#16161f] transition-colors text-[#f1f5f9] font-medium w-full"
-                  whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
-                  <Gift className="w-4 h-4" />
-                  {showGiftPanel ? 'Hide Gifts' : 'Send Gift'}
-                </motion.button>
-              )}
-              {isOwner && (
-                <motion.button onClick={() => setShowPriceManager(!showPriceManager)}
-                  className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg glass hover:bg-[#16161f] transition-colors text-[#f1f5f9] font-medium w-full"
-                  whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
-                  <Settings className="w-4 h-4" />
-                  {showPriceManager ? 'Close Prices' : 'Gift Prices'}
-                </motion.button>
-              )}
-            </div>
           </div>
         </motion.div>
 
