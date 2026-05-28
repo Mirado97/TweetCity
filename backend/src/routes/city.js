@@ -78,7 +78,7 @@ router.post("/mint", mintLimiter, async (req, res) => {
       : 0;
 
     // Step 3: Claude AI analysis
-    const aiData = await analyzeCityPersonality(tweets, { ...metrics, avgEngagement });
+    const aiData = await analyzeCityPersonality(tweets, { ...metrics, avgEngagement, username: twitterHandle });
 
     // Step 4: Build and upload metadata to IPFS
     const metadata = {
@@ -152,7 +152,7 @@ router.post("/sync", checkSyncCooldown, async (req, res) => {
     let narrative = null;
 
     if (isLevelUp || noIpfs || noMetrics) {
-      const aiData = await analyzeCityPersonality(tweets, { ...metrics, avgEngagement });
+      const aiData = await analyzeCityPersonality(tweets, { ...metrics, avgEngagement, username: twitterHandle });
       if (isLevelUp) {
         narrative = await generateLevelUpNarrative(aiData.cityName, oldLevel, newLevel, metrics);
       }
