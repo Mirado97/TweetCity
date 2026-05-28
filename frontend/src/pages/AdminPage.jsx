@@ -91,6 +91,14 @@ function StatsTab({ signer }) {
       {data.tweetCityError && <ErrorBox msg={`TweetCity: ${data.tweetCityError}`} />}
       {data.giftsError      && <ErrorBox msg={`CityGifts: ${data.giftsError}`} />}
       {data.giftsStatsError && <ErrorBox msg={`Gift stats: ${data.giftsStatsError}`} />}
+      {data.diag && (
+        <div className="rounded-lg p-3 bg-[#16161f] border border-[rgba(255,255,255,0.06)] text-xs text-[#94a3b8] font-mono space-y-1">
+          <div>Backend uses:</div>
+          <div>TweetCity: <span className="text-[#f1f5f9]">{data.diag.tweetCityAddr || "(empty)"}</span></div>
+          <div>CityGifts: <span className="text-[#f1f5f9]">{data.diag.giftsAddr || "(empty)"}</span></div>
+          <div>RPC: <span className="text-[#f1f5f9]">{data.diag.rpc}</span></div>
+        </div>
+      )}
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <StatCard label="Total Cities" value={tc?.totalSupply ?? "—"} />

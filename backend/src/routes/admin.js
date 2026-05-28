@@ -55,6 +55,11 @@ router.get("/admin/stats", async (req, res) => {
     giftsStats: gs.ok || { totalGifts: 0, pending: 0, accepted: 0, verified: 0, rejected: 0, expired: 0, volumeWei: "0" },
     giftsStatsError: gs.err || null,
     hiddenCount: Object.keys(hidden).length,
+    diag: {
+      tweetCityAddr: process.env.CONTRACT_ADDRESS || null,
+      giftsAddr:     process.env.GIFTS_CONTRACT_ADDRESS || null,
+      rpc:           process.env.MANTLE_TESTNET_RPC ? "set" : "missing",
+    },
   });
 });
 
