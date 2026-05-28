@@ -256,15 +256,30 @@ export default function CityPage({ tokenId, signer, address }) {
           </div>
         </motion.div>
 
-        {/* 3D City + Sidebar */}
+        {/* 3D City + (optional middle panel) + Sidebar — always 3 cols on lg */}
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} className="grid lg:grid-cols-3 gap-6 mb-8">
           {/* 3D City */}
-          <div className="lg:col-span-2 relative">
+          <div className="relative">
             <div className="absolute -inset-1 bg-gradient-to-r from-[#00d4ff]/20 to-[#a855f7]/20 rounded-2xl blur-xl opacity-50" />
             <div className="relative">
               <CityRendererV2 city={rendererCity} tokenId={tokenId} />
             </div>
           </div>
+
+          {/* Middle: Set Gift Prices panel (when open) */}
+          <AnimatePresence mode="wait">
+            {showPriceManager && isOwner ? (
+              <motion.div key="price-panel"
+                initial={{ opacity: 0, scale: 0.97 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.97 }}
+                className="glass rounded-2xl p-5 self-start">
+                <h3 className="font-bold text-[#f1f5f9] mb-4">Set Gift Prices</h3>
+                <PriceManager tokenId={tokenId} signer={signer} giftsAddr={giftsContractAddr} currentPrices={prices}
+                  onSaved={p => { setPrices(p); setShowPriceManager(false); }} />
+              </motion.div>
+            ) : (
+              <div key="empty" />
+            )}
+          </AnimatePresence>
 
           {/* Sidebar */}
           <div className="space-y-4">
@@ -319,21 +334,10 @@ export default function CityPage({ tokenId, signer, address }) {
                   className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg glass hover:bg-[#16161f] transition-colors text-[#f1f5f9] font-medium w-full"
                   whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
                   <Settings className="w-4 h-4" />
-                  Gift Prices
+                  {showPriceManager ? 'Close Prices' : 'Gift Prices'}
                 </motion.button>
               )}
             </div>
-
-            {/* Price Manager (owner) — in sidebar */}
-            <AnimatePresence>
-              {showPriceManager && isOwner && (
-                <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} className="glass rounded-2xl p-5">
-                  <h3 className="font-bold text-[#f1f5f9] mb-4">Set Gift Prices</h3>
-                  <PriceManager tokenId={tokenId} signer={signer} giftsAddr={giftsContractAddr} currentPrices={prices}
-                    onSaved={p => { setPrices(p); setShowPriceManager(false); }} />
-                </motion.div>
-              )}
-            </AnimatePresence>
           </div>
         </motion.div>
 
