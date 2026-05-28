@@ -218,8 +218,9 @@ export default function CityPage({ tokenId, signer, address }) {
       <div className="w-full relative">
         {/* Header */}
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="mb-8">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-            <div>
+          <div className="flex flex-col lg:flex-row lg:items-center gap-6">
+            {/* Left: title + level + handle */}
+            <div className="lg:shrink-0">
               <h1 className="text-3xl sm:text-4xl font-bold text-[#f1f5f9]">{cityName}</h1>
               <div className="flex items-center gap-3 mt-2">
                 <span className="px-2.5 py-1 rounded-md bg-[#00d4ff]/10 border border-[#00d4ff]/20 text-[#00d4ff] text-xs font-bold">
@@ -234,7 +235,17 @@ export default function CityPage({ tokenId, signer, address }) {
                 )}
               </div>
             </div>
-            <div className="flex items-center gap-2">
+
+            {/* Center: motto + description */}
+            {(city.ipfsData?.city?.motto || city.ipfsData?.description) ? (
+              <div className="flex-1 glass rounded-2xl px-5 py-3 min-w-0">
+                {city.ipfsData?.city?.motto && <p className="text-base italic text-[#94a3b8]">"{city.ipfsData.city.motto}"</p>}
+                {city.ipfsData?.description && <p className="text-xs text-[#64748b] mt-1">{city.ipfsData.description}</p>}
+              </div>
+            ) : <div className="flex-1" />}
+
+            {/* Right: actions */}
+            <div className="flex items-center gap-2 lg:shrink-0">
               <motion.button
                 onClick={likeCity} disabled={liking}
                 className="flex items-center gap-2 px-4 py-2 rounded-lg glass hover:bg-[#16161f] transition-colors text-rose-400"
@@ -255,15 +266,6 @@ export default function CityPage({ tokenId, signer, address }) {
             </div>
           </div>
         </motion.div>
-
-        {/* Motto / Description banner */}
-        {(city.ipfsData?.city?.motto || city.ipfsData?.description) && (
-          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }}
-            className="glass rounded-2xl px-6 py-4 mb-6">
-            {city.ipfsData?.city?.motto && <p className="text-base italic text-[#94a3b8]">"{city.ipfsData.city.motto}"</p>}
-            {city.ipfsData?.description && <p className="text-sm text-[#64748b] mt-1">{city.ipfsData.description}</p>}
-          </motion.div>
-        )}
 
         {/* 3D City + Middle + Sidebar — 3 equal cols, stretch to tallest */}
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}
