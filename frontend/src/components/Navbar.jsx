@@ -1,11 +1,12 @@
 import { motion } from 'framer-motion';
-import { Building2, Home, Trophy, PlusCircle, Wallet, LogOut } from 'lucide-react';
+import { Building2, Home, Trophy, PlusCircle, Wallet, LogOut, BookOpen } from 'lucide-react';
 import { cn } from '../utils/cn';
 
 const navItems = [
   { id: 'home', label: 'Home', icon: Home },
   { id: 'mint', label: 'Mint', icon: PlusCircle },
   { id: 'leaderboard', label: 'Leaderboard', icon: Trophy },
+  { id: 'guide', label: 'Guide', icon: BookOpen },
 ];
 
 export function Navbar({ currentPage, onNavigate, tokenId, address, onConnect, onDisconnect }) {
