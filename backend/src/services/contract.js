@@ -7,7 +7,14 @@ const TweetCityABI = Array.isArray(_abiFile) ? _abiFile : _abiFile.abi;
 const GIFTS_ABI = [
   "function registerManager(uint256 tokenId, address manager) external",
   "function cityManager(uint256 tokenId) external view returns (address)",
+  "function verifyEngagement(uint256 giftId) external",
+  "function getAllGifts(uint256 tokenId) external view returns (tuple(uint256 id, address buyer, uint256 cityTokenId, uint8 giftType, string tweetUrl, uint256 amount, uint256 ownerAmount, uint8 status, uint64 createdAt, uint64 acceptDeadline, uint64 engageDeadline)[])",
+  "function gifts(uint256 giftId) external view returns (uint256 id, address buyer, uint256 cityTokenId, uint8 giftType, string tweetUrl, uint256 amount, uint256 ownerAmount, uint8 status, uint64 createdAt, uint64 acceptDeadline, uint64 engageDeadline)",
 ];
+
+// GiftStatus enum mirror (must match CityGifts.sol)
+const GIFT_STATUS = { Pending: 0, Accepted: 1, Verified: 2, Rejected: 3, Expired: 4 };
+const GIFT_TYPE   = { Graffiti: 0, StreetArt: 1, Flag: 2, Billboard: 3, Monument: 4, District: 5 };
 
 let _giftsContract = null;
 
@@ -329,4 +336,63 @@ async function getTokenAgentId(tokenId) {
   });
 }
 
-module.exports = { mintCity, updateCity, getCityData, getLeaderboard, getTokenIdByHandle, getHandleByTokenId, registerERC8004Agent, recordValidation, getTokenAgentId, registerCityManager, getCityManagerWallet };
+// ─── CityGifts helpers ───────────────────────────────────────────────────
+
+function normalizeGift(g) {
+  return {
+    id:              Number(g.id),
+    buyer:           g.buyer,
+    cityTokenId:     Number(g.cityTokenId),
+    giftType:        Number(g.giftType),
+    tweetUrl:        g.tweetUrl,
+    amount:          g.amount?.toString?.() ?? String(g.amount),
+    ownerAmount:     g.ownerAmount?.toString?.() ?? String(g.ownerAmount),
+    status:          Number(g.status),
+    createdAt:       Number(g.createdAt),
+    acceptDeadline:  Number(g.acceptDeadline),
+    engageDeadline:  Number(g.engageDeadline),
+  };
+}
+
+async function getGiftsForCity(tokenId) {
+  const gc = getGiftsContract();
+  if (!gc) throw new Error("GIFTS_CONTRACT_ADDRESS not set");
+  const raw = await gc.getAllGifts(tokenId);
+  return raw.map(normalizeGift);
+}
+
+async function getGift(giftId) {
+  const gc = getGiftsContract();
+  if (!gc) throw new Error("GIFTS_CONTRACT_ADDRESS not set");
+  const g = await gc.gifts(giftId);
+  return normalizeGift({
+    id: g[0], buyer: g[1], cityTokenId: g[2], giftType: g[3], tweetUrl: g[4],
+    amount: g[5], ownerAmount: g[6], status: g[7], createdAt: g[8],
+    acceptDeadline: g[9], engageDeadline: g[10],
+  });
+}
+
+async function verifyGiftEngagement(giftId) {
+  const gc = getGiftsContract();
+  if (!gc) throw new Error("GIFTS_CONTRACT_ADDRESS not set");
+  const tx = await gc.verifyEngagement(giftId);
+  const receipt = await waitReceipt(_wallet.provider, tx.hash);
+  return { txHash: receipt.hash };
+}
+
+async function getTotalCities() {
+  return rpcCall(async () => {
+    const contract = getContract();
+    return Number(await contract.totalSupply());
+  });
+}
+
+module.exports = {
+  mintCity, updateCity, getCityData, getLeaderboard,
+  getTokenIdByHandle, getHandleByTokenId,
+  registerERC8004Agent, recordValidation, getTokenAgentId,
+  registerCityManager, getCityManagerWallet,
+  // gifts oracle
+  getGiftsForCity, getGift, verifyGiftEngagement, getTotalCities,
+  GIFT_STATUS, GIFT_TYPE,
+};

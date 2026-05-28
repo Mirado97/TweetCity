@@ -157,7 +157,135 @@ function Monument({ level }) {
 
 // ─── City scene ──────────────────────────────────────────────────────────────
 
-export function V2Scene({ metrics, tokenId }) {
+// ─── Gift visuals ────────────────────────────────────────────────────────────
+// Renders Accepted/Verified gifts around the city perimeter. Position is deterministic
+// from giftId via golden-angle distribution. Each type is a small procedural artifact.
+function GiftItem({ gift, cityRadius }) {
+  // Golden-angle spread → even distribution around the city for any number of gifts
+  const id      = Number(gift.id) || 0;
+  const angle   = id * 2.39996;          // golden angle in radians
+  const radius  = cityRadius * 0.95 + ((id * 7) % 8);
+  const x       = Math.cos(angle) * radius;
+  const z       = Math.sin(angle) * radius;
+  const facing  = Math.atan2(-x, -z);    // face the city center
+  const type    = Number(gift.giftType);
+  const palette = [
+    "#00d4ff", // graffiti — cyan
+    "#a855f7", // street art — purple
+    "#ef4444", // flag — red
+    "#facc15", // billboard — yellow
+    "#10b981", // monument — emerald
+    "#ec4899", // district — pink
+  ];
+  const color = palette[type] || "#ffffff";
+
+  switch (type) {
+    case 0: { // Graffiti — colored wall plate facing the city
+      return (
+        <group position={[x, 0, z]} rotation={[0, facing, 0]}>
+          <mesh position={[0, 1.5, 0]}>
+            <boxGeometry args={[3, 3, 0.2]} />
+            <meshStandardMaterial color={color} emissive={color} emissiveIntensity={0.4} />
+          </mesh>
+          <pointLight position={[0, 2, 1]} color={color} intensity={0.6} distance={6} />
+        </group>
+      );
+    }
+    case 1: { // Street Art — wide ground mural
+      return (
+        <group position={[x, 0, z]} rotation={[0, facing, 0]}>
+          <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.02, 0]}>
+            <planeGeometry args={[6, 4]} />
+            <meshStandardMaterial color={color} emissive={color} emissiveIntensity={0.3} />
+          </mesh>
+        </group>
+      );
+    }
+    case 2: { // Flag — pole + waving banner
+      return (
+        <group position={[x, 0, z]}>
+          <mesh position={[0, 4, 0]}>
+            <cylinderGeometry args={[0.1, 0.1, 8, 8]} />
+            <meshStandardMaterial color="#444" />
+          </mesh>
+          <mesh position={[1.2, 6.5, 0]} rotation={[0, facing, 0]}>
+            <planeGeometry args={[2.5, 1.6]} />
+            <meshStandardMaterial color={color} side={2} emissive={color} emissiveIntensity={0.3} />
+          </mesh>
+          <mesh position={[0, 8, 0]}>
+            <sphereGeometry args={[0.2, 8, 8]} />
+            <meshStandardMaterial color="#ddd" metalness={0.6} roughness={0.3} />
+          </mesh>
+        </group>
+      );
+    }
+    case 3: { // Billboard — two posts + glowing screen
+      return (
+        <group position={[x, 0, z]} rotation={[0, facing, 0]}>
+          <mesh position={[-1.8, 2, 0]}>
+            <boxGeometry args={[0.3, 4, 0.3]} />
+            <meshStandardMaterial color="#333" />
+          </mesh>
+          <mesh position={[1.8, 2, 0]}>
+            <boxGeometry args={[0.3, 4, 0.3]} />
+            <meshStandardMaterial color="#333" />
+          </mesh>
+          <mesh position={[0, 4.5, 0]}>
+            <boxGeometry args={[5, 2.5, 0.3]} />
+            <meshStandardMaterial color={color} emissive={color} emissiveIntensity={0.7} />
+          </mesh>
+          <pointLight position={[0, 5, 1.5]} color={color} intensity={1.2} distance={10} />
+        </group>
+      );
+    }
+    case 4: { // Monument — column with floating glowing sphere
+      return (
+        <group position={[x, 0, z]}>
+          <mesh position={[0, 1.5, 0]}>
+            <boxGeometry args={[2, 0.5, 2]} />
+            <meshStandardMaterial color="#666" metalness={0.5} roughness={0.4} />
+          </mesh>
+          <mesh position={[0, 3.5, 0]}>
+            <cylinderGeometry args={[0.6, 0.8, 3.5, 12]} />
+            <meshStandardMaterial color="#999" metalness={0.4} roughness={0.5} />
+          </mesh>
+          <mesh position={[0, 6, 0]}>
+            <sphereGeometry args={[0.8, 16, 16]} />
+            <meshStandardMaterial color={color} emissive={color} emissiveIntensity={1.0} />
+          </mesh>
+          <pointLight position={[0, 6, 0]} color={color} intensity={1.5} distance={12} />
+        </group>
+      );
+    }
+    case 5: { // District — large neon-lit ring on the ground (lights up the whole area)
+      return (
+        <group position={[x, 0, z]}>
+          <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.05, 0]}>
+            <ringGeometry args={[3.5, 4.5, 32]} />
+            <meshStandardMaterial color={color} emissive={color} emissiveIntensity={1.0} side={2} />
+          </mesh>
+          <pointLight position={[0, 3, 0]} color={color} intensity={2.0} distance={18} />
+        </group>
+      );
+    }
+    default:
+      return null;
+  }
+}
+
+function Gifts({ gifts, citySize }) {
+  if (!gifts || gifts.length === 0) return null;
+  const radius = citySize / 2;
+  return (
+    <>
+      {gifts.map((g) => (
+        <GiftItem key={String(g.id)} gift={g} cityRadius={radius} />
+      ))}
+    </>
+  );
+}
+
+export function V2Scene({ metrics, tokenId, gifts = [] }) {
   const { followers = 0 } = metrics;
 
   const data = useMemo(() => {
@@ -363,6 +491,9 @@ export function V2Scene({ metrics, tokenId }) {
 
       {/* Central monument */}
       <Monument level={data.level} />
+
+      {/* Active gifts (Accepted + Verified) around the city perimeter */}
+      <Gifts gifts={gifts} citySize={data.citySize} />
     </>
   );
 }
@@ -378,7 +509,7 @@ function camPos(followers) {
 
 // ─── Public component ─────────────────────────────────────────────────────────
 
-export default function CityRendererV2({ city, tokenId }) {
+export default function CityRendererV2({ city, tokenId, gifts = [] }) {
   const [open, setOpen] = useState(false);
   const { followers = 0, tweetCount = 0, following = 0, engagement = 0 } = city || {};
   const metrics = { followers, tweetCount, following, engagement };
@@ -392,7 +523,7 @@ export default function CityRendererV2({ city, tokenId }) {
       >
         <Canvas camera={{ position: cp, fov: 45 }}>
           <Suspense fallback={null}>
-            <V2Scene metrics={metrics} tokenId={tokenId || 0} />
+            <V2Scene metrics={metrics} tokenId={tokenId || 0} gifts={gifts} />
             <OrbitControls enableZoom={false} enablePan={false} enableRotate={false} autoRotate autoRotateSpeed={0.6} />
           </Suspense>
         </Canvas>
@@ -412,7 +543,7 @@ export default function CityRendererV2({ city, tokenId }) {
           >
             <Canvas camera={{ position: [cp[0] * 1.1, cp[1] * 1.1, cp[2] * 1.1], fov: 42 }}>
               <Suspense fallback={null}>
-                <V2Scene metrics={metrics} tokenId={tokenId || 0} />
+                <V2Scene metrics={metrics} tokenId={tokenId || 0} gifts={gifts} />
                 <OrbitControls enablePan={false} minDistance={8} maxDistance={300} maxPolarAngle={Math.PI / 2 - 0.04} autoRotate autoRotateSpeed={0.35} />
               </Suspense>
             </Canvas>

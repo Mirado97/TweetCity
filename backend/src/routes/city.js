@@ -13,7 +13,8 @@ function makeVerifyCode(walletAddress, twitterHandle) {
 const getTwitterProvider = require("../services/twitter");
 const { analyzeCityPersonality, generateLevelUpNarrative } = require("../services/claude");
 const { uploadMetadata, getCachedMetadata } = require("../services/ipfs");
-const { mintCity, updateCity, getCityData, getLeaderboard, getTokenIdByHandle, getHandleByTokenId, registerERC8004Agent, recordValidation, getTokenAgentId, registerCityManager, getCityManagerWallet } = require("../services/contract");
+const { mintCity, updateCity, getCityData, getLeaderboard, getTokenIdByHandle, getHandleByTokenId, registerERC8004Agent, recordValidation, getTokenAgentId, registerCityManager, getCityManagerWallet, getGiftsForCity, getGift, verifyGiftEngagement } = require("../services/contract");
+const { runSweep, verifyGiftAction } = require("../services/giftOracle");
 const { checkSyncCooldown, mintLimiter } = require("../middleware/rateLimit");
 
 // POST /api/verify-tweet
@@ -283,6 +284,62 @@ router.get("/config", (req, res) => {
   res.json({
     giftsContract: process.env.GIFTS_CONTRACT_ADDRESS || "",
   });
+});
+
+// ─── Gifts ───────────────────────────────────────────────────────────────
+
+// GET /api/city/:tokenId/gifts — all gifts for the city (used by claimExpired UI)
+router.get("/city/:tokenId/gifts", async (req, res) => {
+  try {
+    const gifts = await getGiftsForCity(req.params.tokenId);
+    res.json(gifts);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/oracle/sweep — runs oracle sweep across all cities.
+// Protected by ORACLE_SWEEP_TOKEN env (set X-Sweep-Token header).
+router.post("/oracle/sweep", async (req, res) => {
+  const expected = process.env.ORACLE_SWEEP_TOKEN;
+  if (!expected) return res.status(503).json({ error: "ORACLE_SWEEP_TOKEN not set" });
+  if (req.get("x-sweep-token") !== expected) return res.status(401).json({ error: "unauthorized" });
+
+  try {
+    const result = await runSweep({ dryRun: req.query.dryRun === "1" });
+    res.json(result);
+  } catch (err) {
+    console.error("[oracle/sweep]", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/gifts/:giftId/verify-manual — admin override: skip Twitter check, verify on-chain.
+// Useful for hackathon demos. Protected by ORACLE_SWEEP_TOKEN.
+router.post("/gifts/:giftId/verify-manual", async (req, res) => {
+  const expected = process.env.ORACLE_SWEEP_TOKEN;
+  if (!expected) return res.status(503).json({ error: "ORACLE_SWEEP_TOKEN not set" });
+  if (req.get("x-sweep-token") !== expected) return res.status(401).json({ error: "unauthorized" });
+
+  try {
+    const result = await verifyGiftEngagement(req.params.giftId);
+    res.json({ ok: true, ...result });
+  } catch (err) {
+    console.error("[verify-manual]", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/gifts/:giftId/check — dry-run a single gift's verification (no on-chain tx).
+router.post("/gifts/:giftId/check", async (req, res) => {
+  try {
+    const gift = await getGift(req.params.giftId);
+    const handle = await getHandleByTokenId(gift.cityTokenId);
+    const result = await verifyGiftAction(gift, handle);
+    res.json({ gift, cityHandle: handle, ...result });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 module.exports = router;

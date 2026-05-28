@@ -36,6 +36,8 @@ export default function CityPage({ tokenId, signer, address }) {
   const [prices, setPrices] = useState([0n, 0n, 0n, 0n, 0n, 0n]);
   const [activeGifts, setActiveGifts] = useState([]);
   const [pendingGifts, setPendingGifts] = useState([]);
+  const [myGifts, setMyGifts] = useState([]);
+  const [claimingId, setClaimingId] = useState(null);
   const [giftStats, setGiftStats] = useState(null);
   const [showGiftPanel, setShowGiftPanel] = useState(false);
   const [showPriceManager, setShowPriceManager] = useState(false);
@@ -68,6 +70,42 @@ export default function CityPage({ tokenId, signer, address }) {
     } catch {}
   }, [tokenId, signer]);
 
+  const loadMyGifts = useCallback(async (provider, addr) => {
+    if (!address) { setMyGifts([]); return; }
+    const gc = getGiftsContract(addr, provider);
+    if (!gc) return;
+    try {
+      const all = await gc.getAllGifts(tokenId);
+      const me = address.toLowerCase();
+      setMyGifts(all
+        .filter(g => g.buyer.toLowerCase() === me)
+        .map(g => ({
+          id: g.id, giftType: Number(g.giftType), tweetUrl: g.tweetUrl,
+          ownerAmount: g.ownerAmount, status: Number(g.status),
+          acceptDeadline: Number(g.acceptDeadline), engageDeadline: Number(g.engageDeadline),
+        }))
+      );
+    } catch {}
+  }, [tokenId, address]);
+
+  async function claimGift(giftId) {
+    if (!signer) { setError("Connect wallet first"); return; }
+    setClaimingId(String(giftId));
+    setError("");
+    try {
+      const gc = getGiftsContract(giftsContractAddr, signer);
+      if (!gc) throw new Error("Gifts contract not deployed");
+      const tx = await gc.claimExpired(giftId);
+      await tx.wait();
+      await loadMyGifts(signer.provider, giftsContractAddr);
+      await loadGifts(signer.provider, giftsContractAddr);
+    } catch (e) {
+      setError(e.reason || e.message);
+    } finally {
+      setClaimingId(null);
+    }
+  }
+
   async function loadCity() {
     setLoading(true);
     setError("");
@@ -95,6 +133,7 @@ export default function CityPage({ tokenId, signer, address }) {
           setLikeCount(Number(likes));
         } catch {}
         await loadGifts(provider, addr);
+        await loadMyGifts(provider, addr);
       }
     } catch (e) {
       setError(e.message);
@@ -105,6 +144,11 @@ export default function CityPage({ tokenId, signer, address }) {
 
   useEffect(() => { loadCity(); }, [tokenId]);
   useEffect(() => { if (isOwner) loadPending(giftsContractAddr); }, [isOwner, loadPending, giftsContractAddr]);
+  useEffect(() => {
+    if (!giftsContractAddr || !address) return;
+    const provider = signer?.provider || (window.ethereum ? new ethers.BrowserProvider(window.ethereum) : null);
+    if (provider) loadMyGifts(provider, giftsContractAddr);
+  }, [address, giftsContractAddr, loadMyGifts, signer]);
 
   async function sync() {
     setSyncing(true);
@@ -275,7 +319,7 @@ export default function CityPage({ tokenId, signer, address }) {
           <div className="relative glass rounded-2xl overflow-hidden">
             <div className="absolute -inset-1 bg-gradient-to-r from-[#00d4ff]/20 to-[#a855f7]/20 rounded-2xl blur-xl opacity-50 pointer-events-none" />
             <div className="relative h-full">
-              <CityRendererV2 city={rendererCity} tokenId={tokenId} />
+              <CityRendererV2 city={rendererCity} tokenId={tokenId} gifts={activeGifts} />
             </div>
           </div>
 
@@ -474,6 +518,59 @@ export default function CityPage({ tokenId, signer, address }) {
                         <button onClick={() => actOnGift(g.id, false)}
                           className="flex-1 py-1.5 rounded-lg glass text-[#94a3b8] text-sm font-medium">Reject</button>
                       </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* My Gifts to this city (visible to buyer) */}
+          {myGifts.length > 0 && (
+            <div className="glass rounded-2xl p-6">
+              <h3 className="font-bold text-[#f1f5f9] mb-4">🎁 My Gifts to This City</h3>
+              <div className="space-y-3">
+                {myGifts.map(g => {
+                  const t = GIFT_TYPES[g.giftType];
+                  const now = Math.floor(Date.now() / 1000);
+                  const canClaim =
+                    (g.status === 0 && now > g.acceptDeadline) ||  // Pending expired
+                    (g.status === 1 && now > g.engageDeadline);    // Accepted past engage
+                  const statusName = ["Pending","Accepted","Verified","Rejected","Expired"][g.status] || "Unknown";
+                  const statusColor = {
+                    0: "text-[#f59e0b]",   // pending = amber
+                    1: "text-[#00d4ff]",   // accepted = cyan
+                    2: "text-emerald-400", // verified
+                    3: "text-rose-400",    // rejected
+                    4: "text-[#64748b]",   // expired
+                  }[g.status] || "text-[#64748b]";
+
+                  return (
+                    <div key={g.id.toString()} className="p-4 rounded-xl bg-[#0a0a0f]/50 border border-white/20">
+                      <div className="flex items-center gap-2 mb-2 flex-wrap">
+                        <span className="text-[#f1f5f9] font-medium">{t?.icon} {t?.name}</span>
+                        <span className="text-[#00d4ff] text-sm">{fmt(g.ownerAmount)}</span>
+                        <span className={`text-xs font-semibold ml-auto ${statusColor}`}>{statusName}</span>
+                      </div>
+                      <a className="text-[#00d4ff] text-xs hover:underline break-all" href={g.tweetUrl} target="_blank" rel="noreferrer">{g.tweetUrl} ↗</a>
+                      {canClaim && (
+                        <motion.button
+                          onClick={() => claimGift(g.id)}
+                          disabled={claimingId === String(g.id)}
+                          className="w-full mt-3 py-2 rounded-lg bg-gradient-to-r from-rose-500 to-amber-500 text-white text-sm font-semibold disabled:opacity-50"
+                          whileHover={{ scale: 1.01 }} whileTap={{ scale: 0.99 }}
+                        >
+                          {claimingId === String(g.id) ? (
+                            <Loader2 className="w-4 h-4 animate-spin mx-auto" />
+                          ) : `Claim Refund (${fmt(g.ownerAmount)})`}
+                        </motion.button>
+                      )}
+                      {!canClaim && g.status === 0 && (
+                        <div className="text-xs text-[#64748b] mt-2">⏱ {timeLeft(g.acceptDeadline)} for owner to respond</div>
+                      )}
+                      {!canClaim && g.status === 1 && (
+                        <div className="text-xs text-[#64748b] mt-2">⏱ {timeLeft(g.engageDeadline)} for owner to engage</div>
+                      )}
                     </div>
                   );
                 })}

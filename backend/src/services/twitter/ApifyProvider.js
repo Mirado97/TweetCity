@@ -136,6 +136,122 @@ class ApifyProvider extends ITwitterProvider {
       }));
   }
 
+  // ─── Gift oracle helpers ──────────────────────────────────────────────
+
+  /**
+   * Like getUserTweets but WITHOUT filtering retweets/replies,
+   * and preserves engagement metadata used by the gift oracle.
+   */
+  async getUserTweetsWithMeta(handle, count = 50) {
+    const cookie = process.env.TWITTER_COOKIE;
+    const input = cookie
+      ? {
+          mode: "search",
+          searchTerms: [`from:${handle}`],
+          maxResults: count,
+          searchMode: "Latest",
+          twitterCookie: cookie,
+        }
+      : { mode: "user-tweets", usernames: [handle], maxResults: count };
+
+    const items = cookie
+      ? await this._runSync("automation-lab~twitter-scraper", input)
+      : await this._runAsync("automation-lab~twitter-scraper", input);
+
+    if (process.env.APIFY_DEBUG && items[0]) {
+      console.log("[ApifyProvider] meta tweet keys:", Object.keys(items[0]));
+    }
+
+    return items.map((t) => {
+      // Apify actors return inconsistent field names — normalize them all.
+      const id = String(t.id ?? t.tweetId ?? t.id_str ?? "");
+      const replyToTweetId  = String(t.inReplyToId ?? t.replyToId ?? t.in_reply_to_status_id_str ?? "") || null;
+      const replyToUsername = (t.inReplyToUsername ?? t.replyToUsername ?? t.in_reply_to_screen_name ?? "").toLowerCase() || null;
+      const quoted          = t.quotedTweet ?? t.quoted_status ?? null;
+      const quotedTweetId   = String(quoted?.id ?? quoted?.id_str ?? "") || null;
+      const quotedUsername  = (quoted?.author?.username ?? quoted?.user?.screen_name ?? "").toLowerCase() || null;
+      const retweeted       = t.retweetedTweet ?? t.retweeted_status ?? null;
+      const retweetedTweetId   = String(retweeted?.id ?? retweeted?.id_str ?? "") || null;
+      const retweetedUsername  = (retweeted?.author?.username ?? retweeted?.user?.screen_name ?? "").toLowerCase() || null;
+      return {
+        id,
+        text:            t.text ?? "",
+        likes:           Number(t.likeCount    ?? t.favorite_count ?? 0),
+        retweets:        Number(t.retweetCount ?? t.retweet_count  ?? 0),
+        createdAt:       t.createdAt ?? "",
+        isRetweet:       !!(t.isRetweet ?? retweetedTweetId),
+        isReply:         !!(t.isReply   ?? replyToTweetId),
+        isQuote:         !!(t.isQuote   ?? quotedTweetId),
+        replyToTweetId,
+        replyToUsername,
+        quotedTweetId,
+        quotedUsername,
+        retweetedTweetId,
+        retweetedUsername,
+      };
+    });
+  }
+
+  /**
+   * Returns lowercased usernames who liked a given tweet.
+   * Actor configurable via APIFY_LIKERS_ACTOR env (default: kaitoeasyapi tweet-likers).
+   */
+  async getTweetLikers(tweetId) {
+    const actor = process.env.APIFY_LIKERS_ACTOR || "kaitoeasyapi~twitter-x-tweet-likes-scraper";
+    const cookie = process.env.TWITTER_COOKIE;
+
+    const input = {
+      tweet_ids: [String(tweetId)],
+      tweetIds:  [String(tweetId)],          // some actors use camelCase
+      tweetUrls: [`https://x.com/i/status/${tweetId}`],
+      maxItems:  Number(process.env.APIFY_LIKERS_MAX || 200),
+    };
+    if (cookie) input.twitterCookie = cookie;
+
+    let items;
+    try {
+      items = await this._runSync(actor, input);
+    } catch (e) {
+      console.warn(`[ApifyProvider] getTweetLikers actor "${actor}" failed:`, e.message);
+      return new Set();
+    }
+
+    const users = new Set();
+    for (const it of items || []) {
+      const u = it.username ?? it.user?.username ?? it.user?.screen_name ?? it.screen_name;
+      if (u) users.add(String(u).toLowerCase());
+    }
+    if (process.env.APIFY_DEBUG) console.log(`[ApifyProvider] tweet ${tweetId} likers: ${users.size}`);
+    return users;
+  }
+
+  /**
+   * Profile including the pinned tweet (id + text).
+   */
+  async getProfileWithPinned(handle) {
+    const cookie = process.env.TWITTER_COOKIE;
+    const input = { usernames: [handle], maxItems: 1, mode: "profiles" };
+    if (cookie) input.twitterCookie = cookie;
+
+    const items = await this._runSync("automation-lab~twitter-scraper", input);
+    const user = items[0];
+    if (!user) throw new Error(`User @${handle} not found via Apify`);
+    if (process.env.APIFY_DEBUG) console.log("[ApifyProvider] profile keys:", Object.keys(user));
+
+    const pinned = user.pinnedTweet ?? user.pinned_tweet ?? null;
+    const pinnedTweetId = String(user.pinnedTweetId ?? user.pinned_tweet_id ?? pinned?.id ?? pinned?.id_str ?? "") || null;
+    const pinnedText    = pinned?.text ?? pinned?.full_text ?? "";
+
+    return {
+      username:   user.username  ?? handle,
+      followers:  Number(user.followers   ?? user.followersCount ?? 0),
+      tweetCount: Number(user.tweetsCount ?? user.statusesCount  ?? 0),
+      following:  Number(user.following   ?? user.friendsCount   ?? 0),
+      pinnedTweetId,
+      pinnedText,
+    };
+  }
+
   async findTweet(handle, searchText) {
     const cookie = process.env.TWITTER_COOKIE;
     if (!cookie) {

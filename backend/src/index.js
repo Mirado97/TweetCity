@@ -83,4 +83,17 @@ app.get("/health", (_, res) => res.json({ ok: true }));
 
 app.listen(PORT, () => {
   console.log(`TweetCity backend running on port ${PORT}`);
+
+  // Gift oracle cron — verifies Twitter engagements for Accepted gifts.
+  // Disabled when DISABLE_GIFT_ORACLE=true or GIFTS_CONTRACT_ADDRESS not set.
+  if (process.env.DISABLE_GIFT_ORACLE !== "true" && process.env.GIFTS_CONTRACT_ADDRESS) {
+    const intervalMs = Number(process.env.GIFT_ORACLE_INTERVAL_MS || 10 * 60 * 1000);
+    const { runSweep } = require("./services/giftOracle");
+    setInterval(() => {
+      runSweep().catch((e) => console.error("[giftOracle cron]", e.message));
+    }, intervalMs);
+    console.log(`[giftOracle] cron enabled, interval=${intervalMs}ms`);
+  } else {
+    console.log("[giftOracle] cron disabled");
+  }
 });
