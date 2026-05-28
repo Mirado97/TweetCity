@@ -5,6 +5,11 @@
       "address": "0x1d27d3E227F75Ba64E295205B66B2756A5A6f096",
       "txHash": "0x6efcd29bff3c3b6c5727bdc3b14310c3a2a9761a93b93e723d9d87f8a39c3a47",
       "kind": "uups"
+    },
+    {
+      "address": "0x1F672C3da27a50261524dAbb0FF957f49202c3F3",
+      "txHash": "0xb1751c367391d82ebd82b313af497fdc50006c21dfd054512917ac7d193fca7f",
+      "kind": "uups"
     }
   ],
   "impls": {
@@ -1172,6 +1177,304 @@
               "src": "@openzeppelin\\contracts-upgradeable\\token\\ERC721\\ERC721Upgradeable.sol:38",
               "offset": 0,
               "slot": "5"
+            }
+          ],
+          "erc7201:openzeppelin.storage.Initializable": [
+            {
+              "contract": "Initializable",
+              "label": "_initialized",
+              "type": "t_uint64",
+              "src": "@openzeppelin\\contracts\\proxy\\utils\\Initializable.sol:69",
+              "offset": 0,
+              "slot": "0"
+            },
+            {
+              "contract": "Initializable",
+              "label": "_initializing",
+              "type": "t_bool",
+              "src": "@openzeppelin\\contracts\\proxy\\utils\\Initializable.sol:73",
+              "offset": 8,
+              "slot": "0"
+            }
+          ]
+        }
+      }
+    },
+    "30c118226c00eb30c8fe545509401cd1655d586048c1b35c3705aca5c1b044d5": {
+      "address": "0x69888e2462F6cDd73C4b9bb7248CD74E01f0124f",
+      "txHash": "0xf0dac71a2d066b9afe56aa7cc1b6f691d22fdf703d4a75353d75dd66e6ca933b",
+      "layout": {
+        "solcVersion": "0.8.24",
+        "storage": [
+          {
+            "label": "cityNFT",
+            "offset": 0,
+            "slot": "0",
+            "type": "t_contract(IERC721)1134",
+            "contract": "CityGifts",
+            "src": "contracts\\CityGifts.sol:69"
+          },
+          {
+            "label": "oracle",
+            "offset": 0,
+            "slot": "1",
+            "type": "t_address",
+            "contract": "CityGifts",
+            "src": "contracts\\CityGifts.sol:70"
+          },
+          {
+            "label": "protocolFeeBps",
+            "offset": 0,
+            "slot": "2",
+            "type": "t_uint256",
+            "contract": "CityGifts",
+            "src": "contracts\\CityGifts.sol:72"
+          },
+          {
+            "label": "acceptWindow",
+            "offset": 0,
+            "slot": "3",
+            "type": "t_uint64",
+            "contract": "CityGifts",
+            "src": "contracts\\CityGifts.sol:75"
+          },
+          {
+            "label": "engageWindows",
+            "offset": 0,
+            "slot": "4",
+            "type": "t_array(t_uint64)6_storage",
+            "contract": "CityGifts",
+            "src": "contracts\\CityGifts.sol:78"
+          },
+          {
+            "label": "nextGiftId",
+            "offset": 0,
+            "slot": "6",
+            "type": "t_uint256",
+            "contract": "CityGifts",
+            "src": "contracts\\CityGifts.sol:79"
+          },
+          {
+            "label": "cityManager",
+            "offset": 0,
+            "slot": "7",
+            "type": "t_mapping(t_uint256,t_address)",
+            "contract": "CityGifts",
+            "src": "contracts\\CityGifts.sol:85"
+          },
+          {
+            "label": "cityPrices",
+            "offset": 0,
+            "slot": "8",
+            "type": "t_mapping(t_uint256,t_array(t_uint256)6_storage)",
+            "contract": "CityGifts",
+            "src": "contracts\\CityGifts.sol:87"
+          },
+          {
+            "label": "gifts",
+            "offset": 0,
+            "slot": "9",
+            "type": "t_mapping(t_uint256,t_struct(Gift)2187_storage)",
+            "contract": "CityGifts",
+            "src": "contracts\\CityGifts.sol:89"
+          },
+          {
+            "label": "_cityGiftIds",
+            "offset": 0,
+            "slot": "10",
+            "type": "t_mapping(t_uint256,t_array(t_uint256)dyn_storage)",
+            "contract": "CityGifts",
+            "src": "contracts\\CityGifts.sol:91"
+          }
+        ],
+        "types": {
+          "t_address": {
+            "label": "address",
+            "numberOfBytes": "20"
+          },
+          "t_bool": {
+            "label": "bool",
+            "numberOfBytes": "1"
+          },
+          "t_struct(InitializableStorage)224_storage": {
+            "label": "struct Initializable.InitializableStorage",
+            "members": [
+              {
+                "label": "_initialized",
+                "type": "t_uint64",
+                "offset": 0,
+                "slot": "0"
+              },
+              {
+                "label": "_initializing",
+                "type": "t_bool",
+                "offset": 8,
+                "slot": "0"
+              }
+            ],
+            "numberOfBytes": "32"
+          },
+          "t_struct(OwnableStorage)13_storage": {
+            "label": "struct OwnableUpgradeable.OwnableStorage",
+            "members": [
+              {
+                "label": "_owner",
+                "type": "t_address",
+                "offset": 0,
+                "slot": "0"
+              }
+            ],
+            "numberOfBytes": "32"
+          },
+          "t_uint64": {
+            "label": "uint64",
+            "numberOfBytes": "8"
+          },
+          "t_array(t_uint256)6_storage": {
+            "label": "uint256[6]",
+            "numberOfBytes": "192"
+          },
+          "t_array(t_uint256)dyn_storage": {
+            "label": "uint256[]",
+            "numberOfBytes": "32"
+          },
+          "t_array(t_uint64)6_storage": {
+            "label": "uint64[6]",
+            "numberOfBytes": "64"
+          },
+          "t_contract(IERC721)1134": {
+            "label": "contract IERC721",
+            "numberOfBytes": "20"
+          },
+          "t_enum(GiftStatus)2162": {
+            "label": "enum CityGifts.GiftStatus",
+            "members": [
+              "Pending",
+              "Accepted",
+              "Verified",
+              "Rejected",
+              "Expired"
+            ],
+            "numberOfBytes": "1"
+          },
+          "t_enum(GiftType)2156": {
+            "label": "enum CityGifts.GiftType",
+            "members": [
+              "Graffiti",
+              "StreetArt",
+              "Flag",
+              "Billboard",
+              "Monument",
+              "District"
+            ],
+            "numberOfBytes": "1"
+          },
+          "t_mapping(t_uint256,t_address)": {
+            "label": "mapping(uint256 => address)",
+            "numberOfBytes": "32"
+          },
+          "t_mapping(t_uint256,t_array(t_uint256)6_storage)": {
+            "label": "mapping(uint256 => uint256[6])",
+            "numberOfBytes": "32"
+          },
+          "t_mapping(t_uint256,t_array(t_uint256)dyn_storage)": {
+            "label": "mapping(uint256 => uint256[])",
+            "numberOfBytes": "32"
+          },
+          "t_mapping(t_uint256,t_struct(Gift)2187_storage)": {
+            "label": "mapping(uint256 => struct CityGifts.Gift)",
+            "numberOfBytes": "32"
+          },
+          "t_string_storage": {
+            "label": "string",
+            "numberOfBytes": "32"
+          },
+          "t_struct(Gift)2187_storage": {
+            "label": "struct CityGifts.Gift",
+            "members": [
+              {
+                "label": "id",
+                "type": "t_uint256",
+                "offset": 0,
+                "slot": "0"
+              },
+              {
+                "label": "buyer",
+                "type": "t_address",
+                "offset": 0,
+                "slot": "1"
+              },
+              {
+                "label": "cityTokenId",
+                "type": "t_uint256",
+                "offset": 0,
+                "slot": "2"
+              },
+              {
+                "label": "giftType",
+                "type": "t_enum(GiftType)2156",
+                "offset": 0,
+                "slot": "3"
+              },
+              {
+                "label": "tweetUrl",
+                "type": "t_string_storage",
+                "offset": 0,
+                "slot": "4"
+              },
+              {
+                "label": "amount",
+                "type": "t_uint256",
+                "offset": 0,
+                "slot": "5"
+              },
+              {
+                "label": "ownerAmount",
+                "type": "t_uint256",
+                "offset": 0,
+                "slot": "6"
+              },
+              {
+                "label": "status",
+                "type": "t_enum(GiftStatus)2162",
+                "offset": 0,
+                "slot": "7"
+              },
+              {
+                "label": "createdAt",
+                "type": "t_uint64",
+                "offset": 1,
+                "slot": "7"
+              },
+              {
+                "label": "acceptDeadline",
+                "type": "t_uint64",
+                "offset": 9,
+                "slot": "7"
+              },
+              {
+                "label": "engageDeadline",
+                "type": "t_uint64",
+                "offset": 17,
+                "slot": "7"
+              }
+            ],
+            "numberOfBytes": "256"
+          },
+          "t_uint256": {
+            "label": "uint256",
+            "numberOfBytes": "32"
+          }
+        },
+        "namespaces": {
+          "erc7201:openzeppelin.storage.Ownable": [
+            {
+              "contract": "OwnableUpgradeable",
+              "label": "_owner",
+              "type": "t_address",
+              "src": "@openzeppelin\\contracts-upgradeable\\access\\OwnableUpgradeable.sol:24",
+              "offset": 0,
+              "slot": "0"
             }
           ],
           "erc7201:openzeppelin.storage.Initializable": [
