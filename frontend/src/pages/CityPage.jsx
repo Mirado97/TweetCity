@@ -143,6 +143,14 @@ export default function CityPage({ tokenId, signer, address }) {
   }
 
   useEffect(() => { loadCity(); }, [tokenId]);
+
+  // Recompute ownership whenever the wallet address changes (e.g. user connects MetaMask
+  // after page load) or after the city's managerWallet is loaded.
+  useEffect(() => {
+    const mgr = city?.managerWallet;
+    setIsOwner(!!(address && mgr && mgr.toLowerCase() === address.toLowerCase()));
+  }, [address, city]);
+
   useEffect(() => { if (isOwner) loadPending(giftsContractAddr); }, [isOwner, loadPending, giftsContractAddr]);
   useEffect(() => {
     if (!giftsContractAddr || !address) return;
