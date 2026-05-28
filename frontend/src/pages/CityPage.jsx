@@ -4,7 +4,7 @@ import { ethers } from "ethers";
 import {
   Heart, RefreshCw, Share2, ExternalLink,
   Loader2, AlertCircle, TrendingUp, Users, MessageSquare, Activity,
-  Gift, Settings, X
+  Gift, Settings, X, Inbox
 } from "lucide-react";
 import { API_BASE, LEVEL_NAMES, GIFT_TYPES, getContract, getGiftsContract, fetchConfig } from "../lib/contract";
 import CityRendererV2 from "../components/CityRendererV2";
@@ -41,6 +41,7 @@ export default function CityPage({ tokenId, signer, address }) {
   const [giftStats, setGiftStats] = useState(null);
   const [showGiftPanel, setShowGiftPanel] = useState(false);
   const [showPriceManager, setShowPriceManager] = useState(false);
+  const [showInbox, setShowInbox] = useState(false);
   const [giftType, setGiftType] = useState(0);
   const [tweetUrl, setTweetUrl] = useState("");
   const [sending, setSending] = useState(false);
@@ -298,6 +299,19 @@ export default function CityPage({ tokenId, signer, address }) {
 
             {/* Right: actions */}
             <div className="flex items-center gap-2 lg:shrink-0">
+              {isOwner && pendingGifts.length > 0 && (
+                <motion.button
+                  onClick={() => setShowInbox(true)}
+                  className="relative flex items-center gap-2 px-4 py-2 rounded-lg glass hover:bg-[#16161f] transition-colors text-[#f59e0b]"
+                  whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}
+                >
+                  <Inbox className="w-4 h-4" />
+                  <span className="text-sm font-semibold">Inbox</span>
+                  <span className="absolute -top-1.5 -right-1.5 min-w-[20px] h-5 px-1 rounded-full bg-[#f59e0b] text-[#0a0a0f] text-[10px] font-bold flex items-center justify-center">
+                    {pendingGifts.length}
+                  </span>
+                </motion.button>
+              )}
               <motion.button
                 onClick={likeCity} disabled={liking}
                 className="flex items-center gap-2 px-4 py-2 rounded-lg glass hover:bg-[#16161f] transition-colors text-rose-400"
@@ -508,34 +522,6 @@ export default function CityPage({ tokenId, signer, address }) {
             )}
           </AnimatePresence>
 
-          {/* Inbox (owner) */}
-          {isOwner && pendingGifts.length > 0 && (
-            <div className="glass rounded-2xl p-6">
-              <h3 className="font-bold text-[#f1f5f9] mb-4">📬 Inbox <span className="ml-2 px-2 py-0.5 rounded-full bg-[#f59e0b]/20 text-[#f59e0b] text-xs">{pendingGifts.length}</span></h3>
-              <div className="space-y-3">
-                {pendingGifts.map(g => {
-                  const t = GIFT_TYPES[Number(g.giftType)];
-                  return (
-                    <div key={g.id.toString()} className="p-4 rounded-xl bg-[#0a0a0f]/50 border border-white/20">
-                      <div className="flex items-center gap-2 mb-2">
-                        <span className="text-[#f1f5f9] font-medium">{t?.icon} {t?.name}</span>
-                        <span className="text-[#00d4ff] text-sm">{fmt(g.ownerAmount)}</span>
-                        <span className="text-[#64748b] text-xs ml-auto">⏱ {timeLeft(g.acceptDeadline)}</span>
-                      </div>
-                      <a className="text-[#00d4ff] text-xs hover:underline" href={g.tweetUrl} target="_blank" rel="noreferrer">View tweet ↗</a>
-                      <div className="flex gap-2 mt-3">
-                        <button onClick={() => actOnGift(g.id, true)}
-                          className="flex-1 py-1.5 rounded-lg bg-gradient-to-r from-[#00d4ff] to-[#a855f7] text-white text-sm font-medium">Accept</button>
-                        <button onClick={() => actOnGift(g.id, false)}
-                          className="flex-1 py-1.5 rounded-lg glass text-[#94a3b8] text-sm font-medium">Reject</button>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-
           {/* My Gifts to this city (visible to buyer) */}
           {myGifts.length > 0 && (
             <div className="glass rounded-2xl p-6">
@@ -590,6 +576,63 @@ export default function CityPage({ tokenId, signer, address }) {
           )}
         </motion.div>
       </div>
+
+      {/* Inbox modal */}
+      <AnimatePresence>
+        {showInbox && isOwner && (
+          <motion.div
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm"
+            onClick={() => setShowInbox(false)}
+          >
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }}
+              className="glass rounded-2xl p-6 w-full max-w-lg max-h-[85vh] overflow-y-auto"
+              onClick={e => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="font-bold text-[#f1f5f9] text-lg flex items-center gap-2">
+                  <Inbox className="w-5 h-5 text-[#f59e0b]" /> Inbox
+                  <span className="ml-1 px-2 py-0.5 rounded-full bg-[#f59e0b]/20 text-[#f59e0b] text-xs font-bold">{pendingGifts.length}</span>
+                </h3>
+                <button
+                  onClick={() => setShowInbox(false)}
+                  className="p-1 rounded-lg text-[#64748b] hover:text-[#f1f5f9] hover:bg-[#16161f] transition-colors"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {pendingGifts.length === 0 ? (
+                <p className="text-sm text-[#64748b] py-8 text-center">No pending gifts.</p>
+              ) : (
+                <div className="space-y-3">
+                  {pendingGifts.map(g => {
+                    const t = GIFT_TYPES[Number(g.giftType)];
+                    return (
+                      <div key={g.id.toString()} className="p-4 rounded-xl bg-[#0a0a0f]/70 border border-white/20">
+                        <div className="flex items-center gap-2 mb-2 flex-wrap">
+                          <span className="text-[#f1f5f9] font-medium">{t?.icon} {t?.name}</span>
+                          <span className="text-[#00d4ff] text-sm">{fmt(g.ownerAmount)}</span>
+                          <span className="text-[#64748b] text-xs ml-auto">⏱ {timeLeft(g.acceptDeadline)}</span>
+                        </div>
+                        <div className="text-[11px] text-[#64748b] mb-1">{t?.obligation}</div>
+                        <a className="text-[#00d4ff] text-xs hover:underline break-all" href={g.tweetUrl} target="_blank" rel="noreferrer">{g.tweetUrl} ↗</a>
+                        <div className="flex gap-2 mt-3">
+                          <button onClick={() => actOnGift(g.id, true)}
+                            className="flex-1 py-2 rounded-lg bg-gradient-to-r from-[#00d4ff] to-[#a855f7] text-white text-sm font-medium">Accept</button>
+                          <button onClick={() => actOnGift(g.id, false)}
+                            className="flex-1 py-2 rounded-lg glass text-[#94a3b8] text-sm font-medium hover:bg-[#16161f] transition-colors">Reject</button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
