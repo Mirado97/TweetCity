@@ -77,7 +77,7 @@ export default function LeaderboardPage({ onCityClick }) {
           <p className="text-center text-[#64748b]">No cities minted yet. Be the first!</p>
         )}
 
-        {/* Top 3 Podium */}
+        {/* Top 3 Podium — only when we have at least 3 cities */}
         {board.length >= 3 && (
           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} className="grid grid-cols-3 gap-4 mb-12 max-w-2xl mx-auto">
             {[board[1], board[0], board[2]].map((entry, i) => {
@@ -106,9 +106,10 @@ export default function LeaderboardPage({ onCityClick }) {
           </motion.div>
         )}
 
-        {/* List */}
+        {/* List — full list when <3 cities, otherwise positions 4+ below the podium */}
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.3 }} className="space-y-3">
-          {board.slice(3).map((entry, i) => {
+          {(board.length >= 3 ? board.slice(3) : board).map((entry, i) => {
+            const rank = board.length >= 3 ? i + 4 : i + 1;
             const level = Number(entry.level || 1);
             const thumbCity = {
               followers:  Number(entry.followers  || 0),
@@ -124,7 +125,7 @@ export default function LeaderboardPage({ onCityClick }) {
                 className="glass rounded-xl p-4 hover:bg-[#16161f] transition-all cursor-pointer group gradient-border"
               >
                 <div className="flex items-center gap-4">
-                  <RankBadge rank={i + 4} />
+                  <RankBadge rank={rank} />
                   <div className="w-24 hidden sm:block flex-shrink-0">
                     <CityThumbnail city={thumbCity} tokenId={entry.tokenId} width={96} height={60} />
                   </div>

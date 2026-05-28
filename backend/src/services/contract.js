@@ -319,7 +319,9 @@ async function getLeaderboard(limit = 10) {
         contract.cities(id),
         contract.tokenToHandle(id),
       ]);
-      if (city.followers > 0n) {
+      // Show every actually-minted city. `level >= 1` is set on every mint, so this
+      // includes new accounts with 0 followers (filtering by followers hid them).
+      if (Number(city.level) > 0) {
         cities.push({ tokenId: id, twitterHandle: handle || "", ...serializeCity(city) });
       }
     }
