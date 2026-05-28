@@ -295,6 +295,45 @@ export default function CityPage({ tokenId, signer, address }) {
                 </div>
               </div>
             )}
+
+            {/* Action buttons */}
+            <div className="flex flex-col gap-2">
+              {isOwner && (
+                <motion.button onClick={sync} disabled={syncing}
+                  className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg glass hover:bg-[#16161f] transition-colors text-[#f1f5f9] font-medium disabled:opacity-50 w-full"
+                  whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
+                  <RefreshCw className={`w-4 h-4 ${syncing ? 'animate-spin' : ''}`} />
+                  {syncing ? 'Syncing...' : 'Sync City'}
+                </motion.button>
+              )}
+              {!isOwner && (
+                <motion.button onClick={() => setShowGiftPanel(!showGiftPanel)}
+                  className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg glass hover:bg-[#16161f] transition-colors text-[#f1f5f9] font-medium w-full"
+                  whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
+                  <Gift className="w-4 h-4" />
+                  {showGiftPanel ? 'Hide Gifts' : 'Send Gift'}
+                </motion.button>
+              )}
+              {isOwner && (
+                <motion.button onClick={() => setShowPriceManager(!showPriceManager)}
+                  className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg glass hover:bg-[#16161f] transition-colors text-[#f1f5f9] font-medium w-full"
+                  whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
+                  <Settings className="w-4 h-4" />
+                  Gift Prices
+                </motion.button>
+              )}
+            </div>
+
+            {/* Price Manager (owner) — in sidebar */}
+            <AnimatePresence>
+              {showPriceManager && isOwner && (
+                <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} className="glass rounded-2xl p-5">
+                  <h3 className="font-bold text-[#f1f5f9] mb-4">Set Gift Prices</h3>
+                  <PriceManager tokenId={tokenId} signer={signer} giftsAddr={giftsContractAddr} currentPrices={prices}
+                    onSaved={p => { setPrices(p); setShowPriceManager(false); }} />
+                </motion.div>
+              )}
+            </AnimatePresence>
           </div>
         </motion.div>
 
@@ -362,34 +401,6 @@ export default function CityPage({ tokenId, signer, address }) {
             )}
           </AnimatePresence>
 
-          {/* Actions */}
-          <div className="flex flex-wrap gap-3">
-            {isOwner && (
-              <motion.button onClick={sync} disabled={syncing}
-                className="flex items-center gap-2 px-5 py-2.5 rounded-lg glass hover:bg-[#16161f] transition-colors text-[#f1f5f9] font-medium disabled:opacity-50"
-                whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
-                <RefreshCw className={`w-4 h-4 ${syncing ? 'animate-spin' : ''}`} />
-                {syncing ? 'Syncing...' : 'Sync City'}
-              </motion.button>
-            )}
-            {!isOwner && (
-              <motion.button onClick={() => setShowGiftPanel(!showGiftPanel)}
-                className="flex items-center gap-2 px-5 py-2.5 rounded-lg glass hover:bg-[#16161f] transition-colors text-[#f1f5f9] font-medium"
-                whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
-                <Gift className="w-4 h-4" />
-                {showGiftPanel ? 'Hide Gifts' : 'Send Gift'}
-              </motion.button>
-            )}
-            {isOwner && (
-              <motion.button onClick={() => setShowPriceManager(!showPriceManager)}
-                className="flex items-center gap-2 px-5 py-2.5 rounded-lg glass hover:bg-[#16161f] transition-colors text-[#f1f5f9] font-medium"
-                whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
-                <Settings className="w-4 h-4" />
-                Gift Prices
-              </motion.button>
-            )}
-          </div>
-
           {/* Gift Shop (visitors) */}
           <AnimatePresence>
             {showGiftPanel && !isOwner && (
@@ -426,17 +437,6 @@ export default function CityPage({ tokenId, signer, address }) {
                     </motion.button>
                   </div>
                 )}
-              </motion.div>
-            )}
-          </AnimatePresence>
-
-          {/* Price Manager (owner) */}
-          <AnimatePresence>
-            {showPriceManager && isOwner && (
-              <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} className="glass rounded-2xl p-6">
-                <h3 className="font-bold text-[#f1f5f9] mb-4">Set Gift Prices</h3>
-                <PriceManager tokenId={tokenId} signer={signer} giftsAddr={giftsContractAddr} currentPrices={prices}
-                  onSaved={p => { setPrices(p); setShowPriceManager(false); }} />
               </motion.div>
             )}
           </AnimatePresence>
