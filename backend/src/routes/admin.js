@@ -72,13 +72,13 @@ router.get("/admin/config", (req, res) => {
     giftOracleIntervalMs:   Number(process.env.GIFT_ORACLE_INTERVAL_MS || 600000),
     frontendUrl:            process.env.FRONTEND_URL || "",
     port:                   process.env.PORT || 3001,
+    // Apify accepts either a single token or rotated _1/_2 pair.
     keys: {
       ORACLE_PRIVATE_KEY:           !!process.env.ORACLE_PRIVATE_KEY,
       ANTHROPIC_API_KEY:            !!process.env.ANTHROPIC_API_KEY,
-      APIFY_API_TOKEN:              !!process.env.APIFY_API_TOKEN,
+      APIFY_API_TOKEN:              !!(process.env.APIFY_API_TOKEN || process.env.APIFY_API_TOKEN_1 || process.env.APIFY_API_TOKEN_2),
       PINATA_API_KEY:               !!process.env.PINATA_API_KEY,
       PINATA_SECRET_KEY:            !!process.env.PINATA_SECRET_KEY,
-      ORACLE_SWEEP_TOKEN:           !!process.env.ORACLE_SWEEP_TOKEN,
       MANTLE_TESTNET_RPC:           !!process.env.MANTLE_TESTNET_RPC,
       CONTRACT_ADDRESS:             !!process.env.CONTRACT_ADDRESS,
       GIFTS_CONTRACT_ADDRESS:       !!process.env.GIFTS_CONTRACT_ADDRESS,
