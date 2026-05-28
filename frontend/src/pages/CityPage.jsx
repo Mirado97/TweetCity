@@ -256,6 +256,15 @@ export default function CityPage({ tokenId, signer, address }) {
           </div>
         </motion.div>
 
+        {/* Motto / Description banner */}
+        {(city.ipfsData?.city?.motto || city.ipfsData?.description) && (
+          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }}
+            className="glass rounded-2xl px-6 py-4 mb-6">
+            {city.ipfsData?.city?.motto && <p className="text-base italic text-[#94a3b8]">"{city.ipfsData.city.motto}"</p>}
+            {city.ipfsData?.description && <p className="text-sm text-[#64748b] mt-1">{city.ipfsData.description}</p>}
+          </motion.div>
+        )}
+
         {/* 3D City + Middle + Sidebar — 3 equal cols, stretch to tallest */}
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}
           className="grid lg:grid-cols-3 gap-6 mb-8 items-stretch">
@@ -367,13 +376,6 @@ export default function CityPage({ tokenId, signer, address }) {
 
         {/* Info & Actions */}
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }} className="space-y-6">
-          {(city.ipfsData?.city?.motto || city.ipfsData?.description) && (
-            <div className="glass rounded-2xl p-6">
-              {city.ipfsData?.city?.motto && <p className="text-lg italic text-[#94a3b8] mb-3">"{city.ipfsData.city.motto}"</p>}
-              {city.ipfsData?.description && <p className="text-sm text-[#64748b]">{city.ipfsData.description}</p>}
-            </div>
-          )}
-
           {/* Gift stats */}
           {giftStats && giftStats.totalGifts > 0n && (
             <div className="flex items-center gap-4 text-sm text-[#64748b]">
