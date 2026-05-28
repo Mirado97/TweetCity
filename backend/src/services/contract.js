@@ -416,21 +416,27 @@ async function getTweetCitySettings() {
   });
 }
 
+// Labelled read: surfaces *which* function failed instead of a generic ethers error.
+async function _read(label, fn) {
+  try { return await fn(); }
+  catch (e) { throw new Error(`${label}: ${e.shortMessage || e.message}`); }
+}
+
 async function getGiftsSettings() {
   const gc = getGiftsContract();
   if (!gc) return null;
   const [owner, oracle, feeBps, acceptW, nextId, ew0, ew1, ew2, ew3, ew4, ew5] = await Promise.all([
-    gc.owner(),
-    gc.oracle(),
-    gc.protocolFeeBps(),
-    gc.acceptWindow(),
-    gc.nextGiftId(),
-    gc.engageWindows(0),
-    gc.engageWindows(1),
-    gc.engageWindows(2),
-    gc.engageWindows(3),
-    gc.engageWindows(4),
-    gc.engageWindows(5),
+    _read("owner",          () => gc.owner()),
+    _read("oracle",         () => gc.oracle()),
+    _read("protocolFeeBps", () => gc.protocolFeeBps()),
+    _read("acceptWindow",   () => gc.acceptWindow()),
+    _read("nextGiftId",     () => gc.nextGiftId()),
+    _read("engageWindows[0]", () => gc.engageWindows(0)),
+    _read("engageWindows[1]", () => gc.engageWindows(1)),
+    _read("engageWindows[2]", () => gc.engageWindows(2)),
+    _read("engageWindows[3]", () => gc.engageWindows(3)),
+    _read("engageWindows[4]", () => gc.engageWindows(4)),
+    _read("engageWindows[5]", () => gc.engageWindows(5)),
   ]);
   return {
     address:        process.env.GIFTS_CONTRACT_ADDRESS,
@@ -448,7 +454,7 @@ async function getGiftsSettings() {
 async function getGiftsStats() {
   const gc = getGiftsContract();
   if (!gc) return { totalGifts: 0, pending: 0, accepted: 0, verified: 0, rejected: 0, expired: 0, volumeWei: "0" };
-  const total = Number(await gc.nextGiftId());
+  const total = Number(await _read("nextGiftId", () => gc.nextGiftId()));
   if (total === 0) return { totalGifts: 0, pending: 0, accepted: 0, verified: 0, rejected: 0, expired: 0, volumeWei: "0" };
 
   const counts = { pending: 0, accepted: 0, verified: 0, rejected: 0, expired: 0 };
