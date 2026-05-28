@@ -353,7 +353,7 @@ export default function CityPage({ tokenId, signer, address }) {
               )}
             </div>
 
-            {/* Set Gift Prices panel below buttons */}
+            {/* Set Gift Prices panel below buttons (owner) */}
             <AnimatePresence>
               {showPriceManager && isOwner && (
                 <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}
@@ -362,6 +362,49 @@ export default function CityPage({ tokenId, signer, address }) {
                     <h3 className="font-bold text-[#f1f5f9] mb-4">Set Gift Prices</h3>
                     <PriceManager tokenId={tokenId} signer={signer} giftsAddr={giftsContractAddr} currentPrices={prices}
                       onSaved={p => { setPrices(p); setShowPriceManager(false); }} />
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            {/* Send Gift panel below buttons (visitor) */}
+            <AnimatePresence>
+              {showGiftPanel && !isOwner && (
+                <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}
+                  className="overflow-hidden">
+                  <div className="border-t border-white/20 pt-4 space-y-3">
+                    <h3 className="font-bold text-[#f1f5f9]">Send a Gift {twitterHandle ? `to @${twitterHandle}` : ''}</h3>
+                    <div className="grid grid-cols-3 gap-2">
+                      {GIFT_TYPES.map((t, i) => {
+                        const p = prices[i];
+                        const on = p > 0n;
+                        return (
+                          <button key={i}
+                            onClick={() => on && setGiftType(i)}
+                            className={`p-2 rounded-lg transition-colors text-center border ${giftType === i ? 'border-[#00d4ff]/50 bg-[#00d4ff]/10' : 'border-white/20 bg-[#0a0a0f]/50'} ${!on ? 'opacity-40 cursor-not-allowed' : 'hover:bg-[#0a0a0f] cursor-pointer'}`}
+                          >
+                            <div className="text-xl mb-0.5">{t.icon}</div>
+                            <div className="text-[11px] font-medium text-[#f1f5f9] leading-tight">{t.name}</div>
+                            <div className="text-[10px] text-[#64748b] mt-0.5">{on ? fmt(p) : '—'}</div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                    {prices[giftType] > 0n && (
+                      <div className="space-y-2 pt-1">
+                        <input
+                          className="w-full px-3 py-2 rounded-lg bg-[#0a0a0f] border border-white/20 text-[#f1f5f9] text-sm placeholder-[#64748b] focus:outline-none focus:border-[#00d4ff]/50 transition-colors"
+                          placeholder="https://twitter.com/... (your tweet)"
+                          value={tweetUrl}
+                          onChange={e => setTweetUrl(e.target.value)}
+                        />
+                        <motion.button onClick={sendGift} disabled={sending || !signer}
+                          className="w-full flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-gradient-to-r from-[#00d4ff] to-[#a855f7] text-white text-sm font-semibold disabled:opacity-50"
+                          whileHover={{ scale: 1.01 }} whileTap={{ scale: 0.99 }}>
+                          {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : `Send for ${fmt(prices[giftType])}`}
+                        </motion.button>
+                      </div>
+                    )}
                   </div>
                 </motion.div>
               )}
@@ -453,46 +496,6 @@ export default function CityPage({ tokenId, signer, address }) {
               <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
                 className="flex items-center gap-2 p-4 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-sm">
                 <AlertCircle className="w-4 h-4 shrink-0" />{error}
-              </motion.div>
-            )}
-          </AnimatePresence>
-
-          {/* Gift Shop (visitors) */}
-          <AnimatePresence>
-            {showGiftPanel && !isOwner && (
-              <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} className="glass rounded-2xl p-6">
-                <h3 className="font-bold text-[#f1f5f9] mb-4">Send a Gift to {twitterHandle ? `@${twitterHandle}` : 'this city'}</h3>
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-4">
-                  {GIFT_TYPES.map((t, i) => {
-                    const p = prices[i];
-                    const on = p > 0n;
-                    return (
-                      <button key={i}
-                        onClick={() => on && setGiftType(i)}
-                        className={`p-4 rounded-xl transition-colors text-center border ${giftType === i ? 'border-[#00d4ff]/50 bg-[#00d4ff]/10' : 'border-white/20 bg-[#0a0a0f]/50'} ${!on ? 'opacity-40 cursor-not-allowed' : 'hover:bg-[#0a0a0f] cursor-pointer'}`}
-                      >
-                        <div className="text-2xl mb-1">{t.icon}</div>
-                        <div className="text-sm font-medium text-[#f1f5f9]">{t.name}</div>
-                        <div className="text-xs text-[#64748b]">{on ? fmt(p) : '—'}</div>
-                      </button>
-                    );
-                  })}
-                </div>
-                {prices[giftType] > 0n && (
-                  <div className="space-y-3">
-                    <input
-                      className="w-full px-4 py-3 rounded-xl bg-[#0a0a0f] border border-white/20 text-[#f1f5f9] placeholder-[#64748b] focus:outline-none focus:border-[#00d4ff]/50 transition-colors"
-                      placeholder="https://twitter.com/... (your tweet link)"
-                      value={tweetUrl}
-                      onChange={e => setTweetUrl(e.target.value)}
-                    />
-                    <motion.button onClick={sendGift} disabled={sending || !signer}
-                      className="w-full flex items-center justify-center gap-2 px-6 py-3 rounded-xl bg-gradient-to-r from-[#00d4ff] to-[#a855f7] text-white font-semibold disabled:opacity-50"
-                      whileHover={{ scale: 1.01 }} whileTap={{ scale: 0.99 }}>
-                      {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : `Send for ${fmt(prices[giftType])}`}
-                    </motion.button>
-                  </div>
-                )}
               </motion.div>
             )}
           </AnimatePresence>
