@@ -10,6 +10,8 @@ const GIFTS_ABI = [
   "function verifyEngagement(uint256 giftId) external",
   "function getAllGifts(uint256 tokenId) external view returns (tuple(uint256 id, address buyer, uint256 cityTokenId, uint8 giftType, string tweetUrl, uint256 amount, uint256 ownerAmount, uint8 status, uint64 createdAt, uint64 acceptDeadline, uint64 engageDeadline)[])",
   "function gifts(uint256 giftId) external view returns (uint256 id, address buyer, uint256 cityTokenId, uint8 giftType, string tweetUrl, uint256 amount, uint256 ownerAmount, uint8 status, uint64 createdAt, uint64 acceptDeadline, uint64 engageDeadline)",
+  "function acceptWindow() external view returns (uint64)",
+  "function engageWindows(uint256) external view returns (uint64)",
 ];
 
 // GiftStatus enum mirror (must match CityGifts.sol)

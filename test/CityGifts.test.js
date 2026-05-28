@@ -1,8 +1,8 @@
 const { expect } = require("chai");
-const { ethers } = require("hardhat");
+const { ethers, upgrades } = require("hardhat");
 const { time } = require("@nomicfoundation/hardhat-network-helpers");
 
-describe("CityGifts", function () {
+describe("CityGifts (UUPS)", function () {
   let gifts, nft;
   let admin, oracle, cityOwner, buyer, other;
 
@@ -11,9 +11,13 @@ describe("CityGifts", function () {
 
   // GiftType: Graffiti=0, StreetArt=1, Flag=2, Billboard=3, Monument=4, District=5
 
-  const TOKEN_ID = 1;
-  const PRICE    = ethers.parseEther("1.0");
-  const TWEET    = "https://x.com/someone/status/12345";
+  const TOKEN_ID       = 1;
+  const PRICE          = ethers.parseEther("1.0");
+  const TWEET          = "https://x.com/someone/status/12345";
+
+  // Contract defaults from initialize()
+  const ACCEPT_WINDOW  = 24 * 3600;   // 24h
+  const ENGAGE_WINDOW  = 48 * 3600;   // 48h for every type
 
   beforeEach(async function () {
     [admin, oracle, cityOwner, buyer, other] = await ethers.getSigners();
@@ -22,16 +26,21 @@ describe("CityGifts", function () {
     nft = await MockNFT.deploy();
     await nft.mint(cityOwner.address, TOKEN_ID);
 
-    const Gifts = await ethers.getContractFactory("CityGifts");
-    gifts = await Gifts.connect(admin).deploy(await nft.getAddress(), oracle.address);
+    const Gifts = await ethers.getContractFactory("CityGifts", admin);
+    gifts = await upgrades.deployProxy(
+      Gifts,
+      [await nft.getAddress(), oracle.address],
+      { kind: "uups", initializer: "initialize" }
+    );
+    await gifts.waitForDeployment();
 
-    // Oracle registers the city manager (= same as NFT owner here for simplicity)
+    // Oracle registers the city manager
     await gifts.connect(oracle).registerManager(TOKEN_ID, cityOwner.address);
   });
 
   // ─── Deployment ───────────────────────────────────────────────────────────
 
-  describe("Deployment", function () {
+  describe("Deployment (proxy)", function () {
     it("stores cityNFT and oracle", async function () {
       expect(await gifts.cityNFT()).to.equal(await nft.getAddress());
       expect(await gifts.oracle()).to.equal(oracle.address);
@@ -39,6 +48,22 @@ describe("CityGifts", function () {
 
     it("default protocol fee is 10%", async function () {
       expect(await gifts.protocolFeeBps()).to.equal(1000);
+    });
+
+    it("default acceptWindow = 24h", async function () {
+      expect(await gifts.acceptWindow()).to.equal(BigInt(ACCEPT_WINDOW));
+    });
+
+    it("default engageWindows = 48h for all types", async function () {
+      for (let i = 0; i < 6; i++) {
+        expect(await gifts.engageWindows(i)).to.equal(BigInt(ENGAGE_WINDOW));
+      }
+    });
+
+    it("initialize cannot be called twice", async function () {
+      await expect(
+        gifts.initialize(await nft.getAddress(), oracle.address)
+      ).to.be.revertedWithCustomError(gifts, "InvalidInitialization");
     });
   });
 
@@ -152,7 +177,7 @@ describe("CityGifts", function () {
     });
 
     it("cannot approve after accept window", async function () {
-      await time.increase(48 * 3600 + 1);
+      await time.increase(ACCEPT_WINDOW + 1);
       await expect(
         gifts.connect(cityOwner).approveGift(0)
       ).to.be.revertedWith("CityGifts: accept window expired");
@@ -211,7 +236,7 @@ describe("CityGifts", function () {
     });
 
     it("cannot verify after engage deadline", async function () {
-      await time.increase(3 * 24 * 3600 + 1); // Graffiti = 3 days
+      await time.increase(ENGAGE_WINDOW + 1);
       await expect(
         gifts.connect(oracle).verifyEngagement(0)
       ).to.be.revertedWith("CityGifts: engage window expired");
@@ -235,8 +260,8 @@ describe("CityGifts", function () {
       await gifts.connect(buyer).sendGift(TOKEN_ID, 0, TWEET, { value: PRICE });
     });
 
-    it("buyer can claim if owner ignored Pending for 48h", async function () {
-      await time.increase(48 * 3600 + 1);
+    it("buyer can claim if owner ignored Pending past acceptWindow", async function () {
+      await time.increase(ACCEPT_WINDOW + 1);
 
       const before = await ethers.provider.getBalance(buyer.address);
       const tx = await gifts.connect(buyer).claimExpired(0);
@@ -251,7 +276,7 @@ describe("CityGifts", function () {
 
     it("buyer can claim if owner accepted but missed engage deadline", async function () {
       await gifts.connect(cityOwner).approveGift(0);
-      await time.increase(3 * 24 * 3600 + 1); // Graffiti window
+      await time.increase(ENGAGE_WINDOW + 1);
 
       const tx = await gifts.connect(buyer).claimExpired(0);
       await tx.wait();
@@ -260,7 +285,7 @@ describe("CityGifts", function () {
     });
 
     it("only buyer can claim", async function () {
-      await time.increase(48 * 3600 + 1);
+      await time.increase(ACCEPT_WINDOW + 1);
       await expect(
         gifts.connect(other).claimExpired(0)
       ).to.be.revertedWith("CityGifts: not buyer");
@@ -344,6 +369,56 @@ describe("CityGifts", function () {
       await expect(
         gifts.connect(admin).setProtocolFee(2500)
       ).to.be.revertedWith("CityGifts: max 20%");
+    });
+
+    it("owner can change acceptWindow", async function () {
+      await gifts.connect(admin).setAcceptWindow(3600);
+      expect(await gifts.acceptWindow()).to.equal(3600n);
+    });
+
+    it("acceptWindow=0 reverts", async function () {
+      await expect(
+        gifts.connect(admin).setAcceptWindow(0)
+      ).to.be.revertedWith("CityGifts: zero window");
+    });
+
+    it("owner can change a single engageWindow", async function () {
+      await gifts.connect(admin).setEngageWindow(2, 3600);
+      expect(await gifts.engageWindows(2)).to.equal(3600n);
+      // other types unchanged
+      expect(await gifts.engageWindows(0)).to.equal(BigInt(ENGAGE_WINDOW));
+    });
+
+    it("setEngageWindow invalid type reverts", async function () {
+      await expect(
+        gifts.connect(admin).setEngageWindow(6, 3600)
+      ).to.be.revertedWith("CityGifts: invalid type");
+    });
+  });
+
+  // ─── Upgrade ──────────────────────────────────────────────────────────────
+
+  describe("UUPS upgrade", function () {
+    it("non-owner cannot upgrade", async function () {
+      const Gifts = await ethers.getContractFactory("CityGifts", other);
+      await expect(
+        upgrades.upgradeProxy(await gifts.getAddress(), Gifts)
+      ).to.be.reverted;
+    });
+
+    it("owner can upgrade and storage is preserved", async function () {
+      // Set a custom value first
+      await gifts.connect(admin).setAcceptWindow(7200);
+      await gifts.connect(cityOwner).setPrices(TOKEN_ID,
+        [PRICE, 0n, 0n, 0n, 0n, 0n]);
+
+      // Upgrade to the same implementation (proves the mechanism)
+      const Gifts = await ethers.getContractFactory("CityGifts", admin);
+      const upgraded = await upgrades.upgradeProxy(await gifts.getAddress(), Gifts);
+
+      expect(await upgraded.getAddress()).to.equal(await gifts.getAddress());
+      expect(await upgraded.acceptWindow()).to.equal(7200n);
+      expect((await upgraded.getPrices(TOKEN_ID))[0]).to.equal(PRICE);
     });
   });
 });

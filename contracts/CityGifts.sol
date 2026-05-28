@@ -2,25 +2,32 @@
 pragma solidity ^0.8.24;
 
 import "@openzeppelin/contracts/token/ERC721/IERC721.sol";
-import "@openzeppelin/contracts/access/Ownable.sol";
-import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import "@openzeppelin/contracts/utils/ReentrancyGuardTransient.sol";
+import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 
 /**
- * @title CityGifts
+ * @title CityGifts (UUPS upgradeable)
  * @notice Gift marketplace for TweetCity NFTs.
  *
  * Flow:
  *   buyer sendGift() → PENDING (funds locked)
  *     → owner approveGift() → ACCEPTED (engage deadline starts)
- *       → oracle verifyEngagement() → VERIFIED (funds released to owner, object appears in city)
+ *       → oracle verifyEngagement() → VERIFIED (funds released to owner)
  *     → owner rejectGift() → REJECTED (buyer refunded)
- *   If owner ignores for 48h → buyer claimExpired() → EXPIRED (refund)
+ *   If owner ignores past acceptWindow → buyer claimExpired() → EXPIRED (refund)
  *   If owner accepted but didn't engage in time → buyer claimExpired() → EXPIRED (refund)
  *
  * Owner sets their own price per gift type — larger accounts charge more.
+ * @custom:oz-upgrades-unsafe-allow constructor
  */
-contract CityGifts is Ownable, ReentrancyGuard {
-
+contract CityGifts is
+    Initializable,
+    OwnableUpgradeable,
+    ReentrancyGuardTransient,
+    UUPSUpgradeable
+{
     // ─── Types ────────────────────────────────────────────────────────────────
 
     enum GiftType {
@@ -44,33 +51,28 @@ contract CityGifts is Ownable, ReentrancyGuard {
         uint256 ownerAmount;    // amount after protocol fee (released on verify)
         GiftStatus status;
         uint64  createdAt;
-        uint64  acceptDeadline; // owner must respond within ACCEPT_WINDOW
+        uint64  acceptDeadline; // owner must respond within acceptWindow
         uint64  engageDeadline; // owner must complete engagement by this time
     }
 
-    // ─── State ────────────────────────────────────────────────────────────────
+    // ─── Storage ──────────────────────────────────────────────────────────────
+    // NOTE: do not reorder, remove, or change types of existing variables.
+    // Append new state below the existing ones to keep storage layout compatible.
 
-    IERC721 public immutable cityNFT;
+    IERC721 public cityNFT;
     address public oracle;
-    uint256 public protocolFeeBps = 1000; // 10%
+    uint256 public protocolFeeBps; // basis points, e.g. 1000 = 10%
 
-    // Accept window: 48 hours
-    uint64 public constant ACCEPT_WINDOW = 48 hours;
+    // Accept window — how long owner has to Approve/Reject a pending gift.
+    uint64 public acceptWindow;
 
-    // Engage deadlines per gift type (owner must engage within N days of accepting)
-    uint64[6] public engageWindows = [
-        3 days,   // Graffiti
-        7 days,   // StreetArt
-        7 days,   // Flag
-        14 days,  // Billboard
-        21 days,  // Monument
-        30 days   // District
-    ];
+    // Engage deadlines per gift type (owner must engage within this time after Accept).
+    uint64[6] public engageWindows;
 
     uint256 public nextGiftId;
 
     // tokenId → registered city manager (the wallet that minted the city)
-    // Separate from ERC-721 owner (oracle holds the NFT; minter manages the city)
+    // Separate from ERC-721 owner: oracle may hold the NFT, minter manages the city.
     mapping(uint256 => address) public cityManager;
 
     // tokenId → price per GiftType (0 = type disabled)
@@ -92,6 +94,8 @@ contract CityGifts is Ownable, ReentrancyGuard {
     event GiftVerified(uint256 indexed giftId, uint256 indexed tokenId, address cityOwner, uint256 payout);
     event GiftExpired(uint256 indexed giftId, uint256 indexed tokenId, address refundedTo);
     event OracleChanged(address indexed oldOracle, address indexed newOracle);
+    event AcceptWindowChanged(uint64 oldWindow, uint64 newWindow);
+    event EngageWindowChanged(uint8 indexed giftType, uint64 oldWindow, uint64 newWindow);
 
     // ─── Modifiers ────────────────────────────────────────────────────────────
 
@@ -105,14 +109,36 @@ contract CityGifts is Ownable, ReentrancyGuard {
         _;
     }
 
-    // ─── Constructor ──────────────────────────────────────────────────────────
+    // ─── Constructor disabled for proxy safety ────────────────────────────────
 
-    constructor(address _cityNFT, address _oracle) Ownable(msg.sender) {
-        require(_cityNFT != address(0), "zero address");
-        require(_oracle  != address(0), "zero address");
-        cityNFT = IERC721(_cityNFT);
-        oracle  = _oracle;
+    /// @custom:oz-upgrades-unsafe-allow constructor
+    constructor() {
+        _disableInitializers();
     }
+
+    // ─── Initializer ──────────────────────────────────────────────────────────
+
+    /**
+     * @notice One-time initializer for the proxy.
+     *         Defaults: ACCEPT=24h, engageWindows=48h for all 6 types, fee=10%.
+     */
+    function initialize(address _cityNFT, address _oracle) public initializer {
+        require(_cityNFT != address(0), "CityGifts: zero NFT");
+        require(_oracle  != address(0), "CityGifts: zero oracle");
+
+        __Ownable_init(msg.sender);
+
+        cityNFT        = IERC721(_cityNFT);
+        oracle         = _oracle;
+        protocolFeeBps = 1000;          // 10%
+        acceptWindow   = 24 hours;      // owner has 24h to respond
+        // 48 hours engage window for every gift type by default
+        for (uint8 i; i < 6; i++) {
+            engageWindows[i] = 48 hours;
+        }
+    }
+
+    function _authorizeUpgrade(address) internal override onlyOwner {}
 
     // ─── Owner (city) functions ───────────────────────────────────────────────
 
@@ -129,8 +155,7 @@ contract CityGifts is Ownable, ReentrancyGuard {
     }
 
     /**
-     * @notice Owner previews the pending gift's tweetUrl on-chain then approves.
-     *         Triggers the engage deadline clock.
+     * @notice Owner approves a pending gift, triggering the engage deadline.
      */
     function approveGift(uint256 giftId) external nonReentrant {
         Gift storage g = gifts[giftId];
@@ -138,14 +163,14 @@ contract CityGifts is Ownable, ReentrancyGuard {
         require(g.status == GiftStatus.Pending, "CityGifts: not pending");
         require(block.timestamp <= g.acceptDeadline, "CityGifts: accept window expired");
 
-        g.status        = GiftStatus.Accepted;
+        g.status         = GiftStatus.Accepted;
         g.engageDeadline = uint64(block.timestamp) + engageWindows[uint8(g.giftType)];
 
         emit GiftApproved(giftId, g.cityTokenId);
     }
 
     /**
-     * @notice Owner rejects the gift (e.g. scam link). Buyer is fully refunded.
+     * @notice Owner rejects a pending gift (e.g. scam link). Buyer is refunded 90%.
      */
     function rejectGift(uint256 giftId) external nonReentrant {
         Gift storage g = gifts[giftId];
@@ -191,12 +216,11 @@ contract CityGifts is Ownable, ReentrancyGuard {
             ownerAmount:    ownerAmount,
             status:         GiftStatus.Pending,
             createdAt:      uint64(block.timestamp),
-            acceptDeadline: uint64(block.timestamp) + ACCEPT_WINDOW,
+            acceptDeadline: uint64(block.timestamp) + acceptWindow,
             engageDeadline: 0
         });
         _cityGiftIds[tokenId].push(giftId);
 
-        // Protocol fee sent immediately
         if (fee > 0) {
             (bool ok,) = owner().call{value: fee}("");
             require(ok, "CityGifts: fee transfer failed");
@@ -206,9 +230,9 @@ contract CityGifts is Ownable, ReentrancyGuard {
     }
 
     /**
-     * @notice Buyer reclaims funds if:
-     *         - Owner never responded within 48h (Pending → Expired)
-     *         - Owner accepted but didn't engage within their window (Accepted → Expired)
+     * @notice Buyer reclaims funds when:
+     *         - Owner never responded within acceptWindow (Pending → Expired), or
+     *         - Owner accepted but didn't engage within engage window (Accepted → Expired).
      */
     function claimExpired(uint256 giftId) external nonReentrant {
         Gift storage g = gifts[giftId];
@@ -230,9 +254,7 @@ contract CityGifts is Ownable, ReentrancyGuard {
     // ─── Oracle functions ─────────────────────────────────────────────────────
 
     /**
-     * @notice Called by the backend oracle after verifying on-chain/Twitter that
-     *         the city owner completed their engagement obligation.
-     *         Releases locked funds to the city owner.
+     * @notice Oracle marks a gift as verified — releases escrow to the city manager.
      */
     function verifyEngagement(uint256 giftId) external onlyOracle nonReentrant {
         Gift storage g = gifts[giftId];
@@ -247,6 +269,15 @@ contract CityGifts is Ownable, ReentrancyGuard {
         require(ok, "CityGifts: payout failed");
 
         emit GiftVerified(giftId, g.cityTokenId, manager, g.ownerAmount);
+    }
+
+    /**
+     * @notice Oracle registers the city manager (minter wallet) for a city.
+     */
+    function registerManager(uint256 tokenId, address manager) external onlyOracle {
+        require(manager != address(0), "CityGifts: zero address");
+        cityManager[tokenId] = manager;
+        emit ManagerSet(tokenId, manager);
     }
 
     // ─── View functions ───────────────────────────────────────────────────────
@@ -289,11 +320,7 @@ contract CityGifts is Ownable, ReentrancyGuard {
     }
 
     /**
-     * @notice Summary stats for city — can be used in NFT metadata / frontend.
-     * @return totalGifts      all-time gift count
-     * @return totalEarned     MNT earned from verified gifts (wei)
-     * @return pendingCount    awaiting owner decision
-     * @return activeByType    count of active (Accepted+Verified) gifts per type
+     * @notice Summary stats for a city.
      */
     function getCityStats(uint256 tokenId) external view returns (
         uint256 totalGifts,
@@ -305,35 +332,18 @@ contract CityGifts is Ownable, ReentrancyGuard {
         for (uint256 i; i < ids.length; i++) {
             Gift storage g = gifts[ids[i]];
             totalGifts++;
-            if (g.status == GiftStatus.Verified) {
-                totalEarned += g.ownerAmount;
-            }
-            if (g.status == GiftStatus.Pending) {
-                pendingCount++;
-            }
+            if (g.status == GiftStatus.Verified)  totalEarned += g.ownerAmount;
+            if (g.status == GiftStatus.Pending)   pendingCount++;
             if (g.status == GiftStatus.Accepted || g.status == GiftStatus.Verified) {
                 activeByType[uint8(g.giftType)]++;
             }
         }
     }
 
-    // ─── Oracle functions (manager registration) ──────────────────────────────
-
-    /**
-     * @notice Register the city manager (minter wallet) for a city.
-     *         Called by oracle after mint or when manager updates their wallet.
-     *         NFT stays with oracle; management rights belong to the registered wallet.
-     */
-    function registerManager(uint256 tokenId, address manager) external onlyOracle {
-        require(manager != address(0), "CityGifts: zero address");
-        cityManager[tokenId] = manager;
-        emit ManagerSet(tokenId, manager);
-    }
-
     // ─── Admin functions ──────────────────────────────────────────────────────
 
     function setOracle(address _oracle) external onlyOwner {
-        require(_oracle != address(0), "zero address");
+        require(_oracle != address(0), "CityGifts: zero address");
         emit OracleChanged(oracle, _oracle);
         oracle = _oracle;
     }
@@ -343,9 +353,17 @@ contract CityGifts is Ownable, ReentrancyGuard {
         protocolFeeBps = bps;
     }
 
-    function setEngageWindow(uint8 giftType, uint64 window) external onlyOwner {
-        require(giftType < 6, "invalid type");
-        engageWindows[giftType] = window;
+    function setAcceptWindow(uint64 newWindow) external onlyOwner {
+        require(newWindow > 0, "CityGifts: zero window");
+        emit AcceptWindowChanged(acceptWindow, newWindow);
+        acceptWindow = newWindow;
+    }
+
+    function setEngageWindow(uint8 giftType, uint64 newWindow) external onlyOwner {
+        require(giftType < 6, "CityGifts: invalid type");
+        require(newWindow > 0, "CityGifts: zero window");
+        emit EngageWindowChanged(giftType, engageWindows[giftType], newWindow);
+        engageWindows[giftType] = newWindow;
     }
 
     // ─── Internal ─────────────────────────────────────────────────────────────
