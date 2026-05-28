@@ -381,7 +381,6 @@ export default function CityPage({ tokenId, signer, address }) {
                 <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}
                   className="overflow-hidden">
                   <div className="border-t border-white/20 pt-4">
-                    <h3 className="font-bold text-[#f1f5f9] mb-4">Set Gift Prices</h3>
                     <PriceManager tokenId={tokenId} signer={signer} giftsAddr={giftsContractAddr} currentPrices={prices}
                       onSaved={p => { setPrices(p); setShowPriceManager(false); }} />
                   </div>
@@ -658,21 +657,23 @@ function PriceManager({ tokenId, signer, giftsAddr, currentPrices, onSaved }) {
 
   return (
     <div className="space-y-3">
-      {GIFT_TYPES.map((t, i) => (
-        <div key={i} className="flex items-center gap-3">
-          <span className="text-lg">{t.icon}</span>
-          <span className="text-sm text-[#94a3b8] flex-1">{t.name}</span>
-          <input
-            type="number" min="0" step="0.001" placeholder="MNT"
-            value={inputs[i]}
-            onChange={e => setInputs(prev => { const n=[...prev]; n[i]=e.target.value; return n; })}
-            className="w-24 px-3 py-1.5 rounded-lg bg-[#0a0a0f] border border-white/20 text-[#f1f5f9] text-sm focus:outline-none focus:border-[#00d4ff]/50"
-          />
-        </div>
-      ))}
-      {err && <p className="text-red-400 text-sm">{err}</p>}
+      <div className="grid grid-cols-2 gap-x-3 gap-y-2">
+        {GIFT_TYPES.map((t, i) => (
+          <div key={i} className="flex items-center gap-2">
+            <span className="text-base">{t.icon}</span>
+            <span className="text-xs text-[#94a3b8] flex-1 truncate">{t.name}</span>
+            <input
+              type="number" min="0" step="0.001" placeholder="MNT"
+              value={inputs[i]}
+              onChange={e => setInputs(prev => { const n=[...prev]; n[i]=e.target.value; return n; })}
+              className="w-16 px-2 py-1 rounded-md bg-[#0a0a0f] border border-white/20 text-[#f1f5f9] text-xs focus:outline-none focus:border-[#00d4ff]/50"
+            />
+          </div>
+        ))}
+      </div>
+      {err && <p className="text-red-400 text-xs">{err}</p>}
       <motion.button onClick={save} disabled={saving}
-        className="w-full py-2.5 rounded-lg bg-gradient-to-r from-[#00d4ff] to-[#a855f7] text-white font-semibold text-sm disabled:opacity-50"
+        className="w-full py-2 rounded-lg bg-gradient-to-r from-[#00d4ff] to-[#a855f7] text-white font-semibold text-sm disabled:opacity-50"
         whileHover={{ scale: 1.01 }} whileTap={{ scale: 0.99 }}>
         {saving ? "Saving..." : "Save Prices"}
       </motion.button>
