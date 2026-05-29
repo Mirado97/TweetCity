@@ -1,7 +1,75 @@
 // CityRendererV2 — tile-grid city: tile-low blocks + road tiles + buildings
-import { useMemo, useState, Suspense } from "react";
+import { useMemo, useState, Suspense, useRef, useEffect } from "react";
+import { CanvasTexture, MOUSE } from "three";
 import { Canvas } from "@react-three/fiber";
 import { OrbitControls, useGLTF, useTexture } from "@react-three/drei";
+import { clone as cloneSkinned } from "three/examples/jsm/utils/SkeletonUtils.js";
+
+// OrbitControls wrapper: RMB pan is gated by holding Ctrl.
+// Without Ctrl, RMB does nothing — the camera keeps auto-rotating around the
+// city center. Hold Ctrl + drag RMB to move the orbit target across the map.
+function CtrlPanOrbitControls(props) {
+  const ref = useRef();
+  useEffect(() => {
+    const ctrl = ref.current;
+    if (!ctrl) return;
+    // -1 disables a mouse button in three.js OrbitControls.
+    const update = (ctrlKey) => {
+      ctrl.mouseButtons = {
+        LEFT:   MOUSE.ROTATE,
+        MIDDLE: MOUSE.DOLLY,
+        RIGHT:  ctrlKey ? MOUSE.PAN : -1,
+      };
+    };
+    update(false);
+    const down = (e) => { if (e.key === "Control") update(true); };
+    const up   = (e) => { if (e.key === "Control") update(false); };
+    // Window may lose focus while Ctrl is held → reset.
+    const blur = () => update(false);
+    window.addEventListener("keydown", down);
+    window.addEventListener("keyup",   up);
+    window.addEventListener("blur",    blur);
+    return () => {
+      window.removeEventListener("keydown", down);
+      window.removeEventListener("keyup",   up);
+      window.removeEventListener("blur",    blur);
+    };
+  }, []);
+  return <OrbitControls ref={ref} enablePan {...props} />;
+}
+
+// Module-scoped cache of suburban palettes (CanvasTextures) so we don't
+// re-upload to the GPU on every render. We always go through canvas so the
+// shared saturate/contrast boost is applied — base variation PNGs come out
+// too pale otherwise (especially noticeable next to vivid industrial/commercial).
+const _suburbanPaletteCache = new Map();
+// CSS-style filter applied to every suburban palette texture.
+const SUBURBAN_FILTER_BOOST = "saturate(160%) contrast(115%)";
+
+function getSuburbanTexture(colorIdx, sourceImages) {
+  if (_suburbanPaletteCache.has(colorIdx)) return _suburbanPaletteCache.get(colorIdx);
+  let fromIdx, hueDeg = 0;
+  if (colorIdx < SUBURBAN_COLORMAPS.length) {
+    fromIdx = colorIdx;            // base variation, only saturation boost
+  } else {
+    const d = HUE_DERIVATIVES[colorIdx - SUBURBAN_COLORMAPS.length];
+    if (!d) return null;
+    fromIdx = d.from;
+    hueDeg  = d.deg;
+  }
+  const img = sourceImages[fromIdx];
+  if (!img) return null;
+  const canvas = document.createElement('canvas');
+  canvas.width  = img.width;
+  canvas.height = img.height;
+  const ctx = canvas.getContext('2d');
+  ctx.filter = `hue-rotate(${hueDeg}deg) ${SUBURBAN_FILTER_BOOST}`;
+  ctx.drawImage(img, 0, 0);
+  const tex = new CanvasTexture(canvas);
+  tex.flipY = false;
+  _suburbanPaletteCache.set(colorIdx, tex);
+  return tex;
+}
 export const LEVEL_NAMES = [
   "Hamlet", "Village", "Borough", "Town", "Township",
   "City", "Metropolis", "Megalopolis", "Megacity", "World Capital",
@@ -29,6 +97,10 @@ const MODELS = {
   driveways:  ['driveway-long','driveway-short'].map(n => `/models/suburban/${n}.glb`),
   trees:      ['/models/suburban/tree-large.glb', '/models/suburban/tree-small.glb'],
   commercialDetails: ['detail-awning','detail-awning-wide','detail-overhang','detail-overhang-wide','detail-parasol-a','detail-parasol-b'].map(n => `/models/commercial/${n}.glb`),
+  characters: ['male-a','male-b','male-c','male-d','male-e','male-f','female-a','female-b','female-c','female-d','female-e','female-f']
+                .map(n => `/models/characters/character-${n}.glb`),
+  cars:       ['sedan','sedan-sports','suv','suv-luxury','taxi','van','hatchback-sports','delivery','delivery-flat','truck','truck-flat','police','firetruck','ambulance','garbage-truck']
+                .map(n => `/models/cars/${n}.glb`),
 };
 
 const ZONE_SCALE = { skyscraper: 8.0, commercial: 7.5, industrial: 11.0, suburban: 5.5 };
@@ -46,6 +118,19 @@ const SUBURBAN_COLORMAPS = [
   '/models/suburban/variation-c.png',
 ];
 
+// Kenney suburban kit ships only 3 palette PNGs (blue/orange/grey roofs).
+// To get more variety (including green/purple/yellow) we derive extra textures
+// at runtime by applying hue-rotate to variation-a via a 2D canvas filter.
+// Index 0..2 = original PNGs, 3..7 = hue-shifted derivatives.
+const HUE_DERIVATIVES = [
+  { from: 0, deg:  90 },   // greenish
+  { from: 0, deg: 140 },   // teal
+  { from: 0, deg: 220 },   // purple
+  { from: 0, deg: 320 },   // pink
+  { from: 1, deg:  60 },   // lime from orange
+];
+const SUBURBAN_PALETTE_COUNT = SUBURBAN_COLORMAPS.length + HUE_DERIVATIVES.length;
+
 // ─── GLB model components ─────────────────────────────────────────────────────
 
 function GlbModel({ url, position, rotY = 0, scale = 1 }) {
@@ -54,10 +139,41 @@ function GlbModel({ url, position, rotY = 0, scale = 1 }) {
   return <primitive object={clone} position={position} rotation={[0, rotY, 0]} scale={scale} />;
 }
 
-// Suburban variant — swaps colormap texture so each house gets its own color
+// Kenney character GLBs have skins + bones — plain scene.clone() breaks the
+// skeleton binding and the mesh becomes invisible. SkeletonUtils.clone keeps
+// each instance's skeleton intact. Also re-binds the colormap texture so the
+// figure isn't grey.
+function SkinnedGlbModel({ url, position, rotY = 0, scale = 1 }) {
+  const { scene } = useGLTF(url);
+  const texture = useTexture('/models/characters/Textures/colormap.png');
+  const clone = useMemo(() => {
+    const c = cloneSkinned(scene);
+    c.traverse((node) => {
+      if (node.isMesh && node.material) {
+        const mat = node.material.clone();
+        mat.map = texture;
+        mat.map.flipY = false;
+        mat.transparent = false;
+        mat.needsUpdate = true;
+        node.material = mat;
+      }
+    });
+    return c;
+  }, [scene, texture]);
+  return <primitive object={clone} position={position} rotation={[0, rotY, 0]} scale={scale} />;
+}
+
+// Suburban variant — swaps colormap texture so each house gets its own color.
+// All palettes go through canvas to apply saturate/contrast boost (base PNGs
+// look washed-out next to the vivid industrial/commercial models otherwise).
+// colorIdx 0..2 → variation-a/b/c boosted; 3..7 → hue-shifted + boosted.
 function SuburbanGlbModel({ url, position, rotY = 0, scale = 1, colorIdx = 0 }) {
   const { scene } = useGLTF(url);
-  const texture = useTexture(SUBURBAN_COLORMAPS[colorIdx]);
+  const baseTextures = useTexture(SUBURBAN_COLORMAPS);
+  const texture = useMemo(() => {
+    const images = baseTextures.map((t) => t.image);
+    return getSuburbanTexture(colorIdx, images) || baseTextures[0];
+  }, [baseTextures, colorIdx]);
   const clone = useMemo(() => {
     const cloned = scene.clone(true);
     cloned.traverse(node => {
@@ -364,6 +480,17 @@ export function V2Scene({ metrics, tokenId, gifts = [] }) {
     // Buildings are placed on top of tile-low blocks.
     // Max safe offset from block center: HALF_B - building_half_footprint ≈ 12 - 3 = 9
     const JITTER = 7;
+    let suburbanIdx = 0; // counts placed suburban blocks → every 2nd gets a pedestrian
+    // Rule: cars must never overlap. Each car claims a segment of road and we
+    // refuse to place another within MIN_CAR_GAP units of an existing one on
+    // the same road centerline.
+    const occupiedCarSegments = []; // { axis: 'h'|'v', along: number, perp: number }
+    const MIN_CAR_GAP = 8;
+    // Rule: pedestrians must never overlap each other. Track placed (x, z)
+    // positions globally and skip a person if they'd land within MIN_PERSON_GAP
+    // of an already-placed one.
+    const occupiedPersonPositions = []; // { x, z }
+    const MIN_PERSON_GAP = 2.2;
 
     for (let bc_row = -gridR; bc_row <= gridR; bc_row++) {
       for (let bc_col = -gridR; bc_col <= gridR; bc_col++) {
@@ -411,7 +538,7 @@ export function V2Scene({ metrics, tokenId, gifts = [] }) {
             x: cx + ox, z: cz + oz,
             rotY:     Math.floor(rng() * 4) * Math.PI / 2,
             scale:    clusterScale * (0.9 + rng() * 0.2),
-            colorIdx: pack === 'suburban' ? Math.floor(rng() * 3) : undefined,
+            colorIdx: pack === 'suburban' ? Math.floor(rng() * SUBURBAN_PALETTE_COUNT) : undefined,
           });
         }
 
@@ -453,6 +580,90 @@ export function V2Scene({ metrics, tokenId, gifts = [] }) {
             });
           }
         }
+
+        // People & cars — only around suburban "domiki".
+        // Every 2nd suburban block → 1-2 pedestrians near a random house corner.
+        // Every suburban block → 1 car + 50% chance of a second one (≈ 1 car per 2 houses).
+        if (pack === 'suburban') {
+          suburbanIdx++;
+
+          if (suburbanIdx % 2 === 0) {
+            // Up to 2 pedestrians per block. Each one tries a few random sidewalk
+            // spots and bails if all of them are too close to an already-placed
+            // person — no character-on-character overlap.
+            const numPeople = 1 + (rng() < 0.5 ? 1 : 0);
+            const peopleSpots = [
+              [0, -11], [0, 11], [-11, 0], [11, 0],
+              [-5, -11], [5, -11], [-5, 11], [5, 11],
+              [-11, -5], [-11, 5], [11, -5], [11, 5],
+            ];
+            for (let p = 0; p < numPeople; p++) {
+              for (let attempt = 0; attempt < 6; attempt++) {
+                const [px, pz] = peopleSpots[Math.floor(rng() * peopleSpots.length)];
+                const wx = cx + px + (rng() - 0.5) * 0.6;
+                const wz = cz + pz + (rng() - 0.5) * 0.6;
+                const tooClose = occupiedPersonPositions.some(
+                  (q) => Math.hypot(q.x - wx, q.z - wz) < MIN_PERSON_GAP
+                );
+                if (tooClose) continue;
+                models.push({
+                  url:   MODELS.characters[Math.floor(rng() * MODELS.characters.length)],
+                  x:     wx,
+                  z:     wz,
+                  rotY:  rng() * Math.PI * 2,
+                  scale: 3.0,
+                });
+                occupiedPersonPositions.push({ x: wx, z: wz });
+                break;
+              }
+            }
+          }
+
+          // Cars: 1-2 per suburban block (≈ 1 per 2 houses). Rules:
+          //   1. Must sit on a road tile (one of the 4 surrounding lanes).
+          //   2. Must be oriented ALONG the road (never perpendicular).
+          //   3. Must NOT overlap another car already placed on the same road.
+          // Kenney car GLBs default-face along Z, so horizontal road needs rotY=±π/2.
+          const numCars = 1 + (rng() < 0.5 ? 1 : 0);
+          for (let cIdx = 0; cIdx < numCars; cIdx++) {
+            const candidates = [];
+            if (bc_row > -gridR) candidates.push({ axis: 'h', perp: cz - PERIOD / 2 });
+            if (bc_row <  gridR) candidates.push({ axis: 'h', perp: cz + PERIOD / 2 });
+            if (bc_col > -gridR) candidates.push({ axis: 'v', perp: cx - PERIOD / 2 });
+            if (bc_col <  gridR) candidates.push({ axis: 'v', perp: cx + PERIOD / 2 });
+            // Try up to 6 random (road, position) attempts; skip the car if none fit.
+            let placed = false;
+            for (let attempt = 0; attempt < 6 && !placed && candidates.length > 0; attempt++) {
+              const r = candidates[Math.floor(rng() * candidates.length)];
+              const along = (r.axis === 'h' ? cx : cz) + (rng() - 0.5) * (PERIOD * 0.4);
+              // Reject if any existing car on the same road is too close.
+              const conflict = occupiedCarSegments.some(
+                (s) => s.axis === r.axis && s.perp === r.perp && Math.abs(s.along - along) < MIN_CAR_GAP
+              );
+              if (conflict) continue;
+              const laneOffset = (rng() < 0.5 ? -1 : 1) * (S * 0.18);
+              if (r.axis === 'h') {
+                models.push({
+                  url:   MODELS.cars[Math.floor(rng() * MODELS.cars.length)],
+                  x:     along,
+                  z:     r.perp + laneOffset,
+                  rotY:  rng() < 0.5 ? Math.PI / 2 : -Math.PI / 2,
+                  scale: 1.4,
+                });
+              } else {
+                models.push({
+                  url:   MODELS.cars[Math.floor(rng() * MODELS.cars.length)],
+                  x:     r.perp + laneOffset,
+                  z:     along,
+                  rotY:  rng() < 0.5 ? 0 : Math.PI,
+                  scale: 1.4,
+                });
+              }
+              occupiedCarSegments.push({ axis: r.axis, perp: r.perp, along });
+              placed = true;
+            }
+          }
+        }
       }
     }
 
@@ -484,9 +695,11 @@ export function V2Scene({ metrics, tokenId, gifts = [] }) {
 
       {/* All GLB: tile-low blocks + road tiles + lights + buildings */}
       {data.models.map((m, i) =>
-        m.colorIdx !== undefined
-          ? <SuburbanGlbModel key={i} url={m.url} position={[m.x, 0, m.z]} rotY={m.rotY} scale={m.scale} colorIdx={m.colorIdx} />
-          : <GlbModel        key={i} url={m.url} position={[m.x, 0, m.z]} rotY={m.rotY} scale={m.scale} />
+        m.url?.includes('/characters/')
+          ? <SkinnedGlbModel  key={i} url={m.url} position={[m.x, 0, m.z]} rotY={m.rotY} scale={m.scale} />
+          : m.colorIdx !== undefined
+            ? <SuburbanGlbModel key={i} url={m.url} position={[m.x, 0, m.z]} rotY={m.rotY} scale={m.scale} colorIdx={m.colorIdx} />
+            : <GlbModel        key={i} url={m.url} position={[m.x, 0, m.z]} rotY={m.rotY} scale={m.scale} />
       )}
 
       {/* Central monument */}
@@ -544,7 +757,7 @@ export default function CityRendererV2({ city, tokenId, gifts = [] }) {
             <Canvas camera={{ position: [cp[0] * 1.1, cp[1] * 1.1, cp[2] * 1.1], fov: 42 }}>
               <Suspense fallback={null}>
                 <V2Scene metrics={metrics} tokenId={tokenId || 0} gifts={gifts} />
-                <OrbitControls enablePan={false} minDistance={8} maxDistance={300} maxPolarAngle={Math.PI / 2 - 0.04} autoRotate autoRotateSpeed={0.35} />
+                <CtrlPanOrbitControls minDistance={8} maxDistance={300} maxPolarAngle={Math.PI / 2 - 0.04} autoRotate autoRotateSpeed={0.35} />
               </Suspense>
             </Canvas>
             <button
