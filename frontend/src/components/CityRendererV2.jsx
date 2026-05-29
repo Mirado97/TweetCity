@@ -99,18 +99,37 @@ const MODELS = {
   commercialDetails: ['detail-awning','detail-awning-wide','detail-overhang','detail-overhang-wide','detail-parasol-a','detail-parasol-b'].map(n => `/models/commercial/${n}.glb`),
   characters: ['male-a','male-b','male-c','male-d','male-e','male-f','female-a','female-b','female-c','female-d','female-e','female-f']
                 .map(n => `/models/characters/character-${n}.glb`),
-  cars:       ['sedan','sedan-sports','suv','suv-luxury','taxi','van','hatchback-sports','delivery','delivery-flat','truck','truck-flat','police','firetruck','ambulance','garbage-truck']
-                .map(n => `/models/cars/${n}.glb`),
+  // Vehicles bucketed by zone so each district gets fitting traffic:
+  //   suburban   → regular passenger cars
+  //   commercial → trucks & delivery vans
+  //   industrial → tractors
+  //   skyscraper → premium cars + emergency services
+  carsSuburban:   ['sedan','sedan-sports','suv','suv-luxury','taxi','van','hatchback-sports']
+                    .map(n => `/models/cars/${n}.glb`),
+  carsCommercial: ['truck','truck-flat','delivery','delivery-flat','garbage-truck','van']
+                    .map(n => `/models/cars/${n}.glb`),
+  carsIndustrial: ['tractor','tractor-shovel','tractor-police','truck','truck-flat']
+                    .map(n => `/models/cars/${n}.glb`),
+  carsSkyscraper: ['suv-luxury','sedan-sports','sedan','police','ambulance','firetruck']
+                    .map(n => `/models/cars/${n}.glb`),
+};
+const CARS_BY_PACK = {
+  suburban:   MODELS.carsSuburban,
+  commercial: MODELS.carsCommercial,
+  industrial: MODELS.carsIndustrial,
+  skyscraper: MODELS.carsSkyscraper,
 };
 
-const ZONE_SCALE = { skyscraper: 8.0, commercial: 7.5, industrial: 11.0, suburban: 5.5 };
+// Baseline: pedestrian scale 3.5 ≈ a ~2 m human in world units.
+// All other props scaled relative to that so the city reads at consistent scale.
+const ZONE_SCALE = { skyscraper: 8.0, commercial: 7.5, industrial: 11.0, suburban: 7.5 };
 
 // ─── Tile grid constants ──────────────────────────────────────────────────────
 // All Kenney road/sidewalk tiles: native 1×1 → scale S → S×S world units
-const S       = 8;               // tile scale
+const S       = 10;              // tile scale → road width = 10 units (fits a car + lane)
 const BLOCK_N = 3;               // tiles per building-block side (3×3 = 9 tiles)
-const PERIOD  = (BLOCK_N + 1) * S;  // = 32 — block center spacing
-const HALF_B  = (BLOCK_N / 2) * S; // = 12 — half block size
+const PERIOD  = (BLOCK_N + 1) * S;  // = 40 — block center spacing
+const HALF_B  = (BLOCK_N / 2) * S; // = 15 — half block size
 
 const SUBURBAN_COLORMAPS = [
   '/models/suburban/variation-a.png',
@@ -480,12 +499,14 @@ export function V2Scene({ metrics, tokenId, gifts = [] }) {
     // Buildings are placed on top of tile-low blocks.
     // Max safe offset from block center: HALF_B - building_half_footprint ≈ 12 - 3 = 9
     const JITTER = 7;
-    let suburbanIdx = 0; // counts placed suburban blocks → every 2nd gets a pedestrian
+    // Counter across ALL suburban houses placed (not blocks). Every 2nd house
+    // gets a neighbouring pedestrian.
+    let suburbanHouseIdx = 0;
     // Rule: cars must never overlap. Each car claims a segment of road and we
     // refuse to place another within MIN_CAR_GAP units of an existing one on
     // the same road centerline.
     const occupiedCarSegments = []; // { axis: 'h'|'v', along: number, perp: number }
-    const MIN_CAR_GAP = 8;
+    const MIN_CAR_GAP = 12; // bigger cars (scale 2.5) need wider parking gaps
     // Rule: pedestrians must never overlap each other. Track placed (x, z)
     // positions globally and skip a person if they'd land within MIN_PERSON_GAP
     // of an already-placed one.
@@ -525,10 +546,12 @@ export function V2Scene({ metrics, tokenId, gifts = [] }) {
           clusterOffsets = [[(rng() - 0.5) * 2, (rng() - 0.5) * 2]];
           clusterScale = baseScale * (0.9 + rng() * 0.1);
         } else {
-          // suburban: 3-4 small houses in block corners
-          const corners = [[-5, -5], [5, -5], [-5, 5], [5, 5]];
-          if (rng() < 0.35) corners.splice(Math.floor(rng() * 4) | 0, 1);
-          clusterOffsets = corners.map(([ox, oz]) => [ox + (rng() - 0.5) * 1.5, oz + (rng() - 0.5) * 1.5]);
+          // Suburban: 2-3 bigger houses. Block half-size grew to 15 (was 12)
+          // since S = 10, so push corners further out (±8) to fill the space.
+          const corners = [[-8, -8], [8, -8], [-8, 8], [8, 8]];
+          corners.splice(Math.floor(rng() * 4), 1);
+          if (rng() < 0.4) corners.splice(Math.floor(rng() * corners.length), 1);
+          clusterOffsets = corners.map(([ox, oz]) => [ox + (rng() - 0.5) * 1.2, oz + (rng() - 0.5) * 1.2]);
           clusterScale   = baseScale * (0.9 + rng() * 0.2);
         }
 
@@ -552,18 +575,16 @@ export function V2Scene({ metrics, tokenId, gifts = [] }) {
         if ((pack === 'commercial' || pack === 'skyscraper') && rng() < 0.4) {
           models.push({ url: MODELS.commercialDetails[Math.floor(rng()*MODELS.commercialDetails.length)], x: cx+(rng()-0.5)*6, z: cz+(rng()-0.5)*6, rotY: Math.floor(rng()*4)*Math.PI/2, scale: 3.5 });
         }
-        // Trees by zone: suburban 3-5, industrial 2-3, commercial/skyscraper 0
-        // Positions avoid house footprints: suburban houses at (±5,±5), industrial at center
-        const numTrees = pack === 'suburban'  ? 3 + Math.floor(rng() * 3)
+        // Trees by zone: suburban 2-3 (bigger houses leave less room),
+        // industrial 2-3, commercial/skyscraper 0.
+        const numTrees = pack === 'suburban'  ? 2 + Math.floor(rng() * 2)
                        : pack === 'industrial' ? 2 + Math.floor(rng() * 2)
                        : 0;
         if (numTrees > 0) {
-          // Candidate spots chosen to not overlap buildings
+          // Spots pushed to the block edge so they don't clip the larger houses.
           const spots = pack === 'suburban'
-            // Mid-edges between corner houses + sidewalk strip near road
-            ? [ [0,-10],[0,10],[-10,0],[10,0], [-10,-10],[10,-10],[-10,10],[10,10] ]
-            // Industrial building fills center → trees only at block corners
-            : [ [-10,-10],[10,-10],[-10,10],[10,10] ];
+            ? [ [0,-13],[0,13],[-13,0],[13,0] ]
+            : [ [-12,-12],[12,-12],[-12,12],[12,12] ];
           // Shuffle via rng
           for (let i = spots.length - 1; i > 0; i--) {
             const j = Math.floor(rng() * (i + 1));
@@ -581,87 +602,67 @@ export function V2Scene({ metrics, tokenId, gifts = [] }) {
           }
         }
 
-        // People & cars — only around suburban "domiki".
-        // Every 2nd suburban block → 1-2 pedestrians near a random house corner.
-        // Every suburban block → 1 car + 50% chance of a second one (≈ 1 car per 2 houses).
+        // People — only around suburban "domiki". A pedestrian next to every
+        // 2nd HOUSE (not block). Counter is global so cadence stays consistent.
         if (pack === 'suburban') {
-          suburbanIdx++;
-
-          if (suburbanIdx % 2 === 0) {
-            // Up to 2 pedestrians per block. Each one tries a few random sidewalk
-            // spots and bails if all of them are too close to an already-placed
-            // person — no character-on-character overlap.
-            const numPeople = 1 + (rng() < 0.5 ? 1 : 0);
-            const peopleSpots = [
-              [0, -11], [0, 11], [-11, 0], [11, 0],
-              [-5, -11], [5, -11], [-5, 11], [5, 11],
-              [-11, -5], [-11, 5], [11, -5], [11, 5],
-            ];
-            for (let p = 0; p < numPeople; p++) {
-              for (let attempt = 0; attempt < 6; attempt++) {
-                const [px, pz] = peopleSpots[Math.floor(rng() * peopleSpots.length)];
-                const wx = cx + px + (rng() - 0.5) * 0.6;
-                const wz = cz + pz + (rng() - 0.5) * 0.6;
-                const tooClose = occupiedPersonPositions.some(
-                  (q) => Math.hypot(q.x - wx, q.z - wz) < MIN_PERSON_GAP
-                );
-                if (tooClose) continue;
-                models.push({
-                  url:   MODELS.characters[Math.floor(rng() * MODELS.characters.length)],
-                  x:     wx,
-                  z:     wz,
-                  rotY:  rng() * Math.PI * 2,
-                  scale: 3.0,
-                });
-                occupiedPersonPositions.push({ x: wx, z: wz });
-                break;
-              }
+          for (const [hx, hz] of clusterOffsets) {
+            suburbanHouseIdx++;
+            if (suburbanHouseIdx % 2 !== 0) continue;
+            // Stand on the side of the house facing the nearest block edge.
+            // House footprint ≈ 7-9 units, so offset needs to clear that.
+            const towardX = hx >= 0 ?  5.0 : -5.0;
+            const towardZ = hz >= 0 ?  5.0 : -5.0;
+            for (let attempt = 0; attempt < 6; attempt++) {
+              const wx = cx + hx + towardX + (rng() - 0.5) * 1.2;
+              const wz = cz + hz + towardZ + (rng() - 0.5) * 1.2;
+              const tooClose = occupiedPersonPositions.some(
+                (q) => Math.hypot(q.x - wx, q.z - wz) < MIN_PERSON_GAP
+              );
+              if (tooClose) continue;
+              models.push({
+                url:   MODELS.characters[Math.floor(rng() * MODELS.characters.length)],
+                x:     wx, z: wz,
+                rotY:  rng() * Math.PI * 2,
+                scale: 3.5,
+              });
+              occupiedPersonPositions.push({ x: wx, z: wz });
+              break;
             }
           }
+        }
 
-          // Cars: 1-2 per suburban block (≈ 1 per 2 houses). Rules:
-          //   1. Must sit on a road tile (one of the 4 surrounding lanes).
-          //   2. Must be oriented ALONG the road (never perpendicular).
-          //   3. Must NOT overlap another car already placed on the same road.
-          // Kenney car GLBs default-face along Z, so horizontal road needs rotY=±π/2.
-          const numCars = 1 + (rng() < 0.5 ? 1 : 0);
-          for (let cIdx = 0; cIdx < numCars; cIdx++) {
-            const candidates = [];
-            if (bc_row > -gridR) candidates.push({ axis: 'h', perp: cz - PERIOD / 2 });
-            if (bc_row <  gridR) candidates.push({ axis: 'h', perp: cz + PERIOD / 2 });
-            if (bc_col > -gridR) candidates.push({ axis: 'v', perp: cx - PERIOD / 2 });
-            if (bc_col <  gridR) candidates.push({ axis: 'v', perp: cx + PERIOD / 2 });
-            // Try up to 6 random (road, position) attempts; skip the car if none fit.
-            let placed = false;
-            for (let attempt = 0; attempt < 6 && !placed && candidates.length > 0; attempt++) {
-              const r = candidates[Math.floor(rng() * candidates.length)];
-              const along = (r.axis === 'h' ? cx : cz) + (rng() - 0.5) * (PERIOD * 0.4);
-              // Reject if any existing car on the same road is too close.
-              const conflict = occupiedCarSegments.some(
-                (s) => s.axis === r.axis && s.perp === r.perp && Math.abs(s.along - along) < MIN_CAR_GAP
-              );
-              if (conflict) continue;
-              const laneOffset = (rng() < 0.5 ? -1 : 1) * (S * 0.18);
-              if (r.axis === 'h') {
-                models.push({
-                  url:   MODELS.cars[Math.floor(rng() * MODELS.cars.length)],
-                  x:     along,
-                  z:     r.perp + laneOffset,
-                  rotY:  rng() < 0.5 ? Math.PI / 2 : -Math.PI / 2,
-                  scale: 1.4,
-                });
-              } else {
-                models.push({
-                  url:   MODELS.cars[Math.floor(rng() * MODELS.cars.length)],
-                  x:     r.perp + laneOffset,
-                  z:     along,
-                  rotY:  rng() < 0.5 ? 0 : Math.PI,
-                  scale: 1.4,
-                });
-              }
-              occupiedCarSegments.push({ axis: r.axis, perp: r.perp, along });
-              placed = true;
+        // Cars — on EVERY block, not just suburban (otherwise the inner
+        // commercial/industrial/skyscraper streets stay empty). Vehicle type
+        // matches the zone: passenger cars for suburban, trucks for commercial,
+        // tractors for industrial, premium + emergency for skyscraper.
+        // Rules: on road tiles only, oriented along the road, no overlap.
+        const carList = CARS_BY_PACK[pack] || MODELS.carsSuburban;
+        const numCars = 1 + (rng() < 0.5 ? 1 : 0);
+        for (let cIdx = 0; cIdx < numCars; cIdx++) {
+          const candidates = [];
+          if (bc_row > -gridR) candidates.push({ axis: 'h', perp: cz - PERIOD / 2 });
+          if (bc_row <  gridR) candidates.push({ axis: 'h', perp: cz + PERIOD / 2 });
+          if (bc_col > -gridR) candidates.push({ axis: 'v', perp: cx - PERIOD / 2 });
+          if (bc_col <  gridR) candidates.push({ axis: 'v', perp: cx + PERIOD / 2 });
+          let placed = false;
+          for (let attempt = 0; attempt < 6 && !placed && candidates.length > 0; attempt++) {
+            const r = candidates[Math.floor(rng() * candidates.length)];
+            const along = (r.axis === 'h' ? cx : cz) + (rng() - 0.5) * (PERIOD * 0.4);
+            const conflict = occupiedCarSegments.some(
+              (s) => s.axis === r.axis && s.perp === r.perp && Math.abs(s.along - along) < MIN_CAR_GAP
+            );
+            if (conflict) continue;
+            const laneOffset = (rng() < 0.5 ? -1 : 1) * (S * 0.18);
+            const url = carList[Math.floor(rng() * carList.length)];
+            if (r.axis === 'h') {
+              models.push({ url, x: along, z: r.perp + laneOffset,
+                rotY: rng() < 0.5 ? Math.PI / 2 : -Math.PI / 2, scale: 2.5 });
+            } else {
+              models.push({ url, x: r.perp + laneOffset, z: along,
+                rotY: rng() < 0.5 ? 0 : Math.PI, scale: 2.5 });
             }
+            occupiedCarSegments.push({ axis: r.axis, perp: r.perp, along });
+            placed = true;
           }
         }
       }
