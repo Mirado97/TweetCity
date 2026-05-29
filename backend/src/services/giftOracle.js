@@ -89,11 +89,31 @@ async function didMentionPost(twitter, cityHandle, gift) {
 }
 
 /**
- * Has the city owner pinned the buyer's tweet?
+ * Has the city owner pinned the buyer's tweet — or any of their own
+ * tweets that references it?
+ *
+ * Twitter doesn't let you pin someone else's tweet directly: you can only
+ * pin your own. Owners typically quote-tweet (or retweet/reply with link)
+ * the buyer's tweet and pin THAT. Accept any of these.
  */
 async function isPinned(twitter, cityHandle, tweetId) {
   const profile = await twitter.getProfileWithPinned(cityHandle);
-  return profile.pinnedTweetId === String(tweetId);
+  if (!profile.pinnedTweetId) return false;
+  if (profile.pinnedTweetId === String(tweetId)) return true;
+
+  // Owner pinned one of their own tweets — does it reference the buyer's tweet?
+  const lookback = Number(process.env.GIFT_ORACLE_LOOKBACK || 100);
+  const tweets = await twitter.getUserTweetsWithMeta(cityHandle, lookback);
+  const pinned = tweets.find((t) => String(t.id) === profile.pinnedTweetId);
+  if (!pinned) {
+    // Fallback: text of the pinned post contains the original tweet URL
+    return (profile.pinnedText || "").includes(`/status/${tweetId}`);
+  }
+  if (pinned.isQuote   && pinned.quotedTweetId    === String(tweetId)) return true;
+  if (pinned.isRetweet && pinned.retweetedTweetId === String(tweetId)) return true;
+  if (pinned.isReply   && pinned.replyToTweetId   === String(tweetId)) return true;
+  if ((pinned.text || "").includes(`/status/${tweetId}`)) return true;
+  return false;
 }
 
 /**

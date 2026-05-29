@@ -38,5 +38,5 @@ export const GIFT_TYPES = [
   { name: "Flag",       icon: "🚩", obligation: "Comment on tweet",        days: 7  },
   { name: "Billboard",  icon: "📺", obligation: "Quote tweet with mention", days: 14 },
   { name: "Monument",   icon: "🏛",  obligation: "Dedicated mention post",  days: 21 },
-  { name: "District",   icon: "🏘",  obligation: "Pinned tweet for 7 days", days: 30 },
+  { name: "District",   icon: "🏘",  obligation: "Pin tweet (or quote of it) for 7 days", days: 30 },
 ];
