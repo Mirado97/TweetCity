@@ -213,7 +213,9 @@ class ApifyProvider extends ITwitterProvider {
       items = await this._runSync(actor, input);
     } catch (e) {
       console.warn(`[ApifyProvider] getTweetLikers actor "${actor}" failed:`, e.message);
-      return new Set();
+      // Distinguish actor failure (return null) from "actor ran but no likers" (empty Set).
+      // Callers can fall back to other engagement signals when the actor is dead.
+      return null;
     }
 
     const users = new Set();

@@ -45,10 +45,30 @@ function mentionsHandle(text, handle) {
 
 /**
  * Did the city owner like the tweet?
+ * Returns null if the likers-actor is dead (so callers can fall back to other signals).
+ * Returns true/false when the check completed.
  */
 async function didLike(twitter, cityHandle, tweetId) {
   const likers = await twitter.getTweetLikers(tweetId);
+  if (likers === null) return null;
   return likers.has(cityHandle.toLowerCase());
+}
+
+/**
+ * Did the city owner do ANY engagement on the tweet (retweet/reply/quote)?
+ * Used as a fallback when the likers-actor is down — Twitter has been killing
+ * those scrapers, so the "like" signal isn't always available.
+ */
+async function anyEngagement(twitter, cityHandle, tweetId) {
+  const lookback = Number(process.env.GIFT_ORACLE_LOOKBACK || 100);
+  const tweets = await twitter.getUserTweetsWithMeta(cityHandle, lookback);
+  return tweets.find((t) => {
+    if (t.isRetweet && t.retweetedTweetId === String(tweetId)) return true;
+    if (t.isReply   && t.replyToTweetId   === String(tweetId)) return true;
+    if (t.isQuote   && t.quotedTweetId    === String(tweetId)) return true;
+    if ((t.text || "").includes(`/status/${tweetId}`)) return true;
+    return false;
+  });
 }
 
 /**
@@ -134,18 +154,24 @@ async function verifyGiftAction(gift, cityHandle) {
     switch (gift.giftType) {
       case GIFT_TYPE.Graffiti: {
         const liked = await didLike(twitter, cityHandle, tweetId);
-        return liked
-          ? { ok: true, reason: "owner liked the tweet" }
-          : { ok: false, reason: "like not found" };
+        if (liked === true) return { ok: true, reason: "owner liked the tweet" };
+        // Either liked=false or likers-actor dead (null). In both cases we accept
+        // any other engagement (retweet/reply/quote/mention) as evidence.
+        const eng = await anyEngagement(twitter, cityHandle, tweetId);
+        if (eng) return { ok: true, reason: `engagement detected (${eng.id})` };
+        return { ok: false, reason: liked === null ? "likers actor down + no other engagement" : "no like or engagement found" };
       }
       case GIFT_TYPE.StreetArt: {
         const [liked, retweet] = await Promise.all([
           didLike(twitter, cityHandle, tweetId),
           findEngagement(twitter, cityHandle, tweetId, "retweet"),
         ]);
-        if (!liked)   return { ok: false, reason: "like missing" };
         if (!retweet) return { ok: false, reason: "retweet missing" };
-        return { ok: true, reason: "like + retweet detected" };
+        // Retweet is the verifiable half. If the likers-actor is down we accept
+        // the retweet alone; if it's alive we still require the like.
+        if (liked === null) return { ok: true, reason: "retweet detected (likers actor down)" };
+        if (liked === true) return { ok: true, reason: "like + retweet detected" };
+        return { ok: false, reason: "like missing" };
       }
       case GIFT_TYPE.Flag: {
         const reply = await findEngagement(twitter, cityHandle, tweetId, "reply");
