@@ -93,3 +93,22 @@ export async function triggerSweep(signer, dryRun = false) {
   const r = await fetch(url, { method: "POST", headers: await authHeaders(signer) });
   return handle(r);
 }
+
+export async function fetchGifts(signer) {
+  const r = await fetch(`${API_BASE}/api/admin/gifts`, { headers: await authHeaders(signer) });
+  return handle(r);
+}
+
+export async function checkGift(signer, giftId) {
+  const r = await fetch(`${API_BASE}/api/admin/gifts/${giftId}/check`, {
+    method: "POST", headers: await authHeaders(signer),
+  });
+  return handle(r);
+}
+
+export async function forceVerifyGift(signer, giftId) {
+  const r = await fetch(`${API_BASE}/api/admin/gifts/${giftId}/force-verify`, {
+    method: "POST", headers: await authHeaders(signer),
+  });
+  return handle(r);
+}

@@ -9,8 +9,12 @@ const {
   getGiftsSettings,
   getGiftsStats,
   listAllCities,
+  getGiftsForCity,
+  getHandleByTokenId,
+  verifyGiftEngagement,
+  GIFT_STATUS,
 } = require("../services/contract");
-const { runSweep } = require("../services/giftOracle");
+const { runSweep, verifyGiftAction } = require("../services/giftOracle");
 
 const HIDDEN_FILE = path.join(__dirname, "../../data/admin-hidden.json");
 
@@ -114,6 +118,62 @@ router.post("/admin/cities/:tokenId/unhide", (req, res) => {
   delete hidden[tokenId];
   saveHidden(hidden);
   res.json({ ok: true, tokenId, hidden: false });
+});
+
+// All gifts across all cities — for the admin Gifts tab.
+// Returns each gift with the resolved city handle so the panel can show context.
+router.get("/admin/gifts", async (req, res) => {
+  try {
+    const tcs = await getTweetCitySettings();
+    const total = tcs.totalSupply;
+    const out = [];
+    for (let tokenId = 1; tokenId <= total; tokenId++) {
+      let gifts = [];
+      try { gifts = await getGiftsForCity(tokenId); } catch { continue; }
+      if (gifts.length === 0) continue;
+      const handle = await getHandleByTokenId(tokenId).catch(() => "");
+      for (const g of gifts) out.push({ ...g, cityHandle: handle });
+    }
+    // Newest first
+    out.sort((a, b) => b.createdAt - a.createdAt);
+    res.json(out);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Dry-run Twitter verification for a single gift — same logic as the cron uses,
+// but doesn't touch the chain. Surfaces the exact reason why Apify says no.
+router.post("/admin/gifts/:giftId/check", async (req, res) => {
+  try {
+    const giftId = req.params.giftId;
+    // Find the gift to get its cityTokenId
+    const tcs = await getTweetCitySettings();
+    let gift = null;
+    for (let tokenId = 1; tokenId <= tcs.totalSupply && !gift; tokenId++) {
+      const gs = await getGiftsForCity(tokenId).catch(() => []);
+      gift = gs.find((g) => String(g.id) === String(giftId));
+    }
+    if (!gift) return res.status(404).json({ error: "Gift not found" });
+    const cityHandle = await getHandleByTokenId(gift.cityTokenId).catch(() => "");
+    const result = await verifyGiftAction(gift, cityHandle);
+    res.json({ gift, cityHandle, ...result });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Force-verify — calls verifyEngagement directly without Apify check.
+// Funds (ownerAmount) transfer to the city manager wallet on-chain.
+// Use when Apify fails to detect a real engagement.
+router.post("/admin/gifts/:giftId/force-verify", async (req, res) => {
+  try {
+    const giftId = req.params.giftId;
+    const result = await verifyGiftEngagement(giftId);
+    res.json({ ok: true, giftId, ...result });
+  } catch (e) {
+    res.status(500).json({ error: e.shortMessage || e.message });
+  }
 });
 
 router.post("/admin/sweep", async (req, res) => {

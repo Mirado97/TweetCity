@@ -2,21 +2,26 @@ import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { ethers } from "ethers";
 import {
-  Shield, BarChart3, FileCode, Building2, Server,
-  Loader2, AlertTriangle, CheckCircle2, RefreshCw, EyeOff, Eye, ExternalLink,
+  Shield, BarChart3, FileCode, Building2, Server, Gift,
+  Loader2, AlertTriangle, CheckCircle2, RefreshCw, EyeOff, Eye, ExternalLink, Zap,
 } from "lucide-react";
 import { getContract, getGiftsContract, fetchConfig as fetchPublicConfig, GIFT_TYPES, LEVEL_NAMES } from "../lib/contract";
 import {
   fetchOwner, fetchStats, fetchConfig as fetchAdminConfig,
   fetchCities, hideCity, unhideCity, triggerSweep,
+  fetchGifts, checkGift, forceVerifyGift,
 } from "../lib/adminApi";
 
 const TABS = [
   { id: "stats",     label: "Stats",     icon: BarChart3 },
   { id: "contracts", label: "Contracts", icon: FileCode },
   { id: "cities",    label: "Cities",    icon: Building2 },
+  { id: "gifts",     label: "Gifts",     icon: Gift },
   { id: "backend",   label: "Backend",   icon: Server },
 ];
+
+const GIFT_STATUS_LABELS = ["Pending", "Accepted", "Verified", "Rejected", "Expired"];
+const GIFT_STATUS_COLORS = ["amber", "cyan", "emerald", "rose", "slate"];
 
 function fmtMNT(wei) {
   try { return Number(ethers.formatEther(wei || "0")).toFixed(4); } catch { return "0"; }
@@ -391,6 +396,131 @@ function CitiesTab({ signer }) {
   );
 }
 
+function GiftsTab({ signer }) {
+  const [list, setList] = useState([]);
+  const [err, setErr] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [busyId, setBusyId] = useState(null);
+  const [checkResult, setCheckResult] = useState(null); // { giftId, ... }
+  const [filter, setFilter] = useState("accepted");
+
+  async function reload() {
+    setLoading(true); setErr("");
+    try { setList(await fetchGifts(signer)); }
+    catch (e) { setErr(e.message); }
+    finally { setLoading(false); }
+  }
+  useEffect(() => { reload(); }, []);
+
+  async function runCheck(giftId) {
+    setBusyId(giftId); setCheckResult(null);
+    try { setCheckResult({ giftId, ...(await checkGift(signer, giftId)) }); }
+    catch (e) { setCheckResult({ giftId, error: e.message }); }
+    finally { setBusyId(null); }
+  }
+
+  async function runForceVerify(giftId) {
+    if (!window.confirm(`Force-verify gift #${giftId}? Funds will be transferred to the city manager without Apify check.`)) return;
+    setBusyId(giftId);
+    try {
+      const r = await forceVerifyGift(signer, giftId);
+      alert(`Verified. txHash: ${r.txHash || r.giftId}`);
+      await reload();
+    } catch (e) { alert("Force verify failed: " + e.message); }
+    finally { setBusyId(null); }
+  }
+
+  if (loading) return <div className="flex items-center gap-2 text-[#94a3b8]"><Loader2 className="w-4 h-4 animate-spin" />Loading gifts...</div>;
+  if (err) return <ErrorBox msg={err} onRetry={reload} />;
+
+  const filtered = list.filter((g) => {
+    if (filter === "all") return true;
+    if (filter === "accepted") return g.status === 1;
+    if (filter === "pending")  return g.status === 0;
+    if (filter === "verified") return g.status === 2;
+    if (filter === "terminal") return g.status === 3 || g.status === 4;
+    return true;
+  });
+
+  return (
+    <div className="space-y-4">
+      <div className="flex gap-2 items-center">
+        {[
+          { id: "accepted", label: `Accepted (${list.filter(g=>g.status===1).length})` },
+          { id: "pending",  label: `Pending (${list.filter(g=>g.status===0).length})` },
+          { id: "verified", label: `Verified (${list.filter(g=>g.status===2).length})` },
+          { id: "terminal", label: `Rejected+Expired (${list.filter(g=>g.status===3||g.status===4).length})` },
+          { id: "all",      label: `All (${list.length})` },
+        ].map((f) => (
+          <button
+            key={f.id}
+            onClick={() => setFilter(f.id)}
+            className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition ${
+              filter === f.id
+                ? "bg-[#00d4ff]/10 text-[#00d4ff] border-[#00d4ff]/30"
+                : "bg-[#16161f] text-[#94a3b8] border-[rgba(255,255,255,0.06)] hover:text-[#f1f5f9]"
+            }`}
+          >{f.label}</button>
+        ))}
+        <Btn variant="ghost" onClick={reload} className="ml-auto"><RefreshCw className="w-3 h-3" /></Btn>
+      </div>
+
+      <div className="text-xs text-[#64748b]">
+        <strong className="text-amber-400">Force Verify</strong> вызывает <code>verifyEngagement</code> на контракте напрямую, минуя Apify-проверку. Деньги (90% от amount) переводятся на cityManager. Используй, если задание реально выполнено, но Apify не нашёл.
+      </div>
+
+      {checkResult && (
+        <div className="rounded-lg p-3 bg-[#0a0a0f] border border-[rgba(255,255,255,0.06)] text-xs">
+          <div className="font-semibold mb-1 text-[#f1f5f9]">Check #{checkResult.giftId}</div>
+          <pre className="text-[#94a3b8] overflow-auto max-h-32">{JSON.stringify(checkResult, null, 2)}</pre>
+        </div>
+      )}
+
+      <div className="glass rounded-xl border border-[rgba(255,255,255,0.06)] divide-y divide-[rgba(255,255,255,0.04)]">
+        {filtered.length === 0 && <div className="p-6 text-center text-[#64748b]">No gifts</div>}
+        {filtered.map((g) => {
+          const status = g.status;
+          const color = GIFT_STATUS_COLORS[status];
+          const type = GIFT_TYPES[g.giftType] || { name: "?", icon: "❓" };
+          return (
+            <div key={g.id} className="p-3 flex items-center gap-3">
+              <div className="w-10 text-center">
+                <div className="text-xs text-[#64748b]">#</div>
+                <div className="text-sm font-bold text-[#f1f5f9]">{g.id}</div>
+              </div>
+              <div className="text-2xl">{type.icon}</div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="font-semibold text-[#f1f5f9]">{type.name}</span>
+                  <span className={`text-[10px] px-1.5 py-0.5 rounded bg-${color}-500/10 text-${color}-400 font-bold uppercase`}>
+                    {GIFT_STATUS_LABELS[status]}
+                  </span>
+                  <span className="text-xs text-[#94a3b8]">→ city #{g.cityTokenId} @{g.cityHandle || "?"}</span>
+                </div>
+                <div className="text-xs text-[#64748b] mt-0.5 flex gap-3">
+                  <span>{fmtMNT(g.amount)} MNT</span>
+                  <span>buyer: {fmtAddr(g.buyer)}</span>
+                  <a href={g.tweetUrl} target="_blank" rel="noreferrer" className="text-[#00d4ff] hover:underline truncate max-w-xs">tweet ↗</a>
+                </div>
+              </div>
+              {status === 1 && (
+                <>
+                  <Btn variant="ghost" disabled={busyId === g.id} onClick={() => runCheck(g.id)}>
+                    {busyId === g.id ? <Loader2 className="w-3 h-3 animate-spin" /> : "Check"}
+                  </Btn>
+                  <Btn disabled={busyId === g.id} onClick={() => runForceVerify(g.id)}>
+                    <Zap className="w-3 h-3 inline mr-1" />Force Verify
+                  </Btn>
+                </>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function BackendTab({ signer }) {
   const [cfg, setCfg] = useState(null);
   const [err, setErr] = useState("");
@@ -543,6 +673,7 @@ export default function AdminPage({ address, signer, onConnect }) {
             {tab === "stats"     && <StatsTab signer={signer} />}
             {tab === "contracts" && <ContractsTab signer={signer} />}
             {tab === "cities"    && <CitiesTab signer={signer} />}
+            {tab === "gifts"     && <GiftsTab signer={signer} />}
             {tab === "backend"   && <BackendTab signer={signer} />}
           </div>
         </>
