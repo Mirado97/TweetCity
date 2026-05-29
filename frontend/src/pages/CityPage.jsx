@@ -57,12 +57,12 @@ export default function CityPage({ tokenId, signer, address }) {
       ]);
       setPrices([...p]);
       // Only Verified gifts (status === 2) get rendered on the city map.
-      // Accepted ones (status === 1) are NOT shown until the oracle confirms
-      // the engagement — otherwise the owner gets free advertising just by
-      // clicking Approve without actually fulfilling the obligation.
+      // Accepted ones (status === 1) are NOT shown until the oracle confirms.
+      console.log("[CityPage] active gifts from contract:", active.map(g => ({ id: Number(g.id), status: Number(g.status), type: Number(g.giftType) })));
       const visible = active
         .filter(g => Number(g.status) === 2)
         .map(g => ({ id: g.id, giftType: g.giftType, tweetUrl: g.tweetUrl, buyer: g.buyer, status: g.status }));
+      console.log("[CityPage] visible on map after filter:", visible.length);
       setActiveGifts(visible);
       setGiftStats({ totalGifts: stats[0], totalEarned: stats[1], pendingCount: stats[2] });
     } catch {}
