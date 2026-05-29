@@ -94,11 +94,22 @@ app.listen(PORT, () => {
 
   // Gift oracle cron — verifies Twitter engagements for Accepted gifts.
   // Disabled when DISABLE_GIFT_ORACLE=true or GIFTS_CONTRACT_ADDRESS not set.
+  // NOTE: setInterval pauses if the host (e.g. Render free tier) sleeps.
+  // Keep the service awake via an external pinger (UptimeRobot / cron-job.org)
+  // hitting /health every ~5 minutes, otherwise ticks get lost between requests.
   if (process.env.DISABLE_GIFT_ORACLE !== "true" && process.env.GIFTS_CONTRACT_ADDRESS) {
     const intervalMs = Number(process.env.GIFT_ORACLE_INTERVAL_MS || 10 * 60 * 1000);
     const { runSweep } = require("./services/giftOracle");
-    setInterval(() => {
-      runSweep().catch((e) => console.error("[giftOracle cron]", e.message));
+    let tick = 0;
+    setInterval(async () => {
+      tick++;
+      console.log(`[giftOracle] tick #${tick} at ${new Date().toISOString()}`);
+      try {
+        const result = await runSweep();
+        console.log(`[giftOracle] tick #${tick} done:`, result);
+      } catch (e) {
+        console.error(`[giftOracle] tick #${tick} failed:`, e.message);
+      }
     }, intervalMs);
     console.log(`[giftOracle] cron enabled, interval=${intervalMs}ms`);
   } else {
