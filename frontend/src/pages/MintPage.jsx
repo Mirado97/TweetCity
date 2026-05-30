@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Sparkles, Loader2, AlertCircle, ArrowRight, ExternalLink, CheckCircle2 } from "lucide-react";
 import { API_BASE, LEVEL_NAMES } from "../lib/contract";
+import { createWalletAuth, walletAuthParams } from "../lib/walletAuth";
 import CityRendererV2 from "../components/CityRendererV2";
 
 const VIRAL_TEXTS = [
@@ -25,7 +26,7 @@ const STEPS = {
   done:    { num: "✓",     title: "City Minted!" },
 };
 
-export default function MintPage({ address, onConnect, onMinted }) {
+export default function MintPage({ address, signer, onConnect, onMinted }) {
   const [step, setStep] = useState(address ? "x" : "wallet");
   const [linked, setLinked] = useState(null); // null | {linked, cityHandle, twitterUserId}
   const [error, setError] = useState("");
@@ -50,16 +51,22 @@ export default function MintPage({ address, onConnect, onMinted }) {
     return () => { if (pollRef.current) clearInterval(pollRef.current); };
   }, [address]);
 
-  function startConnectX() {
-    if (!address) return;
-    const url = `${API_BASE}/auth/twitter/start?address=${address}`;
-    window.open(url, "_blank", "noopener,noreferrer");
-    // Poll status every 2s until we see linked, then stop.
-    if (pollRef.current) clearInterval(pollRef.current);
-    pollRef.current = setInterval(async () => {
-      const d = await refreshLink(address);
-      if (d?.linked) { clearInterval(pollRef.current); pollRef.current = null; }
-    }, 2000);
+  async function startConnectX() {
+    if (!address || !signer) return;
+    setError("");
+    try {
+      const auth = await createWalletAuth(signer, "link-twitter:wallet");
+      const url = `${API_BASE}/auth/twitter/start?${walletAuthParams(auth).toString()}`;
+      window.open(url, "_blank", "noopener,noreferrer");
+      // Poll status every 2s until we see linked, then stop.
+      if (pollRef.current) clearInterval(pollRef.current);
+      pollRef.current = setInterval(async () => {
+        const d = await refreshLink(address);
+        if (d?.linked) { clearInterval(pollRef.current); pollRef.current = null; }
+      }, 2000);
+    } catch (e) {
+      setError(e.message);
+    }
   }
 
   async function mint() {
@@ -67,10 +74,11 @@ export default function MintPage({ address, onConnect, onMinted }) {
     setLoading(true);
     setStep("minting");
     try {
+      const auth = await createWalletAuth(signer, "mint-city");
       const res = await fetch(`${API_BASE}/api/mint`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ walletAddress: address }),
+        body: JSON.stringify(auth),
       });
       const data = await res.json();
       if (data.error) throw new Error(data.error);

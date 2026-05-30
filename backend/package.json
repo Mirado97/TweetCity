@@ -13,7 +13,6 @@
   "type": "commonjs",
   "dependencies": {
     "@anthropic-ai/sdk": "^0.98.0",
-    "@pinata/sdk": "^2.1.0",
     "cors": "^2.8.6",
     "dotenv": "^17.4.2",
     "ethers": "^6.16.0",
@@ -21,5 +20,8 @@
     "express-rate-limit": "^8.5.2",
     "helmet": "^8.2.0",
     "undici": "^7.26.0"
+  },
+  "overrides": {
+    "ws": "8.21.0"
   }
 }

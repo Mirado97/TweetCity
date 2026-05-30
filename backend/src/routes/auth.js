@@ -15,6 +15,7 @@
 const express = require("express");
 const crypto = require("node:crypto");
 const oauthStore = require("../storage/oauthStore");
+const { verifyWalletAuth } = require("../utils/walletAuth");
 
 // Optional proxy for restricted networks (RU dev).
 if (process.env.HTTPS_PROXY || process.env.HTTP_PROXY) {
@@ -39,14 +40,11 @@ router.get("/twitter/status", (req, res) => {
   if (!cityHandle && !address) {
     return res.status(400).json({ error: "cityHandle or address query param is required" });
   }
-  const rec = cityHandle ? oauthStore.get(cityHandle) : oauthStore.findByAddress(address);
+  const rec = cityHandle ? oauthStore.get(cityHandle) : oauthStore.findVerifiedByAddress(address);
   if (!rec) return res.json({ linked: false });
   res.json({
     linked:        true,
     cityHandle:    rec.cityHandle || cityHandle,
-    twitterUserId: rec.twitterUserId,
-    ownerAddress:  rec.ownerAddress || null,
-    updatedAt:     rec.updatedAt,
   });
 });
 
@@ -84,6 +82,16 @@ router.get("/twitter/start", (req, res) => {
   const address    = String(req.query.address    || "").trim().toLowerCase();
   if (!cityHandle && !address) {
     return res.status(400).send("cityHandle or address query param is required");
+  }
+  if (address) {
+    const action = `link-twitter:${cityHandle ? cityHandle.toLowerCase() : "wallet"}`;
+    const auth = verifyWalletAuth({
+      address,
+      action,
+      timestamp: req.query.walletTimestamp,
+      signature: req.query.walletSignature,
+    });
+    if (!auth.ok) return res.status(auth.status).send(auth.error);
   }
 
   cleanupStates();
@@ -165,7 +173,10 @@ router.get("/twitter/callback", async (req, res) => {
       expiresAt:     Date.now() + (Number(tok.expires_in) || 7200) * 1000,
       scope:         tok.scope,
     };
-    if (entry.address) upsertPayload.ownerAddress = entry.address.toLowerCase();
+    if (entry.address) {
+      upsertPayload.ownerAddress = entry.address.toLowerCase();
+      upsertPayload.walletVerifiedAt = new Date().toISOString();
+    }
     oauthStore.upsert(realHandle, upsertPayload);
 
     console.log(`[auth] linked @${realHandle} (userId=${me.data.id})${entry.address ? ` for owner ${entry.address.slice(0,6)}…${entry.address.slice(-4)}` : ""}${expectedHandle ? ` — expected @${expectedHandle}` : ""}`);

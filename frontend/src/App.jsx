@@ -110,7 +110,7 @@ export default function App() {
           )}
           {page === "mint" && (
             <motion.div key="mint" className="w-full" variants={pageVariants} initial="initial" animate="animate" exit="exit" transition={{ duration: 0.35 }}>
-              <MintPage address={address} onConnect={connect} onMinted={(id) => nav("city", id)} />
+              <MintPage address={address} signer={signer} onConnect={connect} onMinted={(id) => nav("city", id)} />
             </motion.div>
           )}
           {page === "city" && cityTokenId && (

@@ -11,22 +11,30 @@ function getOAuth() {
 }
 const { analyzeCityPersonality, generateLevelUpNarrative } = require("../services/claude");
 const { uploadMetadata, getCachedMetadata } = require("../services/ipfs");
-const { mintCity, updateCity, getCityData, getLeaderboard, getTokenIdByHandle, getHandleByTokenId, registerERC8004Agent, recordValidation, getTokenAgentId, registerCityManager, getCityManagerWallet, getGiftsForCity, getGift, verifyGiftEngagement, listAllCities } = require("../services/contract");
-const { runSweep, verifyGiftAction } = require("../services/giftOracle");
-const { checkSyncCooldown, mintLimiter } = require("../middleware/rateLimit");
+const { mintCity, updateCity, getCityData, getLeaderboard, getTokenIdByHandle, getHandleByTokenId, registerERC8004Agent, recordValidation, getTokenAgentId, registerCityManager, getCityManagerWallet, getGiftsForCity, getGift, listAllCities } = require("../services/contract");
+const { verifyGiftAction } = require("../services/giftOracle");
+const { checkSyncCooldown, mintLimiter, syncLimiter, heavyReadLimiter, giftCheckLimiter } = require("../middleware/rateLimit");
 const { isHidden, loadHidden } = require("./admin");
+const { verifyWalletAuth } = require("../utils/walletAuth");
 
 // POST /api/verify-tweet
 // Returns the text the user must tweet to prove account ownership
 // POST /api/mint — OAuth-only. Owner must Connect X first; backend reads
 // twitterHandle / userId / tokens from oauthStore by wallet address.
 router.post("/mint", mintLimiter, async (req, res) => {
-  const { walletAddress } = req.body;
+  const { walletAddress, walletTimestamp, walletSignature } = req.body;
 
   if (!walletAddress)              return res.status(400).json({ error: "walletAddress required" });
   if (!ethers.isAddress(walletAddress)) return res.status(400).json({ error: "Invalid wallet address" });
+  const auth = verifyWalletAuth({
+    address: walletAddress,
+    action: "mint-city",
+    timestamp: walletTimestamp,
+    signature: walletSignature,
+  });
+  if (!auth.ok) return res.status(auth.status).json({ error: auth.error });
 
-  const link = oauthStore.findByAddress(walletAddress);
+  const link = oauthStore.findVerifiedByAddress(auth.address);
   if (!link) {
     return res.status(403).json({ error: "Connect your X account first (OAuth). No linked handle for this wallet.", needsOAuth: true });
   }
@@ -59,7 +67,7 @@ router.post("/mint", mintLimiter, async (req, res) => {
       name: aiData.cityName,
       description: aiData.lore,
       twitterHandle,
-      walletAddress: walletAddress.toLowerCase(),
+      walletAddress: auth.address,
       metrics: { followers: metrics.followers, tweetCount: metrics.tweetCount, following: metrics.following, avgEngagement },
       city: {
         style: aiData.style,
@@ -74,7 +82,7 @@ router.post("/mint", mintLimiter, async (req, res) => {
 
     // Step 5: Mint NFT on Mantle
     const { tokenId, txHash } = await mintCity({
-      to: walletAddress,
+      to: auth.address,
       twitterHandle,
       followers: metrics.followers,
       tweetCount: metrics.tweetCount,
@@ -84,10 +92,10 @@ router.post("/mint", mintLimiter, async (req, res) => {
     });
 
     // Step 6: Register city as ERC-8004 agent (IdentityRegistry + ReputationRegistry)
-    const agentId = await registerERC8004Agent(twitterHandle, walletAddress, tokenId);
+    const agentId = await registerERC8004Agent(twitterHandle, auth.address, tokenId);
 
     // Step 7: Register minter wallet as city manager in CityGifts
-    registerCityManager(tokenId, walletAddress).catch(() => {});
+    registerCityManager(tokenId, auth.address).catch(() => {});
 
     res.json({ tokenId, txHash, ipfsCID, agentId, cityData: metadata });
   } catch (err) {
@@ -98,22 +106,34 @@ router.post("/mint", mintLimiter, async (req, res) => {
 
 // POST /api/sync — OAuth-only. Caller supplies walletAddress + tokenId;
 // twitterHandle is read from oauthStore (so owners can't sync foreign cities).
-router.post("/sync", checkSyncCooldown, async (req, res) => {
-  const { tokenId, walletAddress } = req.body;
+router.post("/sync", syncLimiter, checkSyncCooldown, async (req, res) => {
+  const { tokenId, walletAddress, walletTimestamp, walletSignature } = req.body;
   if (!tokenId || !walletAddress) {
     return res.status(400).json({ error: "tokenId and walletAddress required" });
   }
   if (!ethers.isAddress(walletAddress)) {
     return res.status(400).json({ error: "Invalid wallet address" });
   }
+  const auth = verifyWalletAuth({
+    address: walletAddress,
+    action: `sync-city:${tokenId}`,
+    timestamp: walletTimestamp,
+    signature: walletSignature,
+  });
+  if (!auth.ok) return res.status(auth.status).json({ error: auth.error });
 
-  const link = oauthStore.findByAddress(walletAddress);
+  const link = oauthStore.findVerifiedByAddress(auth.address);
   if (!link) {
     return res.status(403).json({ error: "Connect X first — no linked handle for this wallet.", needsOAuth: true });
   }
   const twitterHandle = link.cityHandle;
 
   try {
+    const tokenHandle = await getHandleByTokenId(tokenId);
+    if (tokenHandle.toLowerCase() !== twitterHandle.toLowerCase()) {
+      return res.status(403).json({ error: "Linked X account does not match this city" });
+    }
+
     const twitter = getOAuth();
     const [metrics, tweets] = await Promise.all([
       twitter.getUserMetrics(twitterHandle),
@@ -230,21 +250,7 @@ router.get("/city/:tokenId", async (req, res) => {
 // First-come-first-served: registers walletAddress as city manager if unclaimed.
 // Used when original minter wallet is unknown (e.g. legacy mints).
 router.post("/city/:tokenId/claim-manager", async (req, res) => {
-  const { walletAddress } = req.body;
-  if (!walletAddress || !ethers.isAddress(walletAddress)) {
-    return res.status(400).json({ error: "walletAddress required" });
-  }
-  const tokenId = req.params.tokenId;
-  const existing = await getCityManagerWallet(tokenId);
-  if (existing) {
-    return res.status(409).json({ error: "Manager already registered", manager: existing });
-  }
-  try {
-    await registerCityManager(tokenId, walletAddress);
-    res.json({ ok: true, tokenId, manager: walletAddress.toLowerCase() });
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
+  res.status(410).json({ error: "Public manager claiming is disabled" });
 });
 
 // GET /api/leaderboard
@@ -263,7 +269,7 @@ router.get("/leaderboard", async (req, res) => {
 // Cached for 60s to avoid hammering RPC; the Market UI page hits this on every keystroke.
 const MARKET_TTL_MS = 60_000;
 let _marketCache = { data: null, fetchedAt: 0 };
-router.get("/cities", async (req, res) => {
+router.get("/cities", heavyReadLimiter, async (req, res) => {
   try {
     const now = Date.now();
     if (!_marketCache.data || now - _marketCache.fetchedAt > MARKET_TTL_MS) {
@@ -301,7 +307,7 @@ router.get("/config", (req, res) => {
 // ─── Gifts ───────────────────────────────────────────────────────────────
 
 // GET /api/city/:tokenId/gifts — all gifts for the city (used by claimExpired UI)
-router.get("/city/:tokenId/gifts", async (req, res) => {
+router.get("/city/:tokenId/gifts", heavyReadLimiter, async (req, res) => {
   try {
     const gifts = await getGiftsForCity(req.params.tokenId);
     res.json(gifts);
@@ -310,40 +316,18 @@ router.get("/city/:tokenId/gifts", async (req, res) => {
   }
 });
 
-// POST /api/oracle/sweep — runs oracle sweep across all cities.
-// Protected by ORACLE_SWEEP_TOKEN env (set X-Sweep-Token header).
+// Public oracle controls are disabled. Use owner-signed /api/admin/sweep instead.
 router.post("/oracle/sweep", async (req, res) => {
-  const expected = process.env.ORACLE_SWEEP_TOKEN;
-  if (!expected) return res.status(503).json({ error: "ORACLE_SWEEP_TOKEN not set" });
-  if (req.get("x-sweep-token") !== expected) return res.status(401).json({ error: "unauthorized" });
-
-  try {
-    const result = await runSweep({ dryRun: req.query.dryRun === "1" });
-    res.json(result);
-  } catch (err) {
-    console.error("[oracle/sweep]", err);
-    res.status(500).json({ error: err.message });
-  }
+  res.status(410).json({ error: "Public oracle sweep is disabled. Use admin panel." });
 });
 
-// POST /api/gifts/:giftId/verify-manual — admin override: skip Twitter check, verify on-chain.
-// Useful for hackathon demos. Protected by ORACLE_SWEEP_TOKEN.
+// Public manual verification is disabled. Use owner-signed /api/admin/gifts/:giftId/force-verify instead.
 router.post("/gifts/:giftId/verify-manual", async (req, res) => {
-  const expected = process.env.ORACLE_SWEEP_TOKEN;
-  if (!expected) return res.status(503).json({ error: "ORACLE_SWEEP_TOKEN not set" });
-  if (req.get("x-sweep-token") !== expected) return res.status(401).json({ error: "unauthorized" });
-
-  try {
-    const result = await verifyGiftEngagement(req.params.giftId);
-    res.json({ ok: true, ...result });
-  } catch (err) {
-    console.error("[verify-manual]", err);
-    res.status(500).json({ error: err.message });
-  }
+  res.status(410).json({ error: "Public manual verification is disabled. Use admin panel." });
 });
 
 // POST /api/gifts/:giftId/check — dry-run a single gift's verification (no on-chain tx).
-router.post("/gifts/:giftId/check", async (req, res) => {
+router.post("/gifts/:giftId/check", giftCheckLimiter, async (req, res) => {
   try {
     const gift = await getGift(req.params.giftId);
     const handle = await getHandleByTokenId(gift.cityTokenId);

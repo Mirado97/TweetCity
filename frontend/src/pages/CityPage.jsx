@@ -7,6 +7,7 @@ import {
   Gift, Settings, X, Inbox
 } from "lucide-react";
 import { API_BASE, LEVEL_NAMES, GIFT_TYPES, getContract, getGiftsContract, fetchConfig } from "../lib/contract";
+import { createWalletAuth, walletAuthParams } from "../lib/walletAuth";
 import CityRendererV2 from "../components/CityRendererV2";
 
 function fmt(wei) {
@@ -45,7 +46,7 @@ export default function CityPage({ tokenId, signer, address, onOwnerConfirmed })
   const [giftType, setGiftType] = useState(0);
   const [tweetUrl, setTweetUrl] = useState("");
   const [sending, setSending] = useState(false);
-  const [xLinkStatus, setXLinkStatus] = useState(null); // { linked, twitterUserId, updatedAt } | null
+  const [xLinkStatus, setXLinkStatus] = useState(null); // { linked, cityHandle } | null
 
   const loadGifts = useCallback(async (provider, addr) => {
     const gc = getGiftsContract(addr, provider);
@@ -184,10 +185,11 @@ export default function CityPage({ tokenId, signer, address, onOwnerConfirmed })
     setSyncResult(null);
     try {
       if (!address) throw new Error("Connect wallet first");
+      const auth = await createWalletAuth(signer, `sync-city:${tokenId}`);
       const res = await fetch(`${API_BASE}/api/sync`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ tokenId, walletAddress: address }),
+        body: JSON.stringify({ tokenId, ...auth }),
       });
       const data = await res.json();
       if (data.error) throw new Error(data.error);
@@ -197,6 +199,19 @@ export default function CityPage({ tokenId, signer, address, onOwnerConfirmed })
       setError(e.message);
     } finally {
       setSyncing(false);
+    }
+  }
+
+  async function connectXForGiftVerification() {
+    setError("");
+    try {
+      if (!twitterHandle) throw new Error("City handle missing");
+      const auth = await createWalletAuth(signer, `link-twitter:${twitterHandle.toLowerCase()}`);
+      const params = walletAuthParams(auth);
+      params.set("cityHandle", twitterHandle);
+      window.open(`${API_BASE}/auth/twitter/start?${params.toString()}`, "_blank", "noopener,noreferrer");
+    } catch (e) {
+      setError(e.message);
     }
   }
 
@@ -394,14 +409,13 @@ export default function CityPage({ tokenId, signer, address, onOwnerConfirmed })
               {/* Connect X button shown only if owner hasn't linked yet (legacy mints).
                   Once linked, mint flow already established the binding — no need to clutter. */}
               {isOwner && twitterHandle && xLinkStatus && !xLinkStatus.linked && (
-                <motion.a
-                  href={`${API_BASE}/auth/twitter/start?cityHandle=${encodeURIComponent(twitterHandle)}${address ? `&address=${address}` : ""}`}
-                  target="_blank" rel="noreferrer"
+                <motion.button
+                  onClick={connectXForGiftVerification}
                   className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg border bg-[#0a0a0f] border-white/20 text-[#f1f5f9] hover:bg-[#16161f] transition-colors font-medium"
                   whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
                   <span className="text-base leading-none">𝕏</span>
                   Connect X for Gift Verification
-                </motion.a>
+                </motion.button>
               )}
             </div>
 

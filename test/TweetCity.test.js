@@ -1,5 +1,5 @@
 const { expect } = require("chai");
-const { ethers } = require("hardhat");
+const { ethers, upgrades } = require("hardhat");
 
 describe("TweetCity", function () {
   let contract;
@@ -11,7 +11,12 @@ describe("TweetCity", function () {
   beforeEach(async function () {
     [owner, oracle, user1, user2, visitor] = await ethers.getSigners();
     const TweetCity = await ethers.getContractFactory("TweetCity");
-    contract = await TweetCity.deploy(oracle.address);
+    contract = await upgrades.deployProxy(
+      TweetCity,
+      [oracle.address],
+      { kind: "uups", initializer: "initialize" }
+    );
+    await contract.waitForDeployment();
   });
 
   // ─── Deployment ────────────────────────────────────────────────────────────

@@ -163,17 +163,30 @@ describe("CityGifts (UUPS)", function () {
       await gifts.connect(buyer).sendGift(TOKEN_ID, 0, TWEET, { value: PRICE });
     });
 
-    it("NFT owner approves Pending → Accepted, sets engageDeadline", async function () {
+    it("city manager approves Pending → Accepted, sets engageDeadline", async function () {
       await gifts.connect(cityOwner).approveGift(0);
       const g = await gifts.gifts(0);
       expect(g.status).to.equal(Status.Accepted);
       expect(g.engageDeadline).to.be.gt(g.createdAt);
     });
 
-    it("non-NFT-owner cannot approve", async function () {
+    it("non-manager cannot approve", async function () {
       await expect(
         gifts.connect(other).approveGift(0)
-      ).to.be.revertedWith("CityGifts: not city owner");
+      ).to.be.revertedWith("CityGifts: not city manager");
+    });
+
+    it("city manager can approve after NFT is transferred away", async function () {
+      await nft.connect(cityOwner).transferFrom(cityOwner.address, other.address, TOKEN_ID);
+      await gifts.connect(cityOwner).approveGift(0);
+      expect((await gifts.gifts(0)).status).to.equal(Status.Accepted);
+    });
+
+    it("NFT owner cannot approve unless registered as manager", async function () {
+      await nft.connect(cityOwner).transferFrom(cityOwner.address, other.address, TOKEN_ID);
+      await expect(
+        gifts.connect(other).approveGift(0)
+      ).to.be.revertedWith("CityGifts: not city manager");
     });
 
     it("cannot approve after accept window", async function () {
@@ -191,6 +204,12 @@ describe("CityGifts (UUPS)", function () {
 
       const g = await gifts.gifts(0);
       expect(g.status).to.equal(Status.Rejected);
+    });
+
+    it("city manager can reject after NFT is transferred away", async function () {
+      await nft.connect(cityOwner).transferFrom(cityOwner.address, other.address, TOKEN_ID);
+      await gifts.connect(cityOwner).rejectGift(0);
+      expect((await gifts.gifts(0)).status).to.equal(Status.Rejected);
     });
 
     it("cannot reject after approval", async function () {

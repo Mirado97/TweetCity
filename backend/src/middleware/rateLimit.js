@@ -24,4 +24,22 @@ const mintLimiter = rateLimit({
   message: { error: "Too many mint requests. Try again later." },
 });
 
-module.exports = { checkSyncCooldown, mintLimiter };
+const syncLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 10,
+  message: { error: "Too many sync requests. Try again later." },
+});
+
+const heavyReadLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 60,
+  message: { error: "Too many requests. Try again later." },
+});
+
+const giftCheckLimiter = rateLimit({
+  windowMs: 10 * 60 * 1000,
+  max: 30,
+  message: { error: "Too many gift check requests. Try again later." },
+});
+
+module.exports = { checkSyncCooldown, mintLimiter, syncLimiter, heavyReadLimiter, giftCheckLimiter };

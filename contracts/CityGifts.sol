@@ -13,11 +13,11 @@ import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
  *
  * Flow:
  *   buyer sendGift() → PENDING (funds locked)
- *     → owner approveGift() → ACCEPTED (engage deadline starts)
- *       → oracle verifyEngagement() → VERIFIED (funds released to owner)
- *     → owner rejectGift() → REJECTED (buyer refunded)
- *   If owner ignores past acceptWindow → buyer claimExpired() → EXPIRED (refund)
- *   If owner accepted but didn't engage in time → buyer claimExpired() → EXPIRED (refund)
+ *     → manager approveGift() → ACCEPTED (engage deadline starts)
+ *       → oracle verifyEngagement() → VERIFIED (funds released to manager)
+ *     → manager rejectGift() → REJECTED (buyer refunded)
+ *   If manager ignores past acceptWindow → buyer claimExpired() → EXPIRED (refund)
+ *   If manager accepted but didn't engage in time → buyer claimExpired() → EXPIRED (refund)
  *
  * Owner sets their own price per gift type — larger accounts charge more.
  * @custom:oz-upgrades-unsafe-allow constructor
@@ -155,11 +155,11 @@ contract CityGifts is
     }
 
     /**
-     * @notice Owner approves a pending gift, triggering the engage deadline.
+     * @notice City manager approves a pending gift, triggering the engage deadline.
      */
     function approveGift(uint256 giftId) external nonReentrant {
         Gift storage g = gifts[giftId];
-        require(cityNFT.ownerOf(g.cityTokenId) == msg.sender, "CityGifts: not city owner");
+        require(cityManager[g.cityTokenId] == msg.sender, "CityGifts: not city manager");
         require(g.status == GiftStatus.Pending, "CityGifts: not pending");
         require(block.timestamp <= g.acceptDeadline, "CityGifts: accept window expired");
 
@@ -170,11 +170,11 @@ contract CityGifts is
     }
 
     /**
-     * @notice Owner rejects a pending gift (e.g. scam link). Buyer is refunded 90%.
+     * @notice City manager rejects a pending gift (e.g. scam link). Buyer is refunded 90%.
      */
     function rejectGift(uint256 giftId) external nonReentrant {
         Gift storage g = gifts[giftId];
-        require(cityNFT.ownerOf(g.cityTokenId) == msg.sender, "CityGifts: not city owner");
+        require(cityManager[g.cityTokenId] == msg.sender, "CityGifts: not city manager");
         require(g.status == GiftStatus.Pending, "CityGifts: not pending");
 
         g.status = GiftStatus.Rejected;
