@@ -391,18 +391,16 @@ export default function CityPage({ tokenId, signer, address, onOwnerConfirmed })
                   {showPriceManager ? 'Close Prices' : 'Gift Prices'}
                 </motion.button>
               )}
-              {isOwner && twitterHandle && (
+              {/* Connect X button shown only if owner hasn't linked yet (legacy mints).
+                  Once linked, mint flow already established the binding — no need to clutter. */}
+              {isOwner && twitterHandle && xLinkStatus && !xLinkStatus.linked && (
                 <motion.a
                   href={`${API_BASE}/auth/twitter/start?cityHandle=${encodeURIComponent(twitterHandle)}${address ? `&address=${address}` : ""}`}
                   target="_blank" rel="noreferrer"
-                  className={`flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg border transition-colors font-medium ${
-                    xLinkStatus?.linked
-                      ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/20'
-                      : 'bg-[#0a0a0f] border-white/20 text-[#f1f5f9] hover:bg-[#16161f]'
-                  }`}
+                  className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg border bg-[#0a0a0f] border-white/20 text-[#f1f5f9] hover:bg-[#16161f] transition-colors font-medium"
                   whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
                   <span className="text-base leading-none">𝕏</span>
-                  {xLinkStatus?.linked ? 'X Connected · Reconnect' : 'Connect X for Gift Verification'}
+                  Connect X for Gift Verification
                 </motion.a>
               )}
             </div>
