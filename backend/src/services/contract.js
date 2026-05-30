@@ -24,7 +24,10 @@ const GIFT_TYPE   = { Graffiti: 0, StreetArt: 1, Flag: 2, Billboard: 3, Monument
 
 let _giftsContract = null;
 
-const MANAGERS_FILE = path.join(__dirname, "../../data/managers.json");
+// Persistent data dir — shared with oauthStore and admin-hidden.json.
+// On Railway set OAUTH_DATA_DIR=/data so this file lives on the Volume too.
+const MANAGERS_DIR  = process.env.OAUTH_DATA_DIR || path.join(__dirname, "../../data");
+const MANAGERS_FILE = path.join(MANAGERS_DIR, "managers.json");
 
 function loadManagers() {
   try { return JSON.parse(fs.readFileSync(MANAGERS_FILE, "utf8")); } catch { return {}; }
