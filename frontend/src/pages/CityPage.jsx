@@ -22,7 +22,7 @@ function timeLeft(deadline) {
   return h > 0 ? `${h}h ${m}m` : `${m}m`;
 }
 
-export default function CityPage({ tokenId, signer, address }) {
+export default function CityPage({ tokenId, signer, address, onOwnerConfirmed }) {
   const [city, setCity] = useState(null);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
@@ -155,8 +155,11 @@ export default function CityPage({ tokenId, signer, address }) {
   // after page load) or after the city's managerWallet is loaded.
   useEffect(() => {
     const mgr = city?.managerWallet;
-    setIsOwner(!!(address && mgr && mgr.toLowerCase() === address.toLowerCase()));
-  }, [address, city]);
+    const owned = !!(address && mgr && mgr.toLowerCase() === address.toLowerCase());
+    setIsOwner(owned);
+    // Tell App.jsx so it can save {tokenId, ownerAddress} for "My City" in Navbar.
+    if (owned && onOwnerConfirmed) onOwnerConfirmed(tokenId, address);
+  }, [address, city, tokenId, onOwnerConfirmed]);
 
   useEffect(() => { if (isOwner) loadPending(giftsContractAddr); }, [isOwner, loadPending, giftsContractAddr]);
 
