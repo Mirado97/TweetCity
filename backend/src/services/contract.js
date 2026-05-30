@@ -124,18 +124,42 @@ async function waitReceipt(provider, txHash, timeoutMs = 90000) {
   throw new Error(`Receipt timeout for ${txHash}`);
 }
 
-// При ECONNRESET сбрасываем singleton провайдера и повторяем один раз
+// Retry transient RPC failures: rate limits (429 / -32005), DNS blips,
+// dropped sockets. Exponential backoff: 500ms, 1s, 2s, 4s.
+// Reset cached singletons on socket errors so a fresh provider gets created.
+function isRateLimited(err) {
+  const m = String(err?.message || err);
+  return err?.code === -32005
+      || /rate limit|429|Too Many Requests|exceeded maximum retry/i.test(m);
+}
+function isTransient(err) {
+  const m = String(err?.message || err);
+  return /ECONNRESET|ENOTFOUND|ETIMEDOUT|ECONNREFUSED|socket hang up|missing revert data/i.test(m);
+}
+
 async function rpcCall(fn) {
-  try {
-    return await fn();
-  } catch (err) {
-    if (String(err.message).includes("ECONNRESET") || err.code === "ECONNRESET") {
-      _contract = null; _wallet = null; _identity = null; _reputation = null; _validation = null; _giftsContract = null;
-      await new Promise((r) => setTimeout(r, 600));
-      return fn();
+  const delays = [500, 1000, 2000, 4000];
+  let lastErr;
+  for (let attempt = 0; attempt <= delays.length; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      lastErr = err;
+      const rate = isRateLimited(err);
+      const transient = isTransient(err);
+      if (!rate && !transient) throw err;
+      if (attempt === delays.length) break;
+      // On socket failures, drop cached providers so the next attempt reconnects.
+      if (transient) {
+        _contract = null; _wallet = null; _identity = null;
+        _reputation = null; _validation = null; _giftsContract = null;
+      }
+      const wait = delays[attempt];
+      console.warn(`[rpcCall] retry ${attempt + 1}/${delays.length} in ${wait}ms — ${rate ? "rate-limited" : "transient"}: ${String(err.message || err).slice(0, 120)}`);
+      await new Promise((r) => setTimeout(r, wait));
     }
-    throw err;
   }
+  throw lastErr;
 }
 
 function getContract() {
