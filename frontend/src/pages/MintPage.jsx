@@ -252,6 +252,24 @@ export default function MintPage({ address, onConnect, onMinted }) {
                 ))}
               </div>
               {city.description && <p className="text-sm text-[#94a3b8] italic">{city.description}</p>}
+
+              {/* Connect X CTA — needed so the gift oracle can verify engagements via X API. */}
+              <motion.a
+                href={`${API_BASE}/auth/twitter/start?cityHandle=${encodeURIComponent(handle)}`}
+                target="_blank" rel="noreferrer"
+                className="flex items-center justify-between gap-4 p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/30 hover:bg-emerald-500/20 transition-colors"
+                whileHover={{ scale: 1.01 }} whileTap={{ scale: 0.99 }}
+              >
+                <div className="flex items-center gap-3 min-w-0">
+                  <span className="text-2xl leading-none">𝕏</span>
+                  <div className="min-w-0">
+                    <div className="font-semibold text-emerald-300">Connect X for Gift Verification</div>
+                    <div className="text-xs text-emerald-300/70 mt-0.5">Required so paid gifts visitors send can be auto-verified. Takes ~10 seconds.</div>
+                  </div>
+                </div>
+                <ArrowRight className="w-4 h-4 text-emerald-300 shrink-0" />
+              </motion.a>
+
               <div className="flex gap-3">
                 <motion.a
                   href={`https://explorer.sepolia.mantle.xyz/tx/${result.txHash}`}
