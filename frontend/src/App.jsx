@@ -15,18 +15,23 @@ import "./App.css";
 
 const LS_TOKEN = "tweetcity_my_token";
 
-// LS now holds JSON {tokenId, ownerAddress}. Old format was a bare string —
-// drop it on first load so "My City" doesn't stick to someone else's city.
+// LS now holds JSON {tokenId, ownerAddress}. Old format was a bare string.
+// Returns { my, legacyTokenId } — `my` is the full record (Navbar-ready),
+// `legacyTokenId` is just the tokenId so we can auto-open the city and let
+// CityPage re-record the new format once it confirms ownership.
 function readMyCity() {
   const raw = localStorage.getItem(LS_TOKEN);
-  if (!raw) return null;
+  if (!raw) return { my: null, legacyTokenId: null };
   try {
     const v = JSON.parse(raw);
-    if (v && typeof v === "object" && v.tokenId && v.ownerAddress) return v;
+    if (v && typeof v === "object" && v.tokenId && v.ownerAddress) {
+      return { my: v, legacyTokenId: null };
+    }
   } catch {}
-  // Legacy bare-string format → clear.
+  // Bare-string legacy: keep tokenId for one-shot auto-open, clear LS
+  // until CityPage confirms owner and writes the new shape.
   localStorage.removeItem(LS_TOKEN);
-  return null;
+  return { my: null, legacyTokenId: String(raw) };
 }
 
 function writeMyCity(tokenId, ownerAddress) {
@@ -40,12 +45,14 @@ function writeMyCity(tokenId, ownerAddress) {
 function getInitialState() {
   const params = new URLSearchParams(window.location.search);
   const sharedCity = params.get("city");
+  const { my, legacyTokenId } = readMyCity();
   if (sharedCity) {
     window.history.replaceState({}, "", window.location.pathname);
-    return { page: "city", tokenId: sharedCity, myCity: readMyCity() };
+    return { page: "city", tokenId: sharedCity, myCity: my };
   }
-  const my = readMyCity();
-  return { page: my ? "city" : "home", tokenId: my?.tokenId || null, myCity: my };
+  if (my)            return { page: "city", tokenId: my.tokenId,    myCity: my };
+  if (legacyTokenId) return { page: "city", tokenId: legacyTokenId, myCity: null };
+  return { page: "home", tokenId: null, myCity: null };
 }
 
 const pageVariants = {
