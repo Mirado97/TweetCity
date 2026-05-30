@@ -580,8 +580,8 @@ function BackendTab({ signer }) {
     <div className="space-y-6">
       <div className="glass rounded-xl p-5 border border-[rgba(255,255,255,0.06)]">
         <div className="text-sm font-semibold text-[#f1f5f9] mb-3">Backend Configuration</div>
-        <Row label="Twitter Provider" value={cfg.twitterProvider} />
-        <Row label="Skip Tweet Verify" value={cfg.skipTweetVerify ? "yes" : "no"} />
+        <Row label="X Integration" value={cfg.twitterProvider} />
+        <Row label="Skip Gift Verify" value={cfg.skipGiftVerify ? "yes" : "no"} />
         <Row label="Gift Oracle Disabled" value={cfg.disableGiftOracle ? "yes" : "no"} />
         <Row label="Sweep Interval" value={`${Math.round(cfg.giftOracleIntervalMs / 1000)}s`} />
         <Row label="Frontend URL" value={cfg.frontendUrl || "—"} mono />
@@ -630,7 +630,7 @@ export default function AdminPage({ address, signer, onConnect }) {
   const isOwner = address && owner && address.toLowerCase() === owner.toLowerCase();
 
   return (
-    <div className="w-full pt-20 md:pt-24 px-4 sm:px-6 lg:px-8 pb-20 max-w-6xl mx-auto">
+    <div className="w-full pt-28 md:pt-32 px-4 sm:px-6 lg:px-8 pb-20 max-w-6xl mx-auto">
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="mb-8">
         <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs font-semibold mb-3">
           <Shield className="w-3.5 h-3.5" />

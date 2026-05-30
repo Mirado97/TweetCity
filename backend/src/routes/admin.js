@@ -74,17 +74,19 @@ router.get("/admin/stats", async (req, res) => {
 // Surface backend env state (without leaking secrets — only presence flags).
 router.get("/admin/config", (req, res) => {
   res.json({
-    twitterProvider:        process.env.TWITTER_PROVIDER || "apify",
-    skipTweetVerify:        process.env.SKIP_TWEET_VERIFY === "true",
+    twitterProvider:        "x-oauth",
+    skipGiftVerify:         process.env.SKIP_GIFT_VERIFY === "true",
     disableGiftOracle:      process.env.DISABLE_GIFT_ORACLE === "true",
     giftOracleIntervalMs:   Number(process.env.GIFT_ORACLE_INTERVAL_MS || 600000),
     frontendUrl:            process.env.FRONTEND_URL || "",
     port:                   process.env.PORT || 3001,
-    // Apify accepts either a single token or rotated _1/_2 pair.
     keys: {
       ORACLE_PRIVATE_KEY:           !!process.env.ORACLE_PRIVATE_KEY,
+      TWITTER_CLIENT_ID:            !!process.env.TWITTER_CLIENT_ID,
+      TWITTER_CLIENT_SECRET:        !!process.env.TWITTER_CLIENT_SECRET,
+      TWITTER_OAUTH_CALLBACK_URL:   !!process.env.TWITTER_OAUTH_CALLBACK_URL,
+      OAUTH_TOKEN_ENCRYPTION_KEY:   !!process.env.OAUTH_TOKEN_ENCRYPTION_KEY,
       ANTHROPIC_API_KEY:            !!process.env.ANTHROPIC_API_KEY,
-      APIFY_API_TOKEN:              !!(process.env.APIFY_API_TOKEN || process.env.APIFY_API_TOKEN_1 || process.env.APIFY_API_TOKEN_2),
       PINATA_API_KEY:               !!process.env.PINATA_API_KEY,
       PINATA_SECRET_KEY:            !!process.env.PINATA_SECRET_KEY,
       MANTLE_TESTNET_RPC:           !!process.env.MANTLE_TESTNET_RPC,
