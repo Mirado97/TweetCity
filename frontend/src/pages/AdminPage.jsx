@@ -403,6 +403,8 @@ function GiftsTab({ signer }) {
   const [busyId, setBusyId] = useState(null);
   const [checkResult, setCheckResult] = useState(null); // { giftId, ... }
   const [filter, setFilter] = useState("accepted");
+  const [sweepResult, setSweepResult] = useState(null);
+  const [sweeping, setSweeping] = useState(false);
 
   async function reload() {
     setLoading(true); setErr("");
@@ -412,6 +414,13 @@ function GiftsTab({ signer }) {
   }
   useEffect(() => { reload(); }, []);
 
+  async function runSweep(dryRun) {
+    setSweeping(true); setSweepResult(null);
+    try { setSweepResult(await triggerSweep(signer, dryRun)); }
+    catch (e) { setSweepResult({ error: e.message }); }
+    finally { setSweeping(false); }
+  }
+
   async function runCheck(giftId) {
     setBusyId(giftId); setCheckResult(null);
     try { setCheckResult({ giftId, ...(await checkGift(signer, giftId)) }); }
@@ -420,7 +429,7 @@ function GiftsTab({ signer }) {
   }
 
   async function runForceVerify(giftId) {
-    if (!window.confirm(`Force-verify gift #${giftId}? Funds will be transferred to the city manager without Apify check.`)) return;
+    if (!window.confirm(`Force-verify gift #${giftId}? Funds will be transferred to the city manager without X API check.`)) return;
     setBusyId(giftId);
     try {
       const r = await forceVerifyGift(signer, giftId);
@@ -465,8 +474,34 @@ function GiftsTab({ signer }) {
         <Btn variant="ghost" onClick={reload} className="ml-auto"><RefreshCw className="w-3 h-3" /></Btn>
       </div>
 
+      <div className="glass rounded-xl p-4 border border-[rgba(255,255,255,0.06)]">
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <div>
+            <div className="text-sm font-semibold text-[#f1f5f9]">Gift Oracle Sweep</div>
+            <div className="text-xs text-[#64748b] mt-0.5">
+              Проверяет все Accepted гифты и верифицирует выполнение. Автозапуск каждые 10 минут.
+            </div>
+          </div>
+          <div className="flex gap-2">
+            <Btn disabled={sweeping} onClick={() => runSweep(true)} variant="ghost">
+              {sweeping ? <Loader2 className="w-3 h-3 animate-spin inline mr-1" /> : null}
+              Dry Run
+            </Btn>
+            <Btn disabled={sweeping} onClick={() => runSweep(false)}>
+              {sweeping ? <Loader2 className="w-3 h-3 animate-spin inline mr-1" /> : null}
+              Run Sweep
+            </Btn>
+          </div>
+        </div>
+        {sweepResult && (
+          <pre className="mt-3 p-3 bg-[#0a0a0f] rounded-lg text-xs text-[#94a3b8] overflow-auto max-h-64 border border-[rgba(255,255,255,0.04)]">
+{JSON.stringify(sweepResult, null, 2)}
+          </pre>
+        )}
+      </div>
+
       <div className="text-xs text-[#64748b]">
-        <strong className="text-amber-400">Force Verify</strong> вызывает <code>verifyEngagement</code> на контракте напрямую, минуя Apify-проверку. Деньги (90% от amount) переводятся на cityManager. Используй, если задание реально выполнено, но Apify не нашёл.
+        <strong className="text-amber-400">Force Verify</strong> вызывает <code>verifyEngagement</code> на контракте напрямую, минуя X API проверку. Деньги (90% от amount) переводятся на cityManager. Используй, если задание реально выполнено, но oracle не нашёл (например, owner ещё не подключил X через OAuth).
       </div>
 
       {checkResult && (
@@ -496,6 +531,9 @@ function GiftsTab({ signer }) {
                     {GIFT_STATUS_LABELS[status]}
                   </span>
                   <span className="text-xs text-[#94a3b8]">→ city #{g.cityTokenId} @{g.cityHandle || "?"}</span>
+                  {g.xLinked
+                    ? <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 font-bold uppercase" title="Owner connected X via OAuth">𝕏 linked</span>
+                    : <span className="text-[10px] px-1.5 py-0.5 rounded bg-rose-500/10 text-rose-400 font-bold uppercase" title="Owner has not connected X — Force Verify required">𝕏 missing</span>}
                 </div>
                 <div className="text-xs text-[#64748b] mt-0.5 flex gap-3">
                   <span>{fmtMNT(g.amount)} MNT</span>
@@ -525,8 +563,6 @@ function BackendTab({ signer }) {
   const [cfg, setCfg] = useState(null);
   const [err, setErr] = useState("");
   const [loading, setLoading] = useState(true);
-  const [sweepResult, setSweepResult] = useState(null);
-  const [sweeping, setSweeping] = useState(false);
 
   async function reload() {
     setLoading(true); setErr("");
@@ -535,13 +571,6 @@ function BackendTab({ signer }) {
     finally { setLoading(false); }
   }
   useEffect(() => { reload(); }, []);
-
-  async function runSweep(dryRun) {
-    setSweeping(true); setSweepResult(null);
-    try { setSweepResult(await triggerSweep(signer, dryRun)); }
-    catch (e) { setSweepResult({ error: e.message }); }
-    finally { setSweeping(false); }
-  }
 
   if (loading) return <div className="flex items-center gap-2 text-[#94a3b8]"><Loader2 className="w-4 h-4 animate-spin" />Loading config...</div>;
   if (err) return <ErrorBox msg={err} onRetry={reload} />;
@@ -573,27 +602,6 @@ function BackendTab({ signer }) {
         </div>
       </div>
 
-      <div className="glass rounded-xl p-5 border border-[rgba(255,255,255,0.06)]">
-        <div className="text-sm font-semibold text-[#f1f5f9] mb-3">Gift Oracle Sweep</div>
-        <div className="text-xs text-[#64748b] mb-3">
-          Sweeps all Accepted gifts and verifies engagements on Twitter. Auto-runs every {Math.round(cfg.giftOracleIntervalMs / 1000)}s.
-        </div>
-        <div className="flex gap-2">
-          <Btn disabled={sweeping} onClick={() => runSweep(true)} variant="ghost">
-            {sweeping ? <Loader2 className="w-3 h-3 animate-spin inline mr-1" /> : null}
-            Dry Run
-          </Btn>
-          <Btn disabled={sweeping} onClick={() => runSweep(false)}>
-            {sweeping ? <Loader2 className="w-3 h-3 animate-spin inline mr-1" /> : null}
-            Run Sweep
-          </Btn>
-        </div>
-        {sweepResult && (
-          <pre className="mt-3 p-3 bg-[#0a0a0f] rounded-lg text-xs text-[#94a3b8] overflow-auto max-h-64 border border-[rgba(255,255,255,0.04)]">
-{JSON.stringify(sweepResult, null, 2)}
-          </pre>
-        )}
-      </div>
     </div>
   );
 }

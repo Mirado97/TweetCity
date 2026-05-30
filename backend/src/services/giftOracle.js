@@ -10,9 +10,14 @@
  *   Billboard (3) — quote the tweet
  *   Monument (4)  — dedicated post mentioning the buyer
  *   District (5)  — pin the tweet for 7 days
+ *
+ * All checks read X API under the city owner's own OAuth 2.0 token (via
+ * TwitterOAuthProvider). Cities whose owner hasn't linked their X account
+ * skip with reason "owner has not linked X" — admin can Force Verify manually.
  */
 
-const ApifyProvider = require("./twitter/ApifyProvider");
+const TwitterOAuthProvider = require("./twitter/TwitterOAuthProvider");
+const oauthStore = require("../storage/oauthStore");
 const {
   getTotalCities, getGiftsForCity, verifyGiftEngagement,
   getHandleByTokenId, GIFT_STATUS, GIFT_TYPE,
@@ -26,58 +31,21 @@ function parseTweetId(url) {
   return m ? m[1] : null;
 }
 
-// Lazy Apify singleton — oracle always uses Apify regardless of TWITTER_PROVIDER
-let _twitter = null;
-function getApify() {
-  if (_twitter) return _twitter;
-  _twitter = new ApifyProvider();
-  return _twitter;
+let _oauth = null;
+function getOAuth() {
+  if (_oauth) return _oauth;
+  _oauth = new TwitterOAuthProvider();
+  return _oauth;
 }
 
-/**
- * Was the city owner mentioned in the buyer's tweet?
- * The buyer's tweet text must contain "@cityHandle".
- */
 function mentionsHandle(text, handle) {
   if (!text || !handle) return false;
   return new RegExp(`@${handle}\\b`, "i").test(text);
 }
 
-/**
- * Did the city owner like the tweet?
- * Returns null if the likers-actor is dead (so callers can fall back to other signals).
- * Returns true/false when the check completed.
- */
-async function didLike(twitter, cityHandle, tweetId) {
-  const likers = await twitter.getTweetLikers(tweetId);
-  if (likers === null) return null;
-  return likers.has(cityHandle.toLowerCase());
-}
-
-/**
- * Did the city owner do ANY engagement on the tweet (retweet/reply/quote)?
- * Used as a fallback when the likers-actor is down — Twitter has been killing
- * those scrapers, so the "like" signal isn't always available.
- */
-async function anyEngagement(twitter, cityHandle, tweetId) {
+async function findEngagement(cityHandle, tweetId, kind) {
   const lookback = Number(process.env.GIFT_ORACLE_LOOKBACK || 100);
-  const tweets = await twitter.getUserTweetsWithMeta(cityHandle, lookback);
-  return tweets.find((t) => {
-    if (t.isRetweet && t.retweetedTweetId === String(tweetId)) return true;
-    if (t.isReply   && t.replyToTweetId   === String(tweetId)) return true;
-    if (t.isQuote   && t.quotedTweetId    === String(tweetId)) return true;
-    if ((t.text || "").includes(`/status/${tweetId}`)) return true;
-    return false;
-  });
-}
-
-/**
- * Did the city owner retweet, quote, or reply to the tweet?
- * Reuses one fetch of the owner's recent tweets with meta.
- */
-async function findEngagement(twitter, cityHandle, tweetId, kind) {
-  const lookback = Number(process.env.GIFT_ORACLE_LOOKBACK || 100);
-  const tweets = await twitter.getUserTweetsWithMeta(cityHandle, lookback);
+  const tweets = await getOAuth().getUserTweetsWithMeta(cityHandle, lookback);
   return tweets.find((t) => {
     if (kind === "retweet") return t.isRetweet && t.retweetedTweetId === String(tweetId);
     if (kind === "quote")   return t.isQuote   && t.quotedTweetId    === String(tweetId);
@@ -86,19 +54,14 @@ async function findEngagement(twitter, cityHandle, tweetId, kind) {
   });
 }
 
-/**
- * Did the city owner publish a NEW post mentioning the buyer's handle?
- * We need the buyer's handle — extract it from the gift's tweetUrl path.
- */
-async function didMentionPost(twitter, cityHandle, gift) {
+async function didMentionPost(cityHandle, gift) {
   // Buyer handle lives in the tweet URL: x.com/<handle>/status/<id>
   const m = String(gift.tweetUrl || "").match(/(?:twitter\.com|x\.com)\/([^/]+)\/status\//i);
   const buyerHandle = m ? m[1].toLowerCase() : null;
   if (!buyerHandle) return null;
 
   const lookback = Number(process.env.GIFT_ORACLE_LOOKBACK || 100);
-  const tweets = await twitter.getUserTweetsWithMeta(cityHandle, lookback);
-  // Find any non-retweet, non-reply post AFTER the gift was accepted that @-mentions the buyer.
+  const tweets = await getOAuth().getUserTweetsWithMeta(cityHandle, lookback);
   const sinceTs = gift.createdAt; // seconds
   return tweets.find((t) => {
     if (t.isRetweet || t.isReply) return false;
@@ -109,24 +72,20 @@ async function didMentionPost(twitter, cityHandle, gift) {
 }
 
 /**
- * Has the city owner pinned the buyer's tweet — or any of their own
- * tweets that references it?
- *
- * Twitter doesn't let you pin someone else's tweet directly: you can only
- * pin your own. Owners typically quote-tweet (or retweet/reply with link)
- * the buyer's tweet and pin THAT. Accept any of these.
+ * Twitter doesn't let you pin someone else's tweet directly.
+ * Owners typically quote-tweet (or retweet/reply with link) the buyer's tweet
+ * and pin THAT. Accept any of these.
  */
-async function isPinned(twitter, cityHandle, tweetId) {
-  const profile = await twitter.getProfileWithPinned(cityHandle);
+async function isPinned(cityHandle, tweetId) {
+  const oauth = getOAuth();
+  const profile = await oauth.getProfileWithPinned(cityHandle);
   if (!profile.pinnedTweetId) return false;
   if (profile.pinnedTweetId === String(tweetId)) return true;
 
-  // Owner pinned one of their own tweets — does it reference the buyer's tweet?
   const lookback = Number(process.env.GIFT_ORACLE_LOOKBACK || 100);
-  const tweets = await twitter.getUserTweetsWithMeta(cityHandle, lookback);
+  const tweets = await oauth.getUserTweetsWithMeta(cityHandle, lookback);
   const pinned = tweets.find((t) => String(t.id) === profile.pinnedTweetId);
   if (!pinned) {
-    // Fallback: text of the pinned post contains the original tweet URL
     return (profile.pinnedText || "").includes(`/status/${tweetId}`);
   }
   if (pinned.isQuote   && pinned.quotedTweetId    === String(tweetId)) return true;
@@ -148,60 +107,56 @@ async function verifyGiftAction(gift, cityHandle) {
   const tweetId = parseTweetId(gift.tweetUrl);
   if (!tweetId) return { ok: false, reason: "invalid tweet URL" };
 
-  const twitter = getApify();
+  if (!oauthStore.get(cityHandle)) {
+    return { ok: false, reason: `owner @${cityHandle} has not linked X via OAuth — Force Verify or wait for owner to connect` };
+  }
 
   try {
     switch (gift.giftType) {
       case GIFT_TYPE.Graffiti: {
-        const liked = await didLike(twitter, cityHandle, tweetId);
-        if (liked === true) return { ok: true, reason: "owner liked the tweet" };
-        // Either liked=false or likers-actor dead (null). In both cases we accept
-        // any other engagement (retweet/reply/quote/mention) as evidence.
-        const eng = await anyEngagement(twitter, cityHandle, tweetId);
-        if (eng) return { ok: true, reason: `engagement detected (${eng.id})` };
-        return { ok: false, reason: liked === null ? "likers actor down + no other engagement" : "no like or engagement found" };
+        const likedIds = await getOAuth().getLikedTweetIds(cityHandle);
+        return likedIds.has(String(tweetId))
+          ? { ok: true,  reason: "owner liked the tweet" }
+          : { ok: false, reason: "tweet not in owner's recent likes" };
       }
       case GIFT_TYPE.StreetArt: {
-        const [liked, retweet] = await Promise.all([
-          didLike(twitter, cityHandle, tweetId),
-          findEngagement(twitter, cityHandle, tweetId, "retweet"),
+        const [likedIds, retweet] = await Promise.all([
+          getOAuth().getLikedTweetIds(cityHandle),
+          findEngagement(cityHandle, tweetId, "retweet"),
         ]);
-        if (!retweet) return { ok: false, reason: "retweet missing" };
-        // Retweet is the verifiable half. If the likers-actor is down we accept
-        // the retweet alone; if it's alive we still require the like.
-        if (liked === null) return { ok: true, reason: "retweet detected (likers actor down)" };
-        if (liked === true) return { ok: true, reason: "like + retweet detected" };
-        return { ok: false, reason: "like missing" };
+        if (!retweet)                            return { ok: false, reason: "retweet missing" };
+        if (!likedIds.has(String(tweetId)))      return { ok: false, reason: "like missing" };
+        return { ok: true, reason: "like + retweet detected" };
       }
       case GIFT_TYPE.Flag: {
-        const reply = await findEngagement(twitter, cityHandle, tweetId, "reply");
+        const reply = await findEngagement(cityHandle, tweetId, "reply");
         return reply
-          ? { ok: true, reason: "reply detected", evidence: reply.id }
+          ? { ok: true,  reason: "reply detected", evidence: reply.id }
           : { ok: false, reason: "reply not found" };
       }
       case GIFT_TYPE.Billboard: {
-        const quote = await findEngagement(twitter, cityHandle, tweetId, "quote");
+        const quote = await findEngagement(cityHandle, tweetId, "quote");
         return quote
-          ? { ok: true, reason: "quote detected", evidence: quote.id }
+          ? { ok: true,  reason: "quote detected", evidence: quote.id }
           : { ok: false, reason: "quote not found" };
       }
       case GIFT_TYPE.Monument: {
-        const post = await didMentionPost(twitter, cityHandle, gift);
+        const post = await didMentionPost(cityHandle, gift);
         return post
-          ? { ok: true, reason: "mention post detected", evidence: post.id }
+          ? { ok: true,  reason: "mention post detected", evidence: post.id }
           : { ok: false, reason: "mention post not found" };
       }
       case GIFT_TYPE.District: {
-        const pinned = await isPinned(twitter, cityHandle, tweetId);
+        const pinned = await isPinned(cityHandle, tweetId);
         return pinned
-          ? { ok: true, reason: "tweet is pinned" }
+          ? { ok: true,  reason: "tweet is pinned" }
           : { ok: false, reason: "tweet not pinned on owner's profile" };
       }
       default:
         return { ok: false, reason: `unknown giftType ${gift.giftType}` };
     }
   } catch (e) {
-    return { ok: false, reason: `provider error: ${e.message}` };
+    return { ok: false, reason: `X API error: ${e.message}` };
   }
 }
 
@@ -268,6 +223,5 @@ async function runSweep({ dryRun = false } = {}) {
 
 module.exports = {
   parseTweetId, verifyGiftAction, runSweep,
-  // exposed for tests
   _internal: { mentionsHandle },
 };

@@ -15,6 +15,7 @@ const {
   GIFT_STATUS,
 } = require("../services/contract");
 const { runSweep, verifyGiftAction } = require("../services/giftOracle");
+const oauthStore = require("../storage/oauthStore");
 
 const HIDDEN_FILE = path.join(__dirname, "../../data/admin-hidden.json");
 
@@ -99,6 +100,7 @@ router.get("/admin/cities", async (req, res) => {
     const hidden = loadHidden();
     res.json(cities.map((c) => ({ ...c, hidden: !!hidden[String(c.tokenId)] })));
   } catch (e) {
+    console.error("[admin/cities]", e.message);
     res.status(500).json({ error: e.message });
   }
 });
@@ -132,12 +134,14 @@ router.get("/admin/gifts", async (req, res) => {
       try { gifts = await getGiftsForCity(tokenId); } catch { continue; }
       if (gifts.length === 0) continue;
       const handle = await getHandleByTokenId(tokenId).catch(() => "");
-      for (const g of gifts) out.push({ ...g, cityHandle: handle });
+      const xLinked = !!oauthStore.get(handle);
+      for (const g of gifts) out.push({ ...g, cityHandle: handle, xLinked });
     }
     // Newest first
     out.sort((a, b) => b.createdAt - a.createdAt);
     res.json(out);
   } catch (e) {
+    console.error("[admin/gifts]", e.message);
     res.status(500).json({ error: e.message });
   }
 });

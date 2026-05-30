@@ -4,6 +4,7 @@ const cors = require("cors");
 const helmet = require("helmet");
 const cityRoutes = require("./routes/city");
 const adminRoutes = require("./routes/admin");
+const authRoutes = require("./routes/auth");
 const { isHidden } = require("./routes/admin");
 const { getCityData } = require("./services/contract");
 const { getCachedMetadata } = require("./services/ipfs");
@@ -86,6 +87,7 @@ app.use(express.json());
 
 app.use("/api", cityRoutes);
 app.use("/api", adminRoutes);
+app.use("/auth", authRoutes);
 
 app.get("/health", (_, res) => res.json({ ok: true }));
 

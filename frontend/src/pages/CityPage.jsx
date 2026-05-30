@@ -45,6 +45,7 @@ export default function CityPage({ tokenId, signer, address }) {
   const [giftType, setGiftType] = useState(0);
   const [tweetUrl, setTweetUrl] = useState("");
   const [sending, setSending] = useState(false);
+  const [xLinkStatus, setXLinkStatus] = useState(null); // { linked, twitterUserId, updatedAt } | null
 
   const loadGifts = useCallback(async (provider, addr) => {
     const gc = getGiftsContract(addr, provider);
@@ -58,11 +59,9 @@ export default function CityPage({ tokenId, signer, address }) {
       setPrices([...p]);
       // Only Verified gifts (status === 2) get rendered on the city map.
       // Accepted ones (status === 1) are NOT shown until the oracle confirms.
-      console.log("[CityPage] active gifts from contract:", active.map(g => ({ id: Number(g.id), status: Number(g.status), type: Number(g.giftType) })));
       const visible = active
         .filter(g => Number(g.status) === 2)
         .map(g => ({ id: g.id, giftType: g.giftType, tweetUrl: g.tweetUrl, buyer: g.buyer, status: g.status }));
-      console.log("[CityPage] visible on map after filter:", visible.length);
       setActiveGifts(visible);
       setGiftStats({ totalGifts: stats[0], totalEarned: stats[1], pendingCount: stats[2] });
     } catch {}
@@ -160,6 +159,16 @@ export default function CityPage({ tokenId, signer, address }) {
   }, [address, city]);
 
   useEffect(() => { if (isOwner) loadPending(giftsContractAddr); }, [isOwner, loadPending, giftsContractAddr]);
+
+  // Check if the city owner has linked X via OAuth (drives the Connect X button state).
+  useEffect(() => {
+    const handle = city?.city?.twitterHandle;
+    if (!isOwner || !handle) { setXLinkStatus(null); return; }
+    fetch(`${API_BASE}/auth/twitter/status?cityHandle=${encodeURIComponent(handle)}`)
+      .then((r) => r.ok ? r.json() : null)
+      .then((d) => setXLinkStatus(d))
+      .catch(() => setXLinkStatus(null));
+  }, [isOwner, city]);
   useEffect(() => {
     if (!giftsContractAddr || !address) return;
     const provider = signer?.provider || (window.ethereum ? new ethers.BrowserProvider(window.ethereum) : null);
@@ -379,6 +388,20 @@ export default function CityPage({ tokenId, signer, address }) {
                   <Settings className="w-4 h-4" />
                   {showPriceManager ? 'Close Prices' : 'Gift Prices'}
                 </motion.button>
+              )}
+              {isOwner && twitterHandle && (
+                <motion.a
+                  href={`${API_BASE}/auth/twitter/start?cityHandle=${encodeURIComponent(twitterHandle)}`}
+                  target="_blank" rel="noreferrer"
+                  className={`flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg border transition-colors font-medium ${
+                    xLinkStatus?.linked
+                      ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/20'
+                      : 'bg-[#0a0a0f] border-white/20 text-[#f1f5f9] hover:bg-[#16161f]'
+                  }`}
+                  whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
+                  <span className="text-base leading-none">𝕏</span>
+                  {xLinkStatus?.linked ? 'X Connected · Reconnect' : 'Connect X for Gift Verification'}
+                </motion.a>
               )}
             </div>
 

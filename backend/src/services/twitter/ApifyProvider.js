@@ -3,15 +3,61 @@ const ITwitterProvider = require("./ITwitterProvider");
 class ApifyProvider extends ITwitterProvider {
   constructor() {
     super();
-    // Collect all keys: APIFY_API_TOKEN_1, APIFY_API_TOKEN_2, ... or single APIFY_API_TOKEN
-    this.keys = [
-      process.env.APIFY_API_TOKEN_1,
-      process.env.APIFY_API_TOKEN_2,
-      process.env.APIFY_API_TOKEN,
-    ].filter(Boolean);
+    // Collect all keys: APIFY_API_TOKEN_1..12 or single APIFY_API_TOKEN.
+    // Loop instead of listing each — easier to extend.
+    this.keys = [];
+    for (let i = 1; i <= 12; i++) {
+      const k = process.env[`APIFY_API_TOKEN_${i}`];
+      if (k) this.keys.push(k);
+    }
+    if (process.env.APIFY_API_TOKEN) this.keys.push(process.env.APIFY_API_TOKEN);
 
     if (this.keys.length === 0) throw new Error("No Apify API keys set");
     this._keyIndex = 0;
+
+    // Actor for tweets/profiles. Override via APIFY_TWEET_ACTOR on Railway
+    // to switch to a cheaper one (e.g. "kaitoeasyapi~twitter-x-data-tweet-scraper-pay-per-result-cheapest", ~$0.25/1K).
+    this.tweetActor = process.env.APIFY_TWEET_ACTOR || "automation-lab~twitter-scraper";
+    this.isKaito = this.tweetActor.startsWith("kaitoeasyapi");
+  }
+
+  /**
+   * Build the input payload in the right format for the current actor.
+   * - kaitoeasyapi: { from, maxItems, queryType, twitterCookie? }
+   * - automation-lab: { mode: "search"|"user-tweets", searchTerms|usernames, ... }
+   */
+  _buildTweetsInput(handle, count) {
+    const cookie = process.env.TWITTER_COOKIE;
+    if (this.isKaito) {
+      const input = {
+        from: handle,
+        maxItems: Math.max(20, count),
+        queryType: "Latest",
+      };
+      if (cookie) input.twitterCookie = cookie;
+      return input;
+    }
+    if (cookie) {
+      return {
+        mode: "search",
+        searchTerms: [`from:${handle}`],
+        maxResults: count,
+        searchMode: "Latest",
+        twitterCookie: cookie,
+      };
+    }
+    return { mode: "user-tweets", usernames: [handle], maxResults: count };
+  }
+
+  /**
+   * kaitoeasyapi runs are short and cheap → always sync.
+   * automation-lab without cookie needs the async polling path.
+   */
+  async _runTweets(input) {
+    if (this.isKaito || process.env.TWITTER_COOKIE) {
+      return this._runSync(this.tweetActor, input);
+    }
+    return this._runAsync(this.tweetActor, input);
   }
 
   _nextKey() {
@@ -59,15 +105,28 @@ class ApifyProvider extends ITwitterProvider {
   }
 
   async getUserMetrics(handle) {
-    const cookie = process.env.TWITTER_COOKIE;
+    // kaitoeasyapi has no profile-only mode → profile lives inside each tweet's author.
+    if (this.isKaito) {
+      const items = await this._runTweets(this._buildTweetsInput(handle, 20));
+      const t = items[0];
+      if (!t?.author) throw new Error(`User @${handle} not found via Apify`);
+      const u = t.author;
+      if (process.env.APIFY_DEBUG) console.log("[ApifyProvider] author keys:", Object.keys(u));
+      return {
+        followers:  Number(u.followers  ?? u.followersCount ?? 0),
+        tweetCount: Number(u.statusesCount ?? u.tweetsCount ?? u.tweetCount ?? 0),
+        following:  Number(u.following   ?? u.followingCount ?? u.friendsCount ?? 0),
+        username:   u.userName ?? u.username ?? handle,
+      };
+    }
 
-    // Profiles mode gives complete user data (followers, following, tweetCount).
-    // Search mode only returns authorFollowers — use it as fallback.
+    // automation-lab: dedicated profiles mode.
+    const cookie = process.env.TWITTER_COOKIE;
     const input = { usernames: [handle], maxItems: 1, mode: "profiles" };
     if (cookie) input.twitterCookie = cookie;
 
     try {
-      const items = await this._runSync("automation-lab~twitter-scraper", input);
+      const items = await this._runSync(this.tweetActor, input);
       const user = items[0];
       if (process.env.APIFY_DEBUG && user) console.log("[ApifyProvider] profile keys:", Object.keys(user));
       if (user) {
@@ -82,9 +141,9 @@ class ApifyProvider extends ITwitterProvider {
       console.warn("[ApifyProvider] profiles mode failed, falling back to search:", e.message);
     }
 
-    // Fallback: extract author data from first tweet in search mode
+    // Fallback: extract author data from first tweet in search mode.
     if (cookie) {
-      const items = await this._runSync("automation-lab~twitter-scraper", {
+      const items = await this._runSync(this.tweetActor, {
         mode: "search",
         searchTerms: [`from:${handle}`],
         maxResults: 5,
@@ -107,25 +166,8 @@ class ApifyProvider extends ITwitterProvider {
   }
 
   async getUserTweets(handle, count = 50) {
-    const cookie = process.env.TWITTER_COOKIE;
-    const input = cookie
-      ? // Search mode with cookie — works even for restricted accounts
-        {
-          mode: "search",
-          searchTerms: [`from:${handle}`],
-          maxResults: count,
-          searchMode: "Latest",
-          twitterCookie: cookie,
-        }
-      : // Fallback: async user-tweets (may fail for restricted accounts)
-        { mode: "user-tweets", usernames: [handle], maxResults: count };
-
-    const items = cookie
-      ? await this._runSync("automation-lab~twitter-scraper", input)
-      : await this._runAsync("automation-lab~twitter-scraper", input);
-
+    const items = await this._runTweets(this._buildTweetsInput(handle, count));
     if (process.env.APIFY_DEBUG && items[0]) console.log("[ApifyProvider] raw tweet keys:", Object.keys(items[0]));
-
     return items
       .filter((t) => !t.isRetweet && !t.isReply)
       .map((t) => ({
@@ -143,20 +185,7 @@ class ApifyProvider extends ITwitterProvider {
    * and preserves engagement metadata used by the gift oracle.
    */
   async getUserTweetsWithMeta(handle, count = 50) {
-    const cookie = process.env.TWITTER_COOKIE;
-    const input = cookie
-      ? {
-          mode: "search",
-          searchTerms: [`from:${handle}`],
-          maxResults: count,
-          searchMode: "Latest",
-          twitterCookie: cookie,
-        }
-      : { mode: "user-tweets", usernames: [handle], maxResults: count };
-
-    const items = cookie
-      ? await this._runSync("automation-lab~twitter-scraper", input)
-      : await this._runAsync("automation-lab~twitter-scraper", input);
+    const items = await this._runTweets(this._buildTweetsInput(handle, count));
 
     if (process.env.APIFY_DEBUG && items[0]) {
       console.log("[ApifyProvider] meta tweet keys:", Object.keys(items[0]));
@@ -169,10 +198,10 @@ class ApifyProvider extends ITwitterProvider {
       const replyToUsername = (t.inReplyToUsername ?? t.replyToUsername ?? t.in_reply_to_screen_name ?? "").toLowerCase() || null;
       const quoted          = t.quotedTweet ?? t.quoted_status ?? null;
       const quotedTweetId   = String(quoted?.id ?? quoted?.id_str ?? "") || null;
-      const quotedUsername  = (quoted?.author?.username ?? quoted?.user?.screen_name ?? "").toLowerCase() || null;
+      const quotedUsername  = (quoted?.author?.userName ?? quoted?.author?.username ?? quoted?.user?.screen_name ?? "").toLowerCase() || null;
       const retweeted       = t.retweetedTweet ?? t.retweeted_status ?? null;
       const retweetedTweetId   = String(retweeted?.id ?? retweeted?.id_str ?? "") || null;
-      const retweetedUsername  = (retweeted?.author?.username ?? retweeted?.user?.screen_name ?? "").toLowerCase() || null;
+      const retweetedUsername  = (retweeted?.author?.userName ?? retweeted?.author?.username ?? retweeted?.user?.screen_name ?? "").toLowerCase() || null;
       return {
         id,
         text:            t.text ?? "",
@@ -231,11 +260,35 @@ class ApifyProvider extends ITwitterProvider {
    * Profile including the pinned tweet (id + text).
    */
   async getProfileWithPinned(handle) {
+    // kaitoeasyapi: profile is embedded in t.author; pinnedTweetIds is an array.
+    // The pinned tweet itself should appear in the returned tweets list.
+    if (this.isKaito) {
+      const items = await this._runTweets(this._buildTweetsInput(handle, 100));
+      const first = items[0];
+      if (!first?.author) throw new Error(`User @${handle} not found via Apify`);
+      const u = first.author;
+      if (process.env.APIFY_DEBUG) console.log("[ApifyProvider] author keys:", Object.keys(u));
+
+      const pinnedArr = u.pinnedTweetIds ?? u.pinned_tweet_ids ?? [];
+      const pinnedTweetId = pinnedArr[0] ? String(pinnedArr[0]) : null;
+      const pinned = pinnedTweetId ? items.find((t) => String(t.id) === pinnedTweetId) : null;
+
+      return {
+        username:   u.userName ?? u.username ?? handle,
+        followers:  Number(u.followers   ?? u.followersCount ?? 0),
+        tweetCount: Number(u.statusesCount ?? u.tweetsCount  ?? 0),
+        following:  Number(u.following   ?? u.followingCount ?? 0),
+        pinnedTweetId,
+        pinnedText: pinned?.text ?? "",
+      };
+    }
+
+    // automation-lab: dedicated profiles mode.
     const cookie = process.env.TWITTER_COOKIE;
     const input = { usernames: [handle], maxItems: 1, mode: "profiles" };
     if (cookie) input.twitterCookie = cookie;
 
-    const items = await this._runSync("automation-lab~twitter-scraper", input);
+    const items = await this._runSync(this.tweetActor, input);
     const user = items[0];
     if (!user) throw new Error(`User @${handle} not found via Apify`);
     if (process.env.APIFY_DEBUG) console.log("[ApifyProvider] profile keys:", Object.keys(user));
@@ -255,15 +308,20 @@ class ApifyProvider extends ITwitterProvider {
   }
 
   async findTweet(handle, searchText) {
+    // kaitoeasyapi: no text-query filter — list latest tweets and grep locally.
+    if (this.isKaito) {
+      const items = await this._runTweets(this._buildTweetsInput(handle, 100));
+      const hit = items.find((t) => (t.text ?? "").includes(searchText));
+      return hit ? { text: hit.text, likes: hit.likeCount ?? 0, retweets: hit.retweetCount ?? 0 } : null;
+    }
+
     const cookie = process.env.TWITTER_COOKIE;
     if (!cookie) {
-      // No cookie: try timeline only
       const tweets = await this.getUserTweets(handle, 20);
       return tweets.find((t) => t.text.includes(searchText)) || null;
     }
 
-    // With cookie: search directly for the verification text
-    const items = await this._runSync("automation-lab~twitter-scraper", {
+    const items = await this._runSync(this.tweetActor, {
       mode: "search",
       searchTerms: [`from:${handle} ${searchText.slice(0, 60)}`],
       maxResults: 5,
