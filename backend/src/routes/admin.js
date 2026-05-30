@@ -17,7 +17,10 @@ const {
 const { runSweep, verifyGiftAction } = require("../services/giftOracle");
 const oauthStore = require("../storage/oauthStore");
 
-const HIDDEN_FILE = path.join(__dirname, "../../data/admin-hidden.json");
+// Persisted data dir — shared with oauthStore. On Railway set OAUTH_DATA_DIR=/data
+// (the mounted Volume), so both admin-hidden.json and oauth.json survive deploys.
+const DATA_DIR = process.env.OAUTH_DATA_DIR || path.join(__dirname, "../../data");
+const HIDDEN_FILE = path.join(DATA_DIR, "admin-hidden.json");
 
 function loadHidden() {
   try { return JSON.parse(fs.readFileSync(HIDDEN_FILE, "utf8")); } catch { return {}; }
@@ -134,7 +137,10 @@ router.get("/admin/gifts", async (req, res) => {
       try { gifts = await getGiftsForCity(tokenId); } catch { continue; }
       if (gifts.length === 0) continue;
       const handle = await getHandleByTokenId(tokenId).catch(() => "");
-      const xLinked = !!oauthStore.get(handle);
+      let xLinked = false;
+      try { xLinked = !!oauthStore.get(handle); } catch (e) {
+        console.warn("[admin/gifts] oauthStore.get failed:", e.message);
+      }
       for (const g of gifts) out.push({ ...g, cityHandle: handle, xLinked });
     }
     // Newest first
