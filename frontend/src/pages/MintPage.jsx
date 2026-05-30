@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Sparkles, Loader2, AlertCircle, ArrowRight, Hash, ExternalLink, RefreshCw } from "lucide-react";
+import { Sparkles, Loader2, AlertCircle, ArrowRight, ExternalLink, CheckCircle2 } from "lucide-react";
 import { API_BASE, LEVEL_NAMES } from "../lib/contract";
 import CityRendererV2 from "../components/CityRendererV2";
 
@@ -19,38 +19,47 @@ function getShareUrl(name, level, style) {
 
 const STEPS = {
   wallet:  { num: "1 / 3", title: "Connect Wallet" },
-  handle:  { num: "2 / 3", title: "Enter Twitter Handle" },
-  tweet:   { num: "3 / 3", title: "Verify Ownership" },
+  x:       { num: "2 / 3", title: "Connect X" },
+  ready:   { num: "3 / 3", title: "Mint Your City" },
   minting: { num: "—",     title: "Building Your City" },
   done:    { num: "✓",     title: "City Minted!" },
 };
 
 export default function MintPage({ address, onConnect, onMinted }) {
-  const [step, setStep] = useState(address ? "handle" : "wallet");
-  const [handle, setHandle] = useState("");
-  const [verifyText, setVerifyText] = useState("");
+  const [step, setStep] = useState(address ? "x" : "wallet");
+  const [linked, setLinked] = useState(null); // null | {linked, cityHandle, twitterUserId}
   const [error, setError] = useState("");
   const [result, setResult] = useState(null);
   const [loading, setLoading] = useState(false);
+  const pollRef = useRef(null);
 
-  async function getVerifyText() {
-    setError("");
-    setLoading(true);
+  // Check current OAuth link state for this wallet.
+  async function refreshLink(addr) {
+    if (!addr) return null;
     try {
-      const res = await fetch(`${API_BASE}/api/verify-tweet`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ walletAddress: address, twitterHandle: handle }),
-      });
-      const data = await res.json();
-      if (data.error) throw new Error(data.error);
-      setVerifyText(data.verifyText);
-      setStep("tweet");
-    } catch (e) {
-      setError(e.message);
-    } finally {
-      setLoading(false);
-    }
+      const r = await fetch(`${API_BASE}/auth/twitter/status?address=${addr}`);
+      const d = await r.json();
+      setLinked(d);
+      if (d?.linked) setStep((s) => (s === "x" || s === "wallet" ? "ready" : s));
+      return d;
+    } catch { return null; }
+  }
+
+  useEffect(() => {
+    if (address) refreshLink(address);
+    return () => { if (pollRef.current) clearInterval(pollRef.current); };
+  }, [address]);
+
+  function startConnectX() {
+    if (!address) return;
+    const url = `${API_BASE}/auth/twitter/start?address=${address}`;
+    window.open(url, "_blank", "noopener,noreferrer");
+    // Poll status every 2s until we see linked, then stop.
+    if (pollRef.current) clearInterval(pollRef.current);
+    pollRef.current = setInterval(async () => {
+      const d = await refreshLink(address);
+      if (d?.linked) { clearInterval(pollRef.current); pollRef.current = null; }
+    }, 2000);
   }
 
   async function mint() {
@@ -61,7 +70,7 @@ export default function MintPage({ address, onConnect, onMinted }) {
       const res = await fetch(`${API_BASE}/api/mint`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ walletAddress: address, twitterHandle: handle }),
+        body: JSON.stringify({ walletAddress: address }),
       });
       const data = await res.json();
       if (data.error) throw new Error(data.error);
@@ -71,7 +80,7 @@ export default function MintPage({ address, onConnect, onMinted }) {
       onMinted?.(data.tokenId);
     } catch (e) {
       setError(e.message);
-      setStep("tweet");
+      setStep("ready");
     } finally {
       setLoading(false);
     }
@@ -85,6 +94,7 @@ export default function MintPage({ address, onConnect, onMinted }) {
     engagement: Number(city.metrics?.engagement || 0),
   } : null;
 
+  const handle = linked?.cityHandle || "";
   const currentStep = STEPS[step];
 
   return (
@@ -116,7 +126,7 @@ export default function MintPage({ address, onConnect, onMinted }) {
                 <p className="text-[#94a3b8]">Connect MetaMask to get started. We'll switch you to Mantle Testnet automatically.</p>
               </div>
               <motion.button
-                onClick={async () => { await onConnect(); setStep("handle"); }}
+                onClick={async () => { await onConnect(); setStep("x"); }}
                 className="px-6 py-3 rounded-xl bg-gradient-to-r from-[#00d4ff] to-[#a855f7] text-white font-semibold shadow-lg shadow-[#00d4ff]/25"
                 whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}
               >
@@ -125,65 +135,47 @@ export default function MintPage({ address, onConnect, onMinted }) {
             </div>
           )}
 
-          {/* Step 2: Handle */}
-          {step === "handle" && (
+          {/* Step 2: Connect X */}
+          {step === "x" && (
             <div className="space-y-6">
               <p className="text-sm text-[#94a3b8]">
                 Connected: <span className="font-mono text-[#00d4ff]">{address?.slice(0, 6)}...{address?.slice(-4)}</span>
               </p>
-              <div>
-                <label className="block text-sm font-medium text-[#94a3b8] mb-2">Twitter Handle</label>
-                <div className="relative">
-                  <Hash className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-[#64748b]" />
-                  <input
-                    type="text"
-                    value={handle}
-                    onChange={e => setHandle(e.target.value.replace("@", ""))}
-                    placeholder="your_handle"
-                    onKeyDown={e => e.key === "Enter" && handle && getVerifyText()}
-                    className="w-full pl-12 pr-4 py-3 rounded-xl bg-[#0a0a0f] border border-[rgba(255,255,255,0.06)] text-[#f1f5f9] placeholder-[#64748b] focus:outline-none focus:border-[#00d4ff]/50 focus:ring-1 focus:ring-[#00d4ff]/20 transition-all"
-                  />
-                </div>
+              <div className="text-center py-4">
+                <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-emerald-400 to-emerald-600 flex items-center justify-center mx-auto mb-4 text-3xl text-white font-bold">𝕏</div>
+                <h3 className="text-xl font-bold mb-2 text-[#f1f5f9]">Connect Your X Account</h3>
+                <p className="text-[#94a3b8] max-w-md mx-auto">
+                  Authorize TweetCity to read your profile. We use this to mint your city and verify engagement on paid gifts.
+                </p>
               </div>
-              <AnimatePresence>
-                {error && (
-                  <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}
-                    className="flex items-center gap-2 p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-sm">
-                    <AlertCircle className="w-4 h-4 shrink-0" />{error}
-                  </motion.div>
-                )}
-              </AnimatePresence>
               <motion.button
-                onClick={getVerifyText} disabled={!handle || loading}
-                className="w-full flex items-center justify-center gap-2 px-6 py-3 rounded-xl bg-gradient-to-r from-[#00d4ff] to-[#a855f7] text-white font-semibold shadow-lg shadow-[#00d4ff]/25 disabled:opacity-50 disabled:cursor-not-allowed"
+                onClick={startConnectX}
+                className="w-full flex items-center justify-center gap-2 px-6 py-3 rounded-xl bg-gradient-to-r from-emerald-500 to-emerald-600 text-white font-semibold shadow-lg shadow-emerald-500/25"
                 whileHover={{ scale: 1.01 }} whileTap={{ scale: 0.99 }}
               >
-                {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <><span>Continue</span><ArrowRight className="w-4 h-4" /></>}
+                <span className="text-base">𝕏</span> Connect X
               </motion.button>
+              <p className="text-xs text-[#64748b] text-center">
+                A new tab will open on x.com. Approve access, then return here — this page will update automatically.
+              </p>
             </div>
           )}
 
-          {/* Step 3: Verify */}
-          {step === "tweet" && (
+          {/* Step 3: Ready to mint */}
+          {step === "ready" && (
             <div className="space-y-6">
-              <div className="space-y-4 text-sm text-[#94a3b8]">
-                <div className="flex gap-3">
-                  <span className="w-6 h-6 rounded-full bg-[#00d4ff]/20 text-[#00d4ff] flex items-center justify-center text-xs font-bold shrink-0">1</span>
-                  <span>Log in to Twitter as <strong className="text-[#f1f5f9]">@{handle}</strong> — <a href="https://twitter.com/login" target="_blank" rel="noreferrer" className="text-[#00d4ff] hover:underline">open Twitter ↗</a></span>
-                </div>
-                <div className="flex gap-3">
-                  <span className="w-6 h-6 rounded-full bg-[#00d4ff]/20 text-[#00d4ff] flex items-center justify-center text-xs font-bold shrink-0">2</span>
-                  <span>Post this exact text from that account:</span>
+              <div className="p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/30 flex items-center gap-3">
+                <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
+                <div className="min-w-0">
+                  <div className="text-sm font-semibold text-emerald-300">Connected as @{handle}</div>
+                  <div className="text-xs text-emerald-300/70">Wallet {address?.slice(0,6)}…{address?.slice(-4)}</div>
                 </div>
               </div>
-              <div className="p-4 rounded-xl bg-[#0a0a0f] border border-[rgba(255,255,255,0.06)] font-mono text-sm text-[#f1f5f9] select-all">
-                {verifyText}
-              </div>
-              <div className="flex gap-3 text-sm text-[#94a3b8]">
-                <span className="w-6 h-6 rounded-full bg-[#00d4ff]/20 text-[#00d4ff] flex items-center justify-center text-xs font-bold shrink-0">3</span>
-                <span>Come back here and click "I've Posted — Mint Now"</span>
-              </div>
-              <p className="text-xs text-[#64748b]">Your wallet address is not exposed — just a unique code linking your Twitter to this mint.</p>
+
+              <p className="text-sm text-[#94a3b8]">
+                We'll analyze your last tweets, generate a unique city with AI, upload to IPFS, and mint the NFT on Mantle.
+              </p>
+
               <AnimatePresence>
                 {error && (
                   <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}
@@ -192,23 +184,14 @@ export default function MintPage({ address, onConnect, onMinted }) {
                   </motion.div>
                 )}
               </AnimatePresence>
-              <div className="flex gap-3">
-                <motion.a
-                  href={`https://twitter.com/intent/tweet?text=${encodeURIComponent(verifyText)}`}
-                  target="_blank" rel="noreferrer"
-                  className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl glass text-[#f1f5f9] font-medium hover:bg-[#16161f] transition-colors"
-                  whileHover={{ scale: 1.01 }}
-                >
-                  <ExternalLink className="w-4 h-4" /> Open Compose
-                </motion.a>
-                <motion.button
-                  onClick={mint} disabled={loading}
-                  className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl bg-gradient-to-r from-[#00d4ff] to-[#a855f7] text-white font-semibold disabled:opacity-50"
-                  whileHover={{ scale: 1.01 }} whileTap={{ scale: 0.99 }}
-                >
-                  {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : "I've Posted — Mint Now"}
-                </motion.button>
-              </div>
+
+              <motion.button
+                onClick={mint} disabled={loading}
+                className="w-full flex items-center justify-center gap-2 px-6 py-3 rounded-xl bg-gradient-to-r from-[#00d4ff] to-[#a855f7] text-white font-semibold shadow-lg shadow-[#00d4ff]/25 disabled:opacity-50 disabled:cursor-not-allowed"
+                whileHover={{ scale: 1.01 }} whileTap={{ scale: 0.99 }}
+              >
+                {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <><span>Mint My City</span><ArrowRight className="w-4 h-4" /></>}
+              </motion.button>
             </div>
           )}
 
@@ -252,23 +235,6 @@ export default function MintPage({ address, onConnect, onMinted }) {
                 ))}
               </div>
               {city.description && <p className="text-sm text-[#94a3b8] italic">{city.description}</p>}
-
-              {/* Connect X CTA — needed so the gift oracle can verify engagements via X API. */}
-              <motion.a
-                href={`${API_BASE}/auth/twitter/start?cityHandle=${encodeURIComponent(handle)}`}
-                target="_blank" rel="noreferrer"
-                className="flex items-center justify-between gap-4 p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/30 hover:bg-emerald-500/20 transition-colors"
-                whileHover={{ scale: 1.01 }} whileTap={{ scale: 0.99 }}
-              >
-                <div className="flex items-center gap-3 min-w-0">
-                  <span className="text-2xl leading-none">𝕏</span>
-                  <div className="min-w-0">
-                    <div className="font-semibold text-emerald-300">Connect X for Gift Verification</div>
-                    <div className="text-xs text-emerald-300/70 mt-0.5">Required so paid gifts visitors send can be auto-verified. Takes ~10 seconds.</div>
-                  </div>
-                </div>
-                <ArrowRight className="w-4 h-4 text-emerald-300 shrink-0" />
-              </motion.a>
 
               <div className="flex gap-3">
                 <motion.a

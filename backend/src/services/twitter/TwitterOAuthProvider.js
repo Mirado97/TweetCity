@@ -155,7 +155,7 @@ class TwitterOAuthProvider {
 
     const json = await this._get(handle,
       `/2/users/${rec.twitterUserId}/tweets?max_results=${Math.min(100, Math.max(5, count))}`
-      + `&tweet.fields=created_at,author_id,referenced_tweets,entities,in_reply_to_user_id`
+      + `&tweet.fields=created_at,author_id,referenced_tweets,entities,in_reply_to_user_id,public_metrics`
       + `&expansions=referenced_tweets.id.author_id`);
 
     // Map expansions.users by id for username lookup of referenced tweets.
@@ -183,11 +183,12 @@ class TwitterOAuthProvider {
         ? (usersById[replyUserId]?.username?.toLowerCase() || null)
         : null;
 
+      const pm = t.public_metrics || {};
       return {
         id:                String(t.id),
         text:              t.text || "",
-        likes:             0, // not requested — public_metrics adds cost
-        retweets:          0,
+        likes:             Number(pm.like_count    ?? 0),
+        retweets:          Number(pm.retweet_count ?? 0),
         createdAt:         t.created_at || "",
         isRetweet:         !!retweetRef,
         isReply:           !!replyRef,
@@ -200,6 +201,36 @@ class TwitterOAuthProvider {
         retweetedUsername: retweetRef ? findIncludedAuthor(retweetRef.id) : null,
       };
     });
+  }
+
+  /**
+   * Compact profile metrics. Compatible with the old ApifyProvider.getUserMetrics shape:
+   *   { username, followers, following, tweetCount }
+   * Used by mint + sync.
+   */
+  async getUserMetrics(handle) {
+    const p = await this.getProfileWithPinned(handle);
+    return {
+      username:   p.username,
+      followers:  p.followers,
+      tweetCount: p.tweetCount,
+      following:  p.following,
+    };
+  }
+
+  /**
+   * Original posts only (no retweets/replies) with likes+retweets — for AI city style.
+   */
+  async getUserTweets(handle, count = 50) {
+    const tweets = await this.getUserTweetsWithMeta(handle, count);
+    return tweets
+      .filter((t) => !t.isRetweet && !t.isReply)
+      .map((t) => ({
+        text:      t.text,
+        likes:     t.likes,
+        retweets:  t.retweets,
+        createdAt: t.createdAt,
+      }));
   }
 }
 

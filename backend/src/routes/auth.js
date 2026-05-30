@@ -31,15 +31,21 @@ const router = express.Router();
 // Diagnostic — proves the router is mounted.
 router.get("/ping", (_req, res) => res.json({ ok: true, route: "auth" }));
 
-// Whether a cityHandle has linked their X account. Public — anyone can ask.
+// Whether a cityHandle (or owner wallet) has linked their X account. Public.
+// Accepts ?cityHandle=... OR ?address=0x...
 router.get("/twitter/status", (req, res) => {
   const cityHandle = String(req.query.cityHandle || "").trim().replace(/^@/, "").toLowerCase();
-  if (!cityHandle) return res.status(400).json({ error: "cityHandle query param is required" });
-  const rec = oauthStore.get(cityHandle);
+  const address    = String(req.query.address    || "").trim().toLowerCase();
+  if (!cityHandle && !address) {
+    return res.status(400).json({ error: "cityHandle or address query param is required" });
+  }
+  const rec = cityHandle ? oauthStore.get(cityHandle) : oauthStore.findByAddress(address);
   if (!rec) return res.json({ linked: false });
   res.json({
     linked:        true,
+    cityHandle:    rec.cityHandle || cityHandle,
     twitterUserId: rec.twitterUserId,
+    ownerAddress:  rec.ownerAddress || null,
     updatedAt:     rec.updatedAt,
   });
 });
@@ -51,7 +57,7 @@ const SCOPES        = "tweet.read users.read like.read offline.access";
 const STATE_TTL_MS  = 5 * 60 * 1000;
 
 // In-memory PKCE state. Lost on restart — fine, OAuth flow is short.
-const pendingStates = new Map(); // state → { verifier, cityHandle, expiresAt }
+const pendingStates = new Map(); // state → { verifier, cityHandle?, address?, expiresAt }
 
 function cleanupStates() {
   const now = Date.now();
@@ -75,7 +81,10 @@ router.get("/twitter/start", (req, res) => {
     return res.status(500).send("TWITTER_CLIENT_ID / TWITTER_OAUTH_CALLBACK_URL not configured");
   }
   const cityHandle = String(req.query.cityHandle || "").trim().replace(/^@/, "");
-  if (!cityHandle) return res.status(400).send("cityHandle query param is required");
+  const address    = String(req.query.address    || "").trim().toLowerCase();
+  if (!cityHandle && !address) {
+    return res.status(400).send("cityHandle or address query param is required");
+  }
 
   cleanupStates();
 
@@ -86,6 +95,7 @@ router.get("/twitter/start", (req, res) => {
   pendingStates.set(state, {
     verifier,
     cityHandle,
+    address,
     expiresAt: Date.now() + STATE_TTL_MS,
   });
 
@@ -142,21 +152,23 @@ router.get("/twitter/callback", async (req, res) => {
     const me = await meRes.json();
     if (!meRes.ok || !me?.data?.id) throw new Error(`/users/me ${meRes.status}: ${JSON.stringify(me)}`);
 
-    const realHandle  = String(me.data.username).toLowerCase();
-    const expectedHandle = entry.cityHandle.toLowerCase();
-    // Sanity: did the user log into the same handle that owns the city?
-    // Save under the REAL handle (whichever account actually authorized).
-    const handleMismatch = realHandle !== expectedHandle;
+    const realHandle = String(me.data.username).toLowerCase();
+    const expectedHandle = (entry.cityHandle || "").toLowerCase();
+    // Sanity: if start was launched with cityHandle, warn on mismatch.
+    // Always save under the REAL handle (whichever account actually authorized).
+    const handleMismatch = expectedHandle && realHandle !== expectedHandle;
 
-    oauthStore.upsert(realHandle, {
+    const upsertPayload = {
       twitterUserId: me.data.id,
       accessToken:   tok.access_token,
       refreshToken:  tok.refresh_token,
       expiresAt:     Date.now() + (Number(tok.expires_in) || 7200) * 1000,
       scope:         tok.scope,
-    });
+    };
+    if (entry.address) upsertPayload.ownerAddress = entry.address.toLowerCase();
+    oauthStore.upsert(realHandle, upsertPayload);
 
-    console.log(`[auth] linked @${realHandle} (userId=${me.data.id}) — expected @${expectedHandle}`);
+    console.log(`[auth] linked @${realHandle} (userId=${me.data.id})${entry.address ? ` for owner ${entry.address.slice(0,6)}…${entry.address.slice(-4)}` : ""}${expectedHandle ? ` — expected @${expectedHandle}` : ""}`);
 
     const warn = handleMismatch
       ? `<p style="color:#c33">⚠️ Ожидали <code>@${escapeHtml(expectedHandle)}</code>, а вошли как <code>@${escapeHtml(realHandle)}</code>. Запись сохранена под реальным handle.</p>`

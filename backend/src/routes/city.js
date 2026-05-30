@@ -1,16 +1,14 @@
 const express = require("express");
 const router = express.Router();
 const { ethers } = require("ethers");
-const { createHash } = require("crypto");
 
-function makeVerifyCode(walletAddress, twitterHandle) {
-  return createHash("sha256")
-    .update(walletAddress.toLowerCase() + twitterHandle.toLowerCase())
-    .digest("hex")
-    .slice(0, 6);
+const TwitterOAuthProvider = require("../services/twitter/TwitterOAuthProvider");
+const oauthStore = require("../storage/oauthStore");
+let _oauth = null;
+function getOAuth() {
+  if (!_oauth) _oauth = new TwitterOAuthProvider();
+  return _oauth;
 }
-
-const getTwitterProvider = require("../services/twitter");
 const { analyzeCityPersonality, generateLevelUpNarrative } = require("../services/claude");
 const { uploadMetadata, getCachedMetadata } = require("../services/ipfs");
 const { mintCity, updateCity, getCityData, getLeaderboard, getTokenIdByHandle, getHandleByTokenId, registerERC8004Agent, recordValidation, getTokenAgentId, registerCityManager, getCityManagerWallet, getGiftsForCity, getGift, verifyGiftEngagement, listAllCities } = require("../services/contract");
@@ -20,30 +18,19 @@ const { isHidden, loadHidden } = require("./admin");
 
 // POST /api/verify-tweet
 // Returns the text the user must tweet to prove account ownership
-router.post("/verify-tweet", (req, res) => {
-  const { walletAddress, twitterHandle } = req.body;
-  if (!walletAddress || !twitterHandle) {
-    return res.status(400).json({ error: "walletAddress and twitterHandle required" });
-  }
-  if (!ethers.isAddress(walletAddress)) {
-    return res.status(400).json({ error: "Invalid wallet address" });
-  }
-
-  const code = makeVerifyCode(walletAddress, twitterHandle);
-  const verifyText = `Minting my city on TweetCity! Code: TC-${code} #TweetCity #Mantle`;
-  res.json({ verifyText, code });
-});
-
-// POST /api/mint
+// POST /api/mint — OAuth-only. Owner must Connect X first; backend reads
+// twitterHandle / userId / tokens from oauthStore by wallet address.
 router.post("/mint", mintLimiter, async (req, res) => {
-  const { walletAddress, twitterHandle } = req.body;
+  const { walletAddress } = req.body;
 
-  if (!walletAddress || !twitterHandle) {
-    return res.status(400).json({ error: "walletAddress and twitterHandle required" });
+  if (!walletAddress)              return res.status(400).json({ error: "walletAddress required" });
+  if (!ethers.isAddress(walletAddress)) return res.status(400).json({ error: "Invalid wallet address" });
+
+  const link = oauthStore.findByAddress(walletAddress);
+  if (!link) {
+    return res.status(403).json({ error: "Connect your X account first (OAuth). No linked handle for this wallet.", needsOAuth: true });
   }
-  if (!ethers.isAddress(walletAddress)) {
-    return res.status(400).json({ error: "Invalid wallet address" });
-  }
+  const twitterHandle = link.cityHandle;
 
   try {
     // Step 0: Check if already minted — skip all expensive steps
@@ -53,22 +40,8 @@ router.post("/mint", mintLimiter, async (req, res) => {
       return res.json({ tokenId: String(existingTokenId), txHash: null, ipfsCID: existing.city.ipfsCID, cityData: null, alreadyMinted: true });
     }
 
-    const twitter = getTwitterProvider();
-    const code = makeVerifyCode(walletAddress, twitterHandle);
-    const verifyText = `Minting my city on TweetCity! Code: TC-${code} #TweetCity #Mantle`;
-
-    // Step 1: Verify Tweet Proof (skip if SKIP_TWEET_VERIFY=true in .env)
-    if (process.env.SKIP_TWEET_VERIFY !== "true") {
-      const proofTweet = await twitter.findTweet(twitterHandle, `TC-${code}`);
-      if (!proofTweet) {
-        return res.status(403).json({
-          error: "Tweet Proof not found. Please post the verification tweet first.",
-          verifyText,
-        });
-      }
-    }
-
-    // Step 2: Fetch metrics + tweets
+    // Step 1: Fetch metrics + tweets via owner's own OAuth token.
+    const twitter = getOAuth();
     const [metrics, tweets] = await Promise.all([
       twitter.getUserMetrics(twitterHandle),
       twitter.getUserTweets(twitterHandle, 50),
@@ -123,16 +96,25 @@ router.post("/mint", mintLimiter, async (req, res) => {
   }
 });
 
-// POST /api/sync
+// POST /api/sync — OAuth-only. Caller supplies walletAddress + tokenId;
+// twitterHandle is read from oauthStore (so owners can't sync foreign cities).
 router.post("/sync", checkSyncCooldown, async (req, res) => {
-  const { tokenId, twitterHandle } = req.body;
-
-  if (!tokenId || !twitterHandle) {
-    return res.status(400).json({ error: "tokenId and twitterHandle required" });
+  const { tokenId, walletAddress } = req.body;
+  if (!tokenId || !walletAddress) {
+    return res.status(400).json({ error: "tokenId and walletAddress required" });
+  }
+  if (!ethers.isAddress(walletAddress)) {
+    return res.status(400).json({ error: "Invalid wallet address" });
   }
 
+  const link = oauthStore.findByAddress(walletAddress);
+  if (!link) {
+    return res.status(403).json({ error: "Connect X first — no linked handle for this wallet.", needsOAuth: true });
+  }
+  const twitterHandle = link.cityHandle;
+
   try {
-    const twitter = getTwitterProvider();
+    const twitter = getOAuth();
     const [metrics, tweets] = await Promise.all([
       twitter.getUserMetrics(twitterHandle),
       twitter.getUserTweets(twitterHandle, 50),

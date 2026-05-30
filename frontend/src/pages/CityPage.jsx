@@ -183,12 +183,11 @@ export default function CityPage({ tokenId, signer, address, onOwnerConfirmed })
     setError("");
     setSyncResult(null);
     try {
-      const twitterHandle = city?.city?.twitterHandle;
-      if (!twitterHandle) throw new Error("No Twitter handle on this city");
+      if (!address) throw new Error("Connect wallet first");
       const res = await fetch(`${API_BASE}/api/sync`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ tokenId, twitterHandle }),
+        body: JSON.stringify({ tokenId, walletAddress: address }),
       });
       const data = await res.json();
       if (data.error) throw new Error(data.error);

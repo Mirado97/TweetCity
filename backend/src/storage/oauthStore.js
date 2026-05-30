@@ -73,6 +73,21 @@ function all() {
   return Object.entries(load()).map(([cityHandle, rec]) => ({ cityHandle, ...rec }));
 }
 
+/**
+ * Linear scan over all records — fine for our scale (handful of cities).
+ * If we grow beyond a few thousand owners, switch to a secondary index.
+ */
+function findByAddress(address) {
+  if (!address) return null;
+  const a = String(address).toLowerCase();
+  for (const [cityHandle, rec] of Object.entries(load())) {
+    if (rec.ownerAddress && rec.ownerAddress.toLowerCase() === a) {
+      return { cityHandle, ...rec };
+    }
+  }
+  return null;
+}
+
 function upsert(handle, patch) {
   const h = key(handle);
   if (!h) throw new Error("upsert: empty cityHandle");
@@ -93,4 +108,4 @@ function remove(handle) {
   return false;
 }
 
-module.exports = { get, all, upsert, remove, _path: FILE_PATH };
+module.exports = { get, all, upsert, remove, findByAddress, _path: FILE_PATH };
