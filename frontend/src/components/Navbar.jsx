@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
-import { Building2, Home, Trophy, PlusCircle, Wallet, LogOut, BookOpen, Shield } from 'lucide-react';
+import { Building2, Home, Trophy, PlusCircle, Wallet, LogOut, BookOpen, Shield, Store } from 'lucide-react';
 import { cn } from '../utils/cn';
 import { fetchOwner } from '../lib/adminApi';
 
 const navItems = [
   { id: 'home', label: 'Home', icon: Home },
   { id: 'mint', label: 'Mint', icon: PlusCircle },
+  { id: 'market', label: 'Market', icon: Store },
   { id: 'leaderboard', label: 'Leaderboard', icon: Trophy },
   { id: 'guide', label: 'Guide', icon: BookOpen },
 ];

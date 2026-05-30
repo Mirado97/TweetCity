@@ -8,6 +8,7 @@ import LandingPage from "./pages/LandingPage";
 import MintPage from "./pages/MintPage";
 import CityPage from "./pages/CityPage";
 import LeaderboardPage from "./pages/LeaderboardPage";
+import MarketPage from "./pages/MarketPage";
 import GuidePage from "./pages/GuidePage";
 import AdminPage from "./pages/AdminPage";
 import TestV2Page from "./pages/TestV2Page";
@@ -120,6 +121,11 @@ export default function App() {
           {page === "leaderboard" && (
             <motion.div key="leaderboard" className="w-full" variants={pageVariants} initial="initial" animate="animate" exit="exit" transition={{ duration: 0.35 }}>
               <LeaderboardPage onCityClick={(id) => nav("city", id)} />
+            </motion.div>
+          )}
+          {page === "market" && (
+            <motion.div key="market" className="w-full" variants={pageVariants} initial="initial" animate="animate" exit="exit" transition={{ duration: 0.35 }}>
+              <MarketPage onCityClick={(id) => nav("city", id)} />
             </motion.div>
           )}
           {page === "guide" && (

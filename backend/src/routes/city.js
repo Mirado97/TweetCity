@@ -13,7 +13,7 @@ function makeVerifyCode(walletAddress, twitterHandle) {
 const getTwitterProvider = require("../services/twitter");
 const { analyzeCityPersonality, generateLevelUpNarrative } = require("../services/claude");
 const { uploadMetadata, getCachedMetadata } = require("../services/ipfs");
-const { mintCity, updateCity, getCityData, getLeaderboard, getTokenIdByHandle, getHandleByTokenId, registerERC8004Agent, recordValidation, getTokenAgentId, registerCityManager, getCityManagerWallet, getGiftsForCity, getGift, verifyGiftEngagement } = require("../services/contract");
+const { mintCity, updateCity, getCityData, getLeaderboard, getTokenIdByHandle, getHandleByTokenId, registerERC8004Agent, recordValidation, getTokenAgentId, registerCityManager, getCityManagerWallet, getGiftsForCity, getGift, verifyGiftEngagement, listAllCities } = require("../services/contract");
 const { runSweep, verifyGiftAction } = require("../services/giftOracle");
 const { checkSyncCooldown, mintLimiter } = require("../middleware/rateLimit");
 const { isHidden, loadHidden } = require("./admin");
@@ -273,6 +273,30 @@ router.get("/leaderboard", async (req, res) => {
     const filtered = board.filter((c) => !hidden[String(c.tokenId)]).slice(0, 10);
     res.json(filtered);
   } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Public market — all cities (minus hidden) with optional handle filter.
+// Cached for 60s to avoid hammering RPC; the Market UI page hits this on every keystroke.
+const MARKET_TTL_MS = 60_000;
+let _marketCache = { data: null, fetchedAt: 0 };
+router.get("/cities", async (req, res) => {
+  try {
+    const now = Date.now();
+    if (!_marketCache.data || now - _marketCache.fetchedAt > MARKET_TTL_MS) {
+      _marketCache.data = await listAllCities();
+      _marketCache.fetchedAt = now;
+    }
+    const hidden = loadHidden();
+    let cities = _marketCache.data.filter((c) => !hidden[String(c.tokenId)]);
+
+    const q = String(req.query.q || "").toLowerCase().trim().replace(/^@/, "");
+    if (q) cities = cities.filter((c) => (c.twitterHandle || "").toLowerCase().includes(q));
+
+    res.json(cities);
+  } catch (err) {
+    console.error("[/cities]", err.message);
     res.status(500).json({ error: err.message });
   }
 });
