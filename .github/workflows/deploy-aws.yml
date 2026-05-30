@@ -55,5 +55,5 @@ jobs:
           sudo systemctl reload nginx
 
           curl -fsS http://127.0.0.1:3001/health
-          curl -fsS http://127.0.0.1/health
+          curl -fsS --resolve tweetcity.fun:443:127.0.0.1 https://tweetcity.fun/health
           REMOTE
