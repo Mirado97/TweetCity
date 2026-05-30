@@ -393,7 +393,7 @@ export default function CityPage({ tokenId, signer, address, onOwnerConfirmed })
               )}
               {isOwner && twitterHandle && (
                 <motion.a
-                  href={`${API_BASE}/auth/twitter/start?cityHandle=${encodeURIComponent(twitterHandle)}`}
+                  href={`${API_BASE}/auth/twitter/start?cityHandle=${encodeURIComponent(twitterHandle)}${address ? `&address=${address}` : ""}`}
                   target="_blank" rel="noreferrer"
                   className={`flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg border transition-colors font-medium ${
                     xLinkStatus?.linked
