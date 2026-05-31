@@ -208,6 +208,7 @@ export default function MarketPage({ onCityClick, signer, address, onConnect }) 
   const [selected, setSelected] = useState(null);
   const [postKind, setPostKind] = useState("administrator");
   const [postTokenId, setPostTokenId] = useState(readMyTokenId());
+  const [postCity, setPostCity] = useState(null);
   const [postUrl, setPostUrl] = useState("");
   const [posting, setPosting] = useState(false);
   const [postMessage, setPostMessage] = useState("");
@@ -259,6 +260,23 @@ export default function MarketPage({ onCityClick, signer, address, onConnect }) 
     return () => { cancelled = true; };
   }, [giftsAddr, listings, postTokenId]);
 
+  useEffect(() => {
+    const token = postTokenId.trim();
+    if (!token) {
+      setPostCity(null);
+      return;
+    }
+    let cancelled = false;
+    fetch(`${API_BASE}/api/city/${token}`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (cancelled || data?.error) return;
+        setPostCity(data);
+      })
+      .catch(() => !cancelled && setPostCity(null));
+    return () => { cancelled = true; };
+  }, [postTokenId]);
+
   async function publishListing() {
     setPostMessage("");
     setError("");
@@ -297,6 +315,10 @@ export default function MarketPage({ onCityClick, signer, address, onConnect }) 
   }, [listings, query, tab]);
 
   const myPrices = pricesByToken[String(postTokenId)] || null;
+  const myCityName = postCity?.ipfsData?.name || (postTokenId ? `City #${postTokenId}` : "My City");
+  const myCityHandle = postCity?.city?.twitterHandle || postCity?.ipfsData?.twitterHandle || "";
+  const myCityFollowers = Number(postCity?.city?.followers || 0);
+  const tokenLocked = !!readMyTokenId();
 
   return (
     <div className="w-full pt-20 md:pt-24 px-4 sm:px-6 lg:px-8 pb-20 relative">
@@ -330,8 +352,8 @@ export default function MarketPage({ onCityClick, signer, address, onConnect }) 
         {error && <div className="mb-4 rounded-xl border border-rose-500/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-300">{error}</div>}
 
         {tab === "post" ? (
-          <div className="grid xl:grid-cols-[0.85fr_1.15fr] gap-5">
-            <div className="glass rounded-xl p-5">
+          <div className="grid lg:grid-cols-2 gap-5 max-w-5xl mx-auto items-stretch">
+            <div className="glass rounded-xl p-5 min-h-[330px]">
               <h3 className="font-bold text-[#f1f5f9] mb-4">Create Market Listing</h3>
               <div className="grid grid-cols-2 gap-2 mb-4">
                 {["administrator", "resident"].map((kind) => (
@@ -347,10 +369,12 @@ export default function MarketPage({ onCityClick, signer, address, onConnect }) 
               <label className="block text-xs font-semibold text-[#94a3b8] mb-2">My City Token ID</label>
               <input
                 value={postTokenId}
-                onChange={(e) => setPostTokenId(e.target.value.replace(/[^0-9]/g, ""))}
+                onChange={(e) => !tokenLocked && setPostTokenId(e.target.value.replace(/[^0-9]/g, ""))}
+                readOnly={tokenLocked}
                 placeholder="1"
-                className="w-full px-3 py-2.5 rounded-xl bg-[#0a0a0f] border border-white/15 text-[#f1f5f9] text-sm focus:outline-none focus:border-[#00d4ff]/50 mb-4"
+                className={`w-full px-3 py-2.5 rounded-xl bg-[#0a0a0f] border border-white/15 text-[#f1f5f9] text-sm focus:outline-none focus:border-[#00d4ff]/50 mb-2 ${tokenLocked ? "opacity-80 cursor-not-allowed" : ""}`}
               />
+              {tokenLocked && <div className="text-[11px] text-[#64748b] mb-4">Locked to your saved My City.</div>}
               {postKind === "resident" && (
                 <>
                   <label className="block text-xs font-semibold text-[#94a3b8] mb-2">Post URL</label>
@@ -374,14 +398,19 @@ export default function MarketPage({ onCityClick, signer, address, onConnect }) 
               {!address && <div className="mt-3 text-xs text-[#64748b]">Connect wallet to publish. The wallet must manage this city.</div>}
             </div>
 
-            <div className="glass rounded-xl p-5">
+            <div className="glass rounded-xl p-5 min-h-[330px]">
               <h3 className="font-bold text-[#f1f5f9] mb-4">Listing Preview</h3>
               <div className="rounded-xl border border-white/10 bg-[#0a0a0f]/35 p-4">
-                <div className="flex items-center gap-2 mb-2">
-                  <span className="font-bold text-[#f1f5f9]">City #{postTokenId || "?"}</span>
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="font-bold text-[#f1f5f9]">{myCityName}</span>
                   <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-[#00d4ff]/10 text-[#00d4ff]">
                     {postKind === "administrator" ? "Administrator" : "Resident"}
                   </span>
+                </div>
+                <div className="mb-4 flex items-center gap-3 text-xs text-[#64748b]">
+                  {myCityHandle && <span>@{myCityHandle}</span>}
+                  <span>{myCityFollowers.toLocaleString()} followers</span>
+                  <span className="font-mono">#{postTokenId || "?"}</span>
                 </div>
                 {postKind === "resident" && postUrl && (
                   <div className="mb-4 text-xs text-[#00d4ff] truncate">{postUrl}</div>
