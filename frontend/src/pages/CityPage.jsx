@@ -116,7 +116,10 @@ export default function CityPage({ tokenId, signer, address, onOwnerConfirmed, o
     try {
       const r = await fetch(`${API_BASE}/api/market/listings?tokenId=${encodeURIComponent(tokenId)}&includeInactive=true`);
       const data = await r.json();
-      setMarketListings(Array.isArray(data) ? data : []);
+      setMarketListings(Array.isArray(data)
+        ? data.filter((listing) => listing?.active !== false && (listing.kind !== "resident" || listing.campaignId))
+        : []
+      );
     } catch {
       setMarketListings([]);
     }
@@ -386,6 +389,9 @@ export default function CityPage({ tokenId, signer, address, onOwnerConfirmed, o
     { icon: Activity, label: 'Engagement', value: `${rendererCity.engagement}%`, color: 'text-[#f59e0b]' },
     { icon: Heart, label: 'Likes', value: likeCount.toLocaleString(), color: 'text-rose-400' },
   ];
+  const visibleMarketListings = marketListings.filter((listing) =>
+    listing?.active !== false && (listing.kind !== "resident" || listing.campaignId)
+  );
 
   const shareText = `My Twitter became a ${cityStyle} ${LEVEL_NAMES[level]} called ${cityName} on Mantle! Every tweet builds the city 🏙️`;
 
@@ -663,13 +669,13 @@ export default function CityPage({ tokenId, signer, address, onOwnerConfirmed, o
         {/* Info & Actions */}
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }} className="space-y-6">
           {/* Market listings owned by this city */}
-          {isOwner && marketListings.length > 0 && (
+          {isOwner && visibleMarketListings.length > 0 && (
             <div className="glass rounded-2xl p-5">
               <h3 className="font-bold text-[#f1f5f9] mb-4 flex items-center gap-2">
                 <Store className="w-4 h-4 text-[#00d4ff]" /> Market Publications
               </h3>
-              <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-3">
-                {marketListings.map((listing) => {
+              <div className="grid grid-cols-[repeat(auto-fit,minmax(280px,360px))] justify-start gap-3">
+                {visibleMarketListings.map((listing) => {
                   const campaign = listing.campaign;
                   const isResident = listing.kind === "resident";
                   const now = Math.floor(Date.now() / 1000);
