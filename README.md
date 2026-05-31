@@ -2,6 +2,8 @@
 
 Turn an X account into a living 3D city NFT on Mantle.
 
+![TweetCity 3D city preview](docs/images/tweetcity-city-preview.jpg)
+
 TweetCity mints a generative city from a user's X profile, stores AI-created city metadata on IPFS, and lets cities trade verified social engagement through on-chain gift markets.
 
 Live app: https://tweetcity.fun  
