@@ -477,6 +477,35 @@ describe("CityGifts (UUPS)", function () {
       expect(cAfter.active).to.equal(false);
       expect(cAfter.escrowRemaining).to.equal(0);
     });
+
+    it("creator can cancel early and receive the remaining escrow", async function () {
+      await gifts.connect(cityOwner).createResidentCampaign(TOKEN_ID, TWEET, DAY, [2, 0, 0, 0, 0, 0], { value: PRICE * 2n });
+      await gifts.connect(oracle).verifyResidentCampaignEngagement(0, 0, buyer.address, HANDLE_HASH);
+
+      const cBefore = await gifts.getResidentCampaign(0);
+      const ownerBefore = await ethers.provider.getBalance(cityOwner.address);
+      const tx = await gifts.connect(cityOwner).cancelResidentCampaign(0);
+      const r = await tx.wait();
+      const gasUsed = r.gasUsed * r.gasPrice;
+      const ownerAfter = await ethers.provider.getBalance(cityOwner.address);
+
+      expect(ownerAfter - ownerBefore + gasUsed).to.equal(cBefore.escrowRemaining);
+      const cAfter = await gifts.getResidentCampaign(0);
+      expect(cAfter.active).to.equal(false);
+      expect(cAfter.escrowRemaining).to.equal(0);
+
+      await expect(
+        gifts.connect(oracle).verifyResidentCampaignEngagement(0, 0, other.address, OTHER_HASH)
+      ).to.be.revertedWith("CityGifts: campaign inactive");
+    });
+
+    it("non-creator cannot cancel a resident campaign", async function () {
+      await gifts.connect(cityOwner).createResidentCampaign(TOKEN_ID, TWEET, DAY, [1, 0, 0, 0, 0, 0], { value: PRICE });
+
+      await expect(
+        gifts.connect(other).cancelResidentCampaign(0)
+      ).to.be.revertedWith("CityGifts: not campaign creator");
+    });
   });
 
   describe("admin", function () {

@@ -23,6 +23,14 @@ function timeLeft(deadline) {
   return h > 0 ? `${h}h ${m}m` : `${m}m`;
 }
 
+function isVisibleMarketListing(listing) {
+  if (!listing || listing.active === false) return false;
+  if (listing.kind !== "resident") return true;
+  if (!listing.campaignId || !listing.campaign) return false;
+  const escrow = BigInt(listing.campaign.escrowRemaining || 0);
+  return listing.campaign.active || escrow > 0n;
+}
+
 export default function CityPage({ tokenId, signer, address, onOwnerConfirmed, onCanonicalCity }) {
   const [city, setCity] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -117,7 +125,7 @@ export default function CityPage({ tokenId, signer, address, onOwnerConfirmed, o
       const r = await fetch(`${API_BASE}/api/market/listings?tokenId=${encodeURIComponent(tokenId)}&includeInactive=true`);
       const data = await r.json();
       setMarketListings(Array.isArray(data)
-        ? data.filter((listing) => listing?.active !== false && (listing.kind !== "resident" || listing.campaignId))
+        ? data.filter(isVisibleMarketListing)
         : []
       );
     } catch {
@@ -298,19 +306,24 @@ export default function CityPage({ tokenId, signer, address, onOwnerConfirmed, o
     } catch (e) { alert(e.reason || e.message); }
   }
 
+  async function deleteMarketListing(listing) {
+    const auth = await createWalletAuth(signer, `market-listing-delete:${listing.id}`);
+    const res = await fetch(`${API_BASE}/api/market/listings/${listing.id}`, {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(auth),
+    });
+    const data = await res.json();
+    if (!res.ok || data.error) throw new Error(data.error || "Failed to remove listing");
+    return data;
+  }
+
   async function removeMarketListing(listing) {
     if (!signer) { setError("Connect wallet first"); return; }
     setMarketBusyId(listing.id);
     setError("");
     try {
-      const auth = await createWalletAuth(signer, `market-listing-delete:${listing.id}`);
-      const res = await fetch(`${API_BASE}/api/market/listings/${listing.id}`, {
-        method: "DELETE",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(auth),
-      });
-      const data = await res.json();
-      if (!res.ok || data.error) throw new Error(data.error || "Failed to remove listing");
+      await deleteMarketListing(listing);
       await loadMarketListings();
     } catch (e) {
       setError(e.reason || e.message);
@@ -328,7 +341,26 @@ export default function CityPage({ tokenId, signer, address, onOwnerConfirmed, o
       if (!gc) throw new Error("Gifts contract not configured");
       const tx = await gc.withdrawResidentCampaign(listing.campaignId);
       await tx.wait();
-      await removeMarketListing(listing);
+      await deleteMarketListing(listing);
+      await loadMarketListings();
+    } catch (e) {
+      setError(e.reason || e.message);
+    } finally {
+      setMarketBusyId("");
+    }
+  }
+
+  async function cancelCampaign(listing) {
+    if (!signer) { setError("Connect wallet first"); return; }
+    setMarketBusyId(listing.id);
+    setError("");
+    try {
+      const gc = getGiftsContract(giftsContractAddr, signer);
+      if (!gc) throw new Error("Gifts contract not configured");
+      const tx = await gc.cancelResidentCampaign(listing.campaignId);
+      await tx.wait();
+      await deleteMarketListing(listing);
+      await loadMarketListings();
     } catch (e) {
       setError(e.reason || e.message);
     } finally {
@@ -389,9 +421,7 @@ export default function CityPage({ tokenId, signer, address, onOwnerConfirmed, o
     { icon: Activity, label: 'Engagement', value: `${rendererCity.engagement}%`, color: 'text-[#f59e0b]' },
     { icon: Heart, label: 'Likes', value: likeCount.toLocaleString(), color: 'text-rose-400' },
   ];
-  const visibleMarketListings = marketListings.filter((listing) =>
-    listing?.active !== false && (listing.kind !== "resident" || listing.campaignId)
-  );
+  const visibleMarketListings = marketListings.filter(isVisibleMarketListing);
 
   const shareText = `My Twitter became a ${cityStyle} ${LEVEL_NAMES[level]} called ${cityName} on Mantle! Every tweet builds the city 🏙️`;
 
@@ -684,6 +714,7 @@ export default function CityPage({ tokenId, signer, address, onOwnerConfirmed, o
                   const totalRemaining = campaign?.remaining?.reduce((sum, x) => sum + Number(x || 0), 0) || 0;
                   const completed = isResident && totalRemaining === 0;
                   const canWithdraw = isResident && expired && escrow > 0n;
+                  const canCancel = isResident && campaign?.active && !expired && escrow > 0n;
                   const canRemove = !isResident || listing.active === false || escrow === 0n || completed;
                   return (
                     <div key={listing.id} className="rounded-xl border border-white/10 bg-[#0a0a0f]/45 p-4">
@@ -743,6 +774,17 @@ export default function CityPage({ tokenId, signer, address, onOwnerConfirmed, o
                             className="flex-1 px-3 py-2 rounded-lg bg-gradient-to-r from-[#00d4ff] to-[#a855f7] text-white text-sm font-semibold disabled:opacity-50"
                           >
                             {marketBusyId === listing.id ? "Working..." : "Withdraw"}
+                          </button>
+                        )}
+                        {canCancel && (
+                          <button
+                            onClick={() => cancelCampaign(listing)}
+                            disabled={marketBusyId === listing.id}
+                            className="flex items-center justify-center gap-2 px-3 py-2 rounded-lg border border-white/10 bg-[#0a0a0f]/60 text-[#94a3b8] hover:text-[#f1f5f9] text-sm disabled:opacity-50"
+                            title="Cancel campaign and refund remaining escrow"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                            {marketBusyId === listing.id ? "Working..." : "Remove"}
                           </button>
                         )}
                         {canRemove && listing.active !== false && (

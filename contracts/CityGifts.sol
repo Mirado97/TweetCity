@@ -121,6 +121,7 @@ contract CityGifts is
     event ResidentCampaignCreated(uint256 indexed campaignId, uint256 indexed tokenId, address indexed creator, uint256 grossAmount, uint256 escrowAmount);
     event ResidentCampaignClaimed(uint256 indexed campaignId, uint8 indexed giftType, address indexed worker, bytes32 handleHash, uint256 payout);
     event ResidentCampaignWithdrawn(uint256 indexed campaignId, address indexed creator, uint256 amount);
+    event ResidentCampaignCancelled(uint256 indexed campaignId, address indexed creator, uint256 refundedAmount);
     event OracleChanged(address indexed oldOracle, address indexed newOracle);
     event AcceptWindowChanged(uint64 oldWindow, uint64 newWindow);
     event EngageWindowChanged(uint8 indexed giftType, uint64 oldWindow, uint64 newWindow);
@@ -433,6 +434,27 @@ contract CityGifts is
         require(ok, "CityGifts: withdraw failed");
 
         emit ResidentCampaignWithdrawn(campaignId, msg.sender, amount);
+    }
+
+    /**
+     * @notice Creator cancels a live resident campaign and receives unused escrow.
+     *         Claimed rewards stay paid; only the remaining escrow is refunded.
+     */
+    function cancelResidentCampaign(uint256 campaignId) external nonReentrant {
+        ResidentCampaign storage c = residentCampaigns[campaignId];
+        require(c.creator == msg.sender, "CityGifts: not campaign creator");
+        require(c.active, "CityGifts: campaign inactive");
+
+        uint256 amount = c.escrowRemaining;
+        require(amount > 0, "CityGifts: nothing to refund");
+
+        c.active = false;
+        c.escrowRemaining = 0;
+
+        (bool ok,) = msg.sender.call{value: amount}("");
+        require(ok, "CityGifts: refund failed");
+
+        emit ResidentCampaignCancelled(campaignId, msg.sender, amount);
     }
 
     /**

@@ -9,6 +9,7 @@ const GIFTS_ABI = [
   "function cityManager(uint256 tokenId) external view returns (address)",
   "function verifyEngagement(uint256 giftId) external",
   "function verifyResidentCampaignEngagement(uint256 campaignId, uint8 giftType, address worker, bytes32 handleHash) external",
+  "function cancelResidentCampaign(uint256 campaignId) external",
   "function getAllGifts(uint256 tokenId) external view returns (tuple(uint256 id, address buyer, uint256 cityTokenId, uint8 giftType, string tweetUrl, uint256 amount, uint256 ownerAmount, uint8 status, uint64 createdAt, uint64 acceptDeadline, uint64 engageDeadline)[])",
   "function gifts(uint256 giftId) external view returns (uint256 id, address buyer, uint256 cityTokenId, uint8 giftType, string tweetUrl, uint256 amount, uint256 ownerAmount, uint8 status, uint64 createdAt, uint64 acceptDeadline, uint64 engageDeadline)",
   "function getResidentCampaign(uint256 campaignId) external view returns (tuple(uint256 id, address creator, uint256 cityTokenId, string postUrl, uint256 escrowRemaining, uint256 grossAmount, uint64 createdAt, uint64 deadline, bool active, uint256[6] unitPrices, uint256[6] unitPayouts, uint32[6] totalCounts, uint32[6] remaining))",
