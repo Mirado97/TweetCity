@@ -86,6 +86,10 @@ function mkRng(seed) {
   return () => { s = (Math.imul(s, 1664525) + 1013904223) >>> 0; return s / 0xffffffff; };
 }
 
+function hashGift(tokenId, giftId, giftType, salt = 0) {
+  return ((((tokenId | 0) * 73856093) ^ ((giftId | 0) * 19349663) ^ ((giftType | 0) * 83492791) ^ salt) >>> 0);
+}
+
 // ─── Model lists ─────────────────────────────────────────────────────────────
 
 const MODELS = {
@@ -293,128 +297,235 @@ function Monument({ level }) {
 // ─── City scene ──────────────────────────────────────────────────────────────
 
 // ─── Gift visuals ────────────────────────────────────────────────────────────
-// Renders Accepted/Verified gifts around the city perimeter. Position is deterministic
-// from giftId via golden-angle distribution. Each type is a small procedural artifact.
-function GiftItem({ gift, cityRadius }) {
-  // Golden-angle spread → even distribution around the city for any number of gifts
-  const id      = Number(gift.id) || 0;
-  const angle   = id * 2.39996;          // golden angle in radians
-  const radius  = cityRadius * 0.95 + ((id * 7) % 8);
-  const x       = Math.cos(angle) * radius;
-  const z       = Math.sin(angle) * radius;
-  const facing  = Math.atan2(-x, -z);    // face the city center
-  const type    = Number(gift.giftType);
-  const palette = [
-    "#00d4ff", // graffiti — cyan
-    "#a855f7", // street art — purple
-    "#ef4444", // flag — red
-    "#facc15", // billboard — yellow
-    "#10b981", // monument — emerald
-    "#ec4899", // district — pink
-  ];
-  const color = palette[type] || "#ffffff";
+// Gifts are city upgrades, not edge markers. The generator produces stable
+// slots while laying out blocks; each gift picks a slot + one of 5 visual
+// variants from tokenId/giftId/giftType.
+const GIFT_COLORS = ["#00d4ff", "#a855f7", "#ef4444", "#facc15", "#10b981", "#ec4899"];
 
-  switch (type) {
-    case 0: { // Graffiti — colored wall plate facing the city
-      return (
-        <group position={[x, 0, z]} rotation={[0, facing, 0]}>
-          <mesh position={[0, 1.5, 0]}>
-            <boxGeometry args={[3, 3, 0.2]} />
-            <meshStandardMaterial color={color} emissive={color} emissiveIntensity={0.4} />
-          </mesh>
-          <pointLight position={[0, 2, 1]} color={color} intensity={0.6} distance={6} />
-        </group>
-      );
+function giftTexture(kind, variant, seed, color) {
+  const canvas = document.createElement("canvas");
+  canvas.width = 256;
+  canvas.height = 128;
+  const ctx = canvas.getContext("2d");
+  const rng = mkRng(seed);
+  ctx.fillStyle = kind === "billboard" ? "#101522" : "#2b2d35";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = color;
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 8;
+
+  if (kind === "graffiti") {
+    ctx.globalAlpha = 0.95;
+    for (let i = 0; i < 5 + variant; i++) {
+      ctx.beginPath();
+      const y = 28 + rng() * 70;
+      ctx.moveTo(18 + rng() * 40, y);
+      for (let j = 0; j < 4; j++) ctx.quadraticCurveTo(60 + rng() * 160, 10 + rng() * 100, 230 - rng() * 40, 22 + rng() * 80);
+      ctx.stroke();
     }
-    case 1: { // Street Art — wide ground mural
-      return (
-        <group position={[x, 0, z]} rotation={[0, facing, 0]}>
-          <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.02, 0]}>
-            <planeGeometry args={[6, 4]} />
-            <meshStandardMaterial color={color} emissive={color} emissiveIntensity={0.3} />
-          </mesh>
-        </group>
-      );
+    ctx.fillStyle = "#ffffff";
+    ctx.font = "bold 28px monospace";
+    ctx.fillText(["TC", "MNT", "GM", "CITY", "X"][variant], 28, 76);
+  } else if (kind === "street") {
+    for (let i = 0; i < 18; i++) {
+      ctx.fillStyle = i % 3 === 0 ? color : i % 3 === 1 ? "#ffffff" : "#111827";
+      ctx.beginPath();
+      ctx.arc(20 + rng() * 220, 12 + rng() * 104, 8 + rng() * 22, 0, Math.PI * 2);
+      ctx.fill();
     }
-    case 2: { // Flag — pole + waving banner
-      return (
-        <group position={[x, 0, z]}>
-          <mesh position={[0, 4, 0]}>
-            <cylinderGeometry args={[0.1, 0.1, 8, 8]} />
-            <meshStandardMaterial color="#444" />
-          </mesh>
-          <mesh position={[1.2, 6.5, 0]} rotation={[0, facing, 0]}>
-            <planeGeometry args={[2.5, 1.6]} />
-            <meshStandardMaterial color={color} side={2} emissive={color} emissiveIntensity={0.3} />
-          </mesh>
-          <mesh position={[0, 8, 0]}>
-            <sphereGeometry args={[0.2, 8, 8]} />
-            <meshStandardMaterial color="#ddd" metalness={0.6} roughness={0.3} />
-          </mesh>
-        </group>
-      );
-    }
-    case 3: { // Billboard — two posts + glowing screen
-      return (
-        <group position={[x, 0, z]} rotation={[0, facing, 0]}>
-          <mesh position={[-1.8, 2, 0]}>
-            <boxGeometry args={[0.3, 4, 0.3]} />
-            <meshStandardMaterial color="#333" />
-          </mesh>
-          <mesh position={[1.8, 2, 0]}>
-            <boxGeometry args={[0.3, 4, 0.3]} />
-            <meshStandardMaterial color="#333" />
-          </mesh>
-          <mesh position={[0, 4.5, 0]}>
-            <boxGeometry args={[5, 2.5, 0.3]} />
-            <meshStandardMaterial color={color} emissive={color} emissiveIntensity={0.7} />
-          </mesh>
-          <pointLight position={[0, 5, 1.5]} color={color} intensity={1.2} distance={10} />
-        </group>
-      );
-    }
-    case 4: { // Monument — column with floating glowing sphere
-      return (
-        <group position={[x, 0, z]}>
-          <mesh position={[0, 1.5, 0]}>
-            <boxGeometry args={[2, 0.5, 2]} />
-            <meshStandardMaterial color="#666" metalness={0.5} roughness={0.4} />
-          </mesh>
-          <mesh position={[0, 3.5, 0]}>
-            <cylinderGeometry args={[0.6, 0.8, 3.5, 12]} />
-            <meshStandardMaterial color="#999" metalness={0.4} roughness={0.5} />
-          </mesh>
-          <mesh position={[0, 6, 0]}>
-            <sphereGeometry args={[0.8, 16, 16]} />
-            <meshStandardMaterial color={color} emissive={color} emissiveIntensity={1.0} />
-          </mesh>
-          <pointLight position={[0, 6, 0]} color={color} intensity={1.5} distance={12} />
-        </group>
-      );
-    }
-    case 5: { // District — large neon-lit ring on the ground (lights up the whole area)
-      return (
-        <group position={[x, 0, z]}>
-          <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.05, 0]}>
-            <ringGeometry args={[3.5, 4.5, 32]} />
-            <meshStandardMaterial color={color} emissive={color} emissiveIntensity={1.0} side={2} />
-          </mesh>
-          <pointLight position={[0, 3, 0]} color={color} intensity={2.0} distance={18} />
-        </group>
-      );
-    }
-    default:
-      return null;
+  } else if (kind === "flag") {
+    ctx.fillStyle = color;
+    ctx.fillRect(0, 0, 256, 128);
+    ctx.fillStyle = "rgba(255,255,255,0.75)";
+    ctx.beginPath();
+    if (variant === 0) ctx.arc(128, 64, 34, 0, Math.PI * 2);
+    else if (variant === 1) ctx.rect(82, 28, 92, 72);
+    else if (variant === 2) { ctx.moveTo(128, 18); ctx.lineTo(176, 102); ctx.lineTo(80, 102); ctx.closePath(); }
+    else if (variant === 3) { ctx.moveTo(40, 64); ctx.lineTo(128, 20); ctx.lineTo(216, 64); ctx.lineTo(128, 108); ctx.closePath(); }
+    else { ctx.arc(96, 64, 28, 0, Math.PI * 2); ctx.arc(160, 64, 28, 0, Math.PI * 2); }
+    ctx.fill();
+  } else {
+    ctx.fillStyle = "#0f172a";
+    ctx.fillRect(12, 12, 232, 104);
+    ctx.fillStyle = color;
+    ctx.fillRect(22, 22, 212, 12);
+    ctx.fillStyle = "#e5e7eb";
+    ctx.font = "bold 20px monospace";
+    ctx.fillText(["TWEET", "BOOST", "CITY", "GIFT", "MANTLE"][variant], 24, 68);
+    ctx.globalAlpha = 0.6;
+    ctx.fillRect(24, 84, 150 + variant * 12, 8);
   }
+
+  const tex = new CanvasTexture(canvas);
+  tex.flipY = false;
+  return tex;
 }
 
-function Gifts({ gifts, citySize }) {
+function TexturedPanel({ kind, variant, seed, color, args, position, rotation = [0, 0, 0], emissive = 0.35 }) {
+  const texture = useMemo(() => giftTexture(kind, variant, seed, color), [kind, variant, seed, color]);
+  return (
+    <mesh position={position} rotation={rotation}>
+      <planeGeometry args={args} />
+      <meshStandardMaterial map={texture} emissive={color} emissiveIntensity={emissive} side={2} />
+    </mesh>
+  );
+}
+
+function GraffitiGift({ variant, seed, color }) {
+  const wallWidth = [5, 4.5, 6, 4, 5.5][variant];
+  return (
+    <group>
+      <mesh position={[0, 1.7, 0]}>
+        <boxGeometry args={[wallWidth, 3.2, 0.35]} />
+        <meshStandardMaterial color="#343844" roughness={0.9} />
+      </mesh>
+      <TexturedPanel kind="graffiti" variant={variant} seed={seed} color={color} args={[wallWidth * 0.86, 2.25]} position={[0, 1.85, 0.19]} />
+      {variant >= 2 && <mesh position={[-wallWidth / 2 + 0.55, 0.25, 0.7]}><cylinderGeometry args={[0.12, 0.12, 0.45, 8]} /><meshStandardMaterial color={color} /></mesh>}
+      {variant === 4 && <pointLight position={[0, 2.4, 1.4]} color={color} intensity={0.9} distance={8} />}
+    </group>
+  );
+}
+
+function StreetArtGift({ variant, seed, color }) {
+  if (variant === 0 || variant === 2) {
+    return (
+      <group>
+        <mesh position={[0, 2.2, 0]}><boxGeometry args={[7, 4.2, 0.3]} /><meshStandardMaterial color="#20242e" /></mesh>
+        <TexturedPanel kind="street" variant={variant} seed={seed} color={color} args={[6.3, 3.4]} position={[0, 2.25, 0.18]} />
+      </group>
+    );
+  }
+  return (
+    <group>
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.04, 0]}>
+        <circleGeometry args={[variant === 4 ? 4.6 : 3.8, 40]} />
+        <meshStandardMaterial color={color} emissive={color} emissiveIntensity={0.35} side={2} />
+      </mesh>
+      <TexturedPanel kind="street" variant={variant} seed={seed} color={color} args={[5.8, 3]} position={[0, 0.08, 0]} rotation={[-Math.PI / 2, 0, 0]} emissive={0.1} />
+    </group>
+  );
+}
+
+function FlagGift({ variant, seed, color }) {
+  const flags = variant === 2 ? [-1.4, 1.4] : [0];
+  return (
+    <group>
+      {flags.map((x, i) => (
+        <group key={i} position={[x, 0, 0]}>
+          <mesh position={[0, 3.7, 0]}><cylinderGeometry args={[0.08, 0.1, 7.4, 10]} /><meshStandardMaterial color="#444" metalness={0.4} /></mesh>
+          <TexturedPanel kind="flag" variant={variant} seed={seed + i} color={color} args={[2.3, 1.35]} position={[1.1, 5.8, 0]} rotation={[0, 0.1, 0]} emissive={0.2} />
+          <mesh position={[0, 7.55, 0]}><sphereGeometry args={[0.2, 10, 8]} /><meshStandardMaterial color="#e5e7eb" metalness={0.7} /></mesh>
+        </group>
+      ))}
+      {variant >= 3 && <mesh position={[0, 0.15, 0]}><cylinderGeometry args={[1.5, 1.8, 0.3, 24]} /><meshStandardMaterial color="#59606d" /></mesh>}
+    </group>
+  );
+}
+
+function BillboardGift({ variant, seed, color }) {
+  const rooftop = variant === 4;
+  return (
+    <group position={[0, rooftop ? 4.8 : 0, 0]}>
+      <mesh position={[-2.1, 2.0, 0]}><boxGeometry args={[0.28, 4, 0.28]} /><meshStandardMaterial color="#30343d" metalness={0.5} /></mesh>
+      <mesh position={[2.1, 2.0, 0]}><boxGeometry args={[0.28, 4, 0.28]} /><meshStandardMaterial color="#30343d" metalness={0.5} /></mesh>
+      <mesh position={[0, 4.3, 0]}><boxGeometry args={[5.8, 3.0, 0.35]} /><meshStandardMaterial color="#111827" /></mesh>
+      <TexturedPanel kind="billboard" variant={variant} seed={seed} color={color} args={[5.1, 2.25]} position={[0, 4.35, 0.21]} emissive={0.8} />
+      {variant === 1 && <pointLight position={[0, 4.4, 1.8]} color={color} intensity={1.7} distance={14} />}
+      {variant === 3 && <TexturedPanel kind="billboard" variant={variant} seed={seed + 7} color={color} args={[5.1, 2.25]} position={[0, 4.35, -0.21]} rotation={[0, Math.PI, 0]} emissive={0.8} />}
+    </group>
+  );
+}
+
+function MonumentGift({ variant, color }) {
+  return (
+    <group>
+      <mesh position={[0, 0.25, 0]}><cylinderGeometry args={[2.4, 2.8, 0.5, 24]} /><meshStandardMaterial color="#646b78" /></mesh>
+      {variant === 0 && <><mesh position={[0, 2.0, 0]}><cylinderGeometry args={[0.55, 0.75, 3.2, 16]} /><meshStandardMaterial color="#8b6f47" metalness={0.5} /></mesh><mesh position={[0, 4.0, 0]}><sphereGeometry args={[0.75, 16, 12]} /><meshStandardMaterial color={color} emissive={color} emissiveIntensity={0.45} /></mesh></>}
+      {variant === 1 && <><mesh position={[0, 2.7, 0]}><boxGeometry args={[0.9, 5, 0.9]} /><meshStandardMaterial color="#a3a3a3" /></mesh><mesh position={[0, 5.45, 0]}><coneGeometry args={[0.65, 1.1, 4]} /><meshStandardMaterial color={color} metalness={0.8} /></mesh></>}
+      {variant === 2 && <mesh position={[0, 3.1, 0]} rotation={[0.5, 0.2, 0.7]}><octahedronGeometry args={[1.5]} /><meshStandardMaterial color={color} emissive={color} emissiveIntensity={0.8} metalness={0.2} /></mesh>}
+      {variant === 3 && <><mesh position={[0, 1.1, 0]}><torusGeometry args={[1.5, 0.18, 12, 36]} /><meshStandardMaterial color={color} emissive={color} emissiveIntensity={0.4} /></mesh><mesh position={[0, 2.4, 0]}><sphereGeometry args={[0.9, 16, 12]} /><meshStandardMaterial color="#d7dee8" metalness={0.8} /></mesh></>}
+      {variant === 4 && <><mesh position={[0, 1.7, 0]}><boxGeometry args={[2.2, 0.7, 2.2]} /><meshStandardMaterial color="#7c5a2a" metalness={0.7} /></mesh><mesh position={[0, 3.1, 0]}><torusKnotGeometry args={[0.9, 0.22, 60, 8]} /><meshStandardMaterial color={color} emissive={color} emissiveIntensity={0.5} metalness={0.8} /></mesh></>}
+      <pointLight position={[0, 4, 0]} color={color} intensity={1.2} distance={12} />
+    </group>
+  );
+}
+
+function DistrictGift({ variant, color }) {
+  const accent = variant === 1 ? "#10b981" : variant === 2 ? "#f59e0b" : color;
+  return (
+    <group>
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.055, 0]}>
+        <ringGeometry args={[7.2, 8.4, 40]} />
+        <meshStandardMaterial color={accent} emissive={accent} emissiveIntensity={0.65} side={2} />
+      </mesh>
+      {[0, 1, 2, 3].map(i => {
+        const a = i * Math.PI / 2;
+        const x = Math.cos(a) * 5.4, z = Math.sin(a) * 5.4;
+        return (
+          <group key={i} position={[x, 0, z]}>
+            {variant === 1
+              ? <GlbModel url={MODELS.trees[i % MODELS.trees.length]} position={[0, 0, 0]} rotY={a} scale={7} />
+              : <mesh position={[0, 1.2, 0]}><boxGeometry args={[1.1, 2.4, 1.1]} /><meshStandardMaterial color={accent} emissive={accent} emissiveIntensity={0.35} /></mesh>}
+          </group>
+        );
+      })}
+      {variant >= 3 && <mesh position={[0, 2.1, 0]}><torusGeometry args={[3.4, 0.12, 8, 48]} /><meshStandardMaterial color={accent} emissive={accent} emissiveIntensity={0.7} /></mesh>}
+      <pointLight position={[0, 4, 0]} color={accent} intensity={1.8} distance={20} />
+    </group>
+  );
+}
+
+function GiftItem({ gift, slot, tokenId }) {
+  const id = Number(gift.id) || 0;
+  const type = Number(gift.giftType);
+  const seed = hashGift(tokenId, id, type);
+  const variant = seed % 5;
+  const color = GIFT_COLORS[type] || "#ffffff";
+  const pos = [slot.x, 0, slot.z];
+  const rotY = slot.rotY || 0;
+
+  return (
+    <group position={pos} rotation={[0, rotY, 0]}>
+      {type === 0 && <GraffitiGift variant={variant} seed={seed} color={color} />}
+      {type === 1 && <StreetArtGift variant={variant} seed={seed} color={color} />}
+      {type === 2 && <FlagGift variant={variant} seed={seed} color={color} />}
+      {type === 3 && <BillboardGift variant={variant} seed={seed} color={color} />}
+      {type === 4 && <MonumentGift variant={variant} color={color} />}
+      {type === 5 && <DistrictGift variant={variant} color={color} />}
+    </group>
+  );
+}
+
+const SLOT_PREFS = {
+  0: ["wall", "roadEdge", "block"],
+  1: ["wall", "plaza", "block"],
+  2: ["roof", "plaza", "block"],
+  3: ["roadEdge", "roof", "plaza"],
+  4: ["plaza", "block"],
+  5: ["block", "plaza"],
+};
+
+function pickGiftSlot(giftSlots, gift, tokenId, citySize) {
+  const type = Number(gift.giftType);
+  const prefs = SLOT_PREFS[type] || ["plaza", "block", "roadEdge"];
+  const seed = hashGift(tokenId, Number(gift.id) || 0, type, 911);
+  for (const key of prefs) {
+    const arr = giftSlots?.[key] || [];
+    if (arr.length) return arr[seed % arr.length];
+  }
+  const angle = (Number(gift.id) || 0) * 2.39996;
+  const radius = citySize * 0.42;
+  const x = Math.cos(angle) * radius;
+  const z = Math.sin(angle) * radius;
+  return { x, z, rotY: Math.atan2(-x, -z) };
+}
+
+function Gifts({ gifts, giftSlots, citySize, tokenId }) {
   if (!gifts || gifts.length === 0) return null;
-  const radius = citySize / 2;
   return (
     <>
       {gifts.map((g) => (
-        <GiftItem key={String(g.id)} gift={g} cityRadius={radius} />
+        <GiftItem key={String(g.id)} gift={g} tokenId={tokenId} slot={pickGiftSlot(giftSlots, g, tokenId, citySize)} />
       ))}
     </>
   );
@@ -433,6 +544,7 @@ export function V2Scene({ metrics, tokenId, gifts = [] }) {
     const gr    = Math.max(gridR, 1);
 
     const models = [];
+    const giftSlots = { wall: [], roadEdge: [], plaza: [], roof: [], block: [] };
 
     // Block center positions (multiples of PERIOD)
     const blockPos = [];
@@ -536,6 +648,13 @@ export function V2Scene({ metrics, tokenId, gifts = [] }) {
         const list   = MODELS[pack];
         const baseScale = ZONE_SCALE[pack];
 
+        giftSlots.block.push({ x: cx, z: cz, rotY: Math.atan2(-cx, -cz), pack, zone });
+        giftSlots.plaza.push({ x: cx + 5, z: cz - 5, rotY: Math.atan2(-cx, -cz), pack, zone });
+        if (bc_row > -gridR) giftSlots.roadEdge.push({ x: cx, z: cz - PERIOD / 2 + S * 0.35, rotY: 0, pack, zone });
+        if (bc_row <  gridR) giftSlots.roadEdge.push({ x: cx, z: cz + PERIOD / 2 - S * 0.35, rotY: Math.PI, pack, zone });
+        if (bc_col > -gridR) giftSlots.roadEdge.push({ x: cx - PERIOD / 2 + S * 0.35, z: cz, rotY: Math.PI / 2, pack, zone });
+        if (bc_col <  gridR) giftSlots.roadEdge.push({ x: cx + PERIOD / 2 - S * 0.35, z: cz, rotY: -Math.PI / 2, pack, zone });
+
         let clusterOffsets, clusterScale;
 
         if (pack === 'commercial' || pack === 'skyscraper') {
@@ -556,9 +675,16 @@ export function V2Scene({ metrics, tokenId, gifts = [] }) {
         }
 
         for (const [ox, oz] of clusterOffsets) {
+          const bx = cx + ox;
+          const bz = cz + oz;
+          const faceCenter = Math.atan2(-bx, -bz);
+          giftSlots.wall.push({ x: bx + Math.sin(faceCenter) * 3.4, z: bz + Math.cos(faceCenter) * 3.4, rotY: faceCenter, pack, zone });
+          if (pack === 'commercial' || pack === 'skyscraper') {
+            giftSlots.roof.push({ x: bx, z: bz, rotY: faceCenter, pack, zone });
+          }
           models.push({
             url:      list[Math.floor(rng() * list.length)],
-            x: cx + ox, z: cz + oz,
+            x: bx, z: bz,
             rotY:     Math.floor(rng() * 4) * Math.PI / 2,
             scale:    clusterScale * (0.9 + rng() * 0.2),
             colorIdx: pack === 'suburban' ? Math.floor(rng() * SUBURBAN_PALETTE_COUNT) : undefined,
@@ -675,9 +801,13 @@ export function V2Scene({ metrics, tokenId, gifts = [] }) {
       const r     = 8 + treeRng() * 3;
       models.push({ url: MODELS.trees[treeRng()>0.5?0:1], x: Math.cos(angle)*r, z: Math.sin(angle)*r, rotY: treeRng()*Math.PI*2, scale: 9.0+treeRng()*6.0 });
     }
+    giftSlots.plaza.push({ x: 0, z: -12, rotY: 0, pack: 'center', zone: 0 });
+    giftSlots.plaza.push({ x: 12, z: 0, rotY: -Math.PI / 2, pack: 'center', zone: 0 });
+    giftSlots.plaza.push({ x: -12, z: 0, rotY: Math.PI / 2, pack: 'center', zone: 0 });
+    giftSlots.block.push({ x: 0, z: 0, rotY: 0, pack: 'center', zone: 0 });
 
     const citySize = (2 * gr + 1) * PERIOD + 24;
-    return { models, citySize, gridR, level };
+    return { models, giftSlots, citySize, gridR, level };
   }, [followers, tokenId]);
 
   return (
@@ -706,8 +836,8 @@ export function V2Scene({ metrics, tokenId, gifts = [] }) {
       {/* Central monument */}
       <Monument level={data.level} />
 
-      {/* Active gifts (Accepted + Verified) around the city perimeter */}
-      <Gifts gifts={gifts} citySize={data.citySize} />
+      {/* Active verified gifts placed into stable city slots */}
+      <Gifts gifts={gifts} giftSlots={data.giftSlots} citySize={data.citySize} tokenId={tokenId || 0} />
     </>
   );
 }
