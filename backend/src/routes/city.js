@@ -239,9 +239,15 @@ router.get("/city/:tokenId", async (req, res) => {
 
     // Resolve twitterHandle: IPFS first (fast), then on-chain event (chunked)
     const twitterHandle = ipfsData?.twitterHandle || await getHandleByTokenId(req.params.tokenId);
+    const canonicalTokenId = twitterHandle
+      ? await getTokenIdByHandleInsensitive(twitterHandle).catch(() => Number(req.params.tokenId))
+      : Number(req.params.tokenId);
 
     const managerWallet = await getCityManagerWallet(req.params.tokenId);
-    res.json({ ...data, city: { ...data.city, twitterHandle }, ipfsData, managerWallet });
+    const canonicalManagerWallet = canonicalTokenId && String(canonicalTokenId) !== String(req.params.tokenId)
+      ? await getCityManagerWallet(canonicalTokenId).catch(() => managerWallet)
+      : managerWallet;
+    res.json({ ...data, city: { ...data.city, twitterHandle }, ipfsData, managerWallet, canonicalTokenId, canonicalManagerWallet });
   } catch (err) {
     res.status(404).json({ error: err.message });
   }

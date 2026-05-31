@@ -82,6 +82,15 @@ export default function App() {
     setMyCity({ tokenId: String(tokenId), ownerAddress: ownerAddress.toLowerCase() });
   }
 
+  function onCanonicalCity(canonicalTokenId, ownerAddress) {
+    const id = String(canonicalTokenId);
+    setCityTokenId(id);
+    if (ownerAddress) {
+      writeMyCity(id, ownerAddress);
+      setMyCity({ tokenId: id, ownerAddress: ownerAddress.toLowerCase() });
+    }
+  }
+
   // Navbar shows "My City" link only when connected wallet matches the saved owner.
   const myCityForNavbar = (myCity && address && myCity.ownerAddress === address.toLowerCase())
     ? myCity.tokenId
@@ -115,7 +124,7 @@ export default function App() {
           )}
           {page === "city" && cityTokenId && (
             <motion.div key="city" className="w-full" variants={pageVariants} initial="initial" animate="animate" exit="exit" transition={{ duration: 0.35 }}>
-              <CityPage tokenId={cityTokenId} signer={signer} address={address} onOwnerConfirmed={onCityOwnerConfirmed} />
+              <CityPage tokenId={cityTokenId} signer={signer} address={address} onOwnerConfirmed={onCityOwnerConfirmed} onCanonicalCity={onCanonicalCity} />
             </motion.div>
           )}
           {page === "leaderboard" && (

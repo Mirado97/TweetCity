@@ -23,7 +23,7 @@ function timeLeft(deadline) {
   return h > 0 ? `${h}h ${m}m` : `${m}m`;
 }
 
-export default function CityPage({ tokenId, signer, address, onOwnerConfirmed }) {
+export default function CityPage({ tokenId, signer, address, onOwnerConfirmed, onCanonicalCity }) {
   const [city, setCity] = useState(null);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
@@ -138,6 +138,12 @@ export default function CityPage({ tokenId, signer, address, onOwnerConfirmed })
       ]);
       const data = await res.json();
       if (data.error) throw new Error(data.error);
+
+      if (data.canonicalTokenId && String(data.canonicalTokenId) !== String(tokenId)) {
+        onCanonicalCity?.(data.canonicalTokenId, data.canonicalManagerWallet || data.managerWallet);
+        return;
+      }
+
       setCity(data);
 
       const addr = cfg.giftsContract || "";
@@ -601,26 +607,6 @@ export default function CityPage({ tokenId, signer, address, onOwnerConfirmed })
               </div>
             )}
           </div>
-        </motion.div>
-
-        {/* Stats */}
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }} className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8">
-          {[
-            { icon: Users,        label: 'Population',   value: rendererCity.followers.toLocaleString(),  color: 'text-[#00d4ff]' },
-            { icon: MessageSquare,label: 'Tweets',       value: rendererCity.tweetCount.toLocaleString(), color: 'text-[#a855f7]' },
-            { icon: TrendingUp,   label: 'Trade Routes', value: rendererCity.following.toLocaleString(),  color: 'text-[#ec4899]' },
-            { icon: Activity,     label: 'Engagement',   value: `${rendererCity.engagement}%`,            color: 'text-[#f59e0b]' },
-            { icon: Heart,        label: 'Likes',        value: likeCount.toLocaleString(),               color: 'text-rose-400' },
-          ].map((stat, i) => (
-            <motion.div key={stat.label}
-              initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: 0.3 + i * 0.05 }}
-              className="glass rounded-xl p-4 text-center hover:bg-[#16161f] transition-all group gradient-border"
-            >
-              <stat.icon className={`w-5 h-5 mx-auto mb-2 ${stat.color} group-hover:scale-110 transition-transform`} />
-              <div className="text-xl font-bold text-[#f1f5f9]">{stat.value}</div>
-              <div className="text-[10px] text-[#64748b] uppercase tracking-wider mt-1">{stat.label}</div>
-            </motion.div>
-          ))}
         </motion.div>
 
         {/* Info & Actions */}
