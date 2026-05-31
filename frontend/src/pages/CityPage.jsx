@@ -401,15 +401,15 @@ export default function CityPage({ tokenId, signer, address, onOwnerConfirmed })
           className="grid lg:grid-cols-2 xl:grid-cols-[1.1fr_1.1fr_0.58fr_0.9fr] gap-6 mb-8 items-stretch">
 
           {/* Col 1: 3D City */}
-          <div className="relative glass rounded-2xl overflow-hidden h-[320px]">
+          <div className="relative glass rounded-2xl overflow-hidden h-[420px]">
             <div className="absolute -inset-1 bg-gradient-to-r from-[#00d4ff]/20 to-[#a855f7]/20 rounded-2xl blur-xl opacity-50 pointer-events-none" />
             <div className="relative h-full">
-              <CityRendererV2 city={rendererCity} tokenId={tokenId} gifts={activeGifts} />
+              <CityRendererV2 city={rendererCity} tokenId={tokenId} gifts={activeGifts} width="100%" height="100%" />
             </div>
           </div>
 
           {/* Col 2: Buttons + Set Gift Prices panel (always rendered for height) */}
-          <div className="glass rounded-2xl p-5 flex flex-col gap-4 h-[320px]">
+          <div className="glass rounded-2xl p-5 flex flex-col gap-4 h-[420px] overflow-y-auto">
             {/* Buttons at top */}
             <div className="flex flex-col gap-2">
               {isOwner && (
@@ -507,7 +507,7 @@ export default function CityPage({ tokenId, signer, address, onOwnerConfirmed })
           </div>
 
           {/* Col 3: compact City Details + Color Palette */}
-          <div className="glass rounded-2xl p-5 flex flex-col gap-4 h-[320px]">
+          <div className="glass rounded-2xl p-5 flex flex-col gap-4 h-[420px]">
             <div>
               <h3 className="font-bold text-[#f1f5f9] mb-3">City Details</h3>
               <div className="space-y-2.5 text-sm">
@@ -538,7 +538,7 @@ export default function CityPage({ tokenId, signer, address, onOwnerConfirmed })
           </div>
 
           {/* Col 4: Gift History */}
-          <div className="glass rounded-2xl p-5 flex flex-col h-[320px]">
+          <div className="glass rounded-2xl p-5 flex flex-col h-[420px]">
             <div className="flex items-center justify-between gap-3 mb-4">
               <h3 className="font-bold text-[#f1f5f9]">Gift History</h3>
               {giftStats && giftStats.totalGifts > 0n && (

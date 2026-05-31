@@ -981,7 +981,7 @@ function camPos(followers, districtCount = 0) {
 
 // ─── Public component ─────────────────────────────────────────────────────────
 
-export default function CityRendererV2({ city, tokenId, gifts = [] }) {
+export default function CityRendererV2({ city, tokenId, gifts = [], width = 600, height = 320 }) {
   const [open, setOpen] = useState(false);
   const { followers = 0, tweetCount = 0, following = 0, engagement = 0 } = city || {};
   const metrics = { followers, tweetCount, following, engagement };
@@ -991,7 +991,7 @@ export default function CityRendererV2({ city, tokenId, gifts = [] }) {
   return (
     <>
       <div
-        style={{ width: 600, height: 320, borderRadius: 12, overflow: "hidden", cursor: "pointer", position: "relative" }}
+        style={{ width, height, borderRadius: 12, overflow: "hidden", cursor: "pointer", position: "relative" }}
         onClick={() => setOpen(true)}
       >
         <Canvas camera={{ position: cp, fov: 45 }}>
