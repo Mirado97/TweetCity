@@ -277,9 +277,13 @@ function serializeCity(city) {
   };
 }
 
+function normalizeHandle(handle) {
+  return String(handle || "").trim().replace(/^@/, "").toLowerCase();
+}
+
 async function mintCity({ to, twitterHandle, followers, tweetCount, following, engagement, ipfsCID }) {
   const contract = getContract();
-  const tx = await contract.mintCity(to, twitterHandle, followers, tweetCount, following, engagement, ipfsCID);
+  const tx = await contract.mintCity(to, normalizeHandle(twitterHandle), followers, tweetCount, following, engagement, ipfsCID);
   const receipt = await waitReceipt(_wallet.provider, tx.hash);
 
   const mintedEvent = receipt.logs
@@ -336,28 +340,71 @@ async function getCityData(tokenId) {
 async function getTokenIdByHandle(twitterHandle) {
   return rpcCall(async () => {
     const contract = getContract();
-    const tokenId = await contract.handleToTokenId(twitterHandle);
+    const tokenId = await contract.handleToTokenId(normalizeHandle(twitterHandle));
     return Number(tokenId);
+  });
+}
+
+async function readMintedCities(contract) {
+  const total = Number(await contract.totalSupply());
+  const out = [];
+  const batch = 20;
+
+  for (let from = 1; from <= total; from += batch) {
+    const to = Math.min(total, from + batch - 1);
+    const ids = Array.from({ length: to - from + 1 }, (_, i) => from + i);
+    const pairs = await Promise.all(ids.map(async (id) => {
+      const [city, handle] = await Promise.all([
+        contract.cities(id),
+        contract.tokenToHandle(id),
+      ]);
+      if (Number(city.level) <= 0) return null;
+      return { tokenId: id, twitterHandle: normalizeHandle(handle), ...serializeCity(city) };
+    }));
+    out.push(...pairs.filter(Boolean));
+  }
+
+  return out;
+}
+
+function dedupeCitiesByHandle(cities) {
+  const byHandle = new Map();
+  const noHandle = [];
+
+  for (const city of cities) {
+    const key = normalizeHandle(city.twitterHandle);
+    if (!key) {
+      noHandle.push(city);
+      continue;
+    }
+
+    const prev = byHandle.get(key);
+    // Canonical city for a Twitter account is the earliest minted token.
+    // This hides old case-sensitive duplicate mints from public lists.
+    if (!prev || Number(city.tokenId) < Number(prev.tokenId)) {
+      byHandle.set(key, { ...city, twitterHandle: key });
+    }
+  }
+
+  return [...byHandle.values(), ...noHandle];
+}
+
+async function getTokenIdByHandleInsensitive(twitterHandle) {
+  return rpcCall(async () => {
+    const contract = getContract();
+    const handle = normalizeHandle(twitterHandle);
+    if (!handle) return 0;
+
+    const cities = await readMintedCities(contract);
+    const city = dedupeCitiesByHandle(cities).find((c) => normalizeHandle(c.twitterHandle) === handle);
+    return city ? Number(city.tokenId) : 0;
   });
 }
 
 async function getLeaderboard(limit = 10) {
   return rpcCall(async () => {
     const contract = getContract();
-    const total = Number(await contract.totalSupply());
-    const cities = [];
-
-    for (let id = 1; id <= total; id++) {
-      const [city, handle] = await Promise.all([
-        contract.cities(id),
-        contract.tokenToHandle(id),
-      ]);
-      // Show every actually-minted city. `level >= 1` is set on every mint, so this
-      // includes new accounts with 0 followers (filtering by followers hid them).
-      if (Number(city.level) > 0) {
-        cities.push({ tokenId: id, twitterHandle: handle || "", ...serializeCity(city) });
-      }
-    }
+    const cities = dedupeCitiesByHandle(await readMintedCities(contract));
 
     return cities.sort((a, b) => b.followers - a.followers).slice(0, limit);
   });
@@ -523,28 +570,13 @@ async function getGiftsStats() {
 async function listAllCities() {
   return rpcCall(async () => {
     const contract = getContract();
-    const total = Number(await contract.totalSupply());
-    const out = [];
-    const batch = 20;
-    for (let from = 1; from <= total; from += batch) {
-      const to = Math.min(total, from + batch - 1);
-      const ids = Array.from({ length: to - from + 1 }, (_, i) => from + i);
-      const pairs = await Promise.all(ids.map(async (id) => {
-        const [city, handle] = await Promise.all([
-          contract.cities(id),
-          contract.tokenToHandle(id),
-        ]);
-        return { tokenId: id, twitterHandle: handle || "", ...serializeCity(city) };
-      }));
-      out.push(...pairs);
-    }
-    return out;
+    return dedupeCitiesByHandle(await readMintedCities(contract));
   });
 }
 
 module.exports = {
   mintCity, updateCity, getCityData, getLeaderboard,
-  getTokenIdByHandle, getHandleByTokenId,
+  getTokenIdByHandle, getTokenIdByHandleInsensitive, getHandleByTokenId,
   registerERC8004Agent, recordValidation, getTokenAgentId,
   registerCityManager, getCityManagerWallet,
   // gifts oracle

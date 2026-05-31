@@ -12,7 +12,7 @@ function getOAuth() {
 }
 const { analyzeCityPersonality, generateLevelUpNarrative } = require("../services/claude");
 const { uploadMetadata, getCachedMetadata } = require("../services/ipfs");
-const { mintCity, updateCity, getCityData, getLeaderboard, getTokenIdByHandle, getHandleByTokenId, registerERC8004Agent, recordValidation, getTokenAgentId, registerCityManager, getCityManagerWallet, getGiftsForCity, getGift, listAllCities } = require("../services/contract");
+const { mintCity, updateCity, getCityData, getLeaderboard, getTokenIdByHandleInsensitive, getHandleByTokenId, registerERC8004Agent, recordValidation, getTokenAgentId, registerCityManager, getCityManagerWallet, getGiftsForCity, getGift, listAllCities } = require("../services/contract");
 const { verifyGiftAction } = require("../services/giftOracle");
 const { checkSyncCooldown, mintLimiter, syncLimiter, heavyReadLimiter, giftCheckLimiter } = require("../middleware/rateLimit");
 const { isHidden, loadHidden } = require("./admin");
@@ -39,11 +39,11 @@ router.post("/mint", mintLimiter, async (req, res) => {
   if (!link) {
     return res.status(403).json({ error: "Connect your X account first (OAuth). No linked handle for this wallet.", needsOAuth: true });
   }
-  const twitterHandle = link.cityHandle;
+  const twitterHandle = String(link.cityHandle || "").trim().replace(/^@/, "").toLowerCase();
 
   try {
     // Step 0: Check if already minted — skip all expensive steps
-    const existingTokenId = await getTokenIdByHandle(twitterHandle);
+    const existingTokenId = await getTokenIdByHandleInsensitive(twitterHandle);
     if (existingTokenId !== 0) {
       const existing = await getCityData(existingTokenId);
       return res.json({ tokenId: String(existingTokenId), txHash: null, ipfsCID: existing.city.ipfsCID, cityData: null, alreadyMinted: true });

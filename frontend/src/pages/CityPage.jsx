@@ -307,7 +307,6 @@ export default function CityPage({ tokenId, signer, address, onOwnerConfirmed })
 
   const cityName = city.ipfsData?.name || `City #${tokenId}`;
   const cityStyle = city.ipfsData?.city?.style || "Cyberpunk";
-  const colorPalette = city.ipfsData?.city?.colorPalette || {};
   const statusName = ["Pending", "Accepted", "Verified", "Rejected", "Expired"];
   const statusColor = {
     0: "text-[#f59e0b]",
@@ -323,6 +322,13 @@ export default function CityPage({ tokenId, signer, address, onOwnerConfirmed })
     giftHistorySafePage * giftHistoryPageSize,
     giftHistorySafePage * giftHistoryPageSize + giftHistoryPageSize
   );
+  const cityDetailStats = [
+    { icon: Users, label: 'Population', value: rendererCity.followers.toLocaleString(), color: 'text-[#00d4ff]' },
+    { icon: MessageSquare, label: 'Tweets', value: rendererCity.tweetCount.toLocaleString(), color: 'text-[#a855f7]' },
+    { icon: TrendingUp, label: 'Trade Routes', value: rendererCity.following.toLocaleString(), color: 'text-[#ec4899]' },
+    { icon: Activity, label: 'Engagement', value: `${rendererCity.engagement}%`, color: 'text-[#f59e0b]' },
+    { icon: Heart, label: 'Likes', value: likeCount.toLocaleString(), color: 'text-rose-400' },
+  ];
 
   const shareText = `My Twitter became a ${cityStyle} ${LEVEL_NAMES[level]} called ${cityName} on Mantle! Every tweet builds the city 🏙️`;
 
@@ -506,14 +512,13 @@ export default function CityPage({ tokenId, signer, address, onOwnerConfirmed })
             </AnimatePresence>
           </div>
 
-          {/* Col 3: compact City Details + Color Palette */}
+          {/* Col 3: compact City Details + stats */}
           <div className="glass rounded-2xl p-5 flex flex-col gap-4 h-[420px]">
             <div>
               <h3 className="font-bold text-[#f1f5f9] mb-3">City Details</h3>
               <div className="space-y-2.5 text-sm">
                 {[
                   { label: 'Token ID', value: `#${tokenId}`,           mono: true },
-                  { label: 'Style',    value: cityStyle },
                   { label: 'Level',    value: level,                   accent: true },
                   { label: 'Owner',    value: city.managerWallet ? `${city.managerWallet.slice(0,6)}...${city.managerWallet.slice(-4)}` : '—', mono: true },
                 ].map(r => (
@@ -525,16 +530,19 @@ export default function CityPage({ tokenId, signer, address, onOwnerConfirmed })
               </div>
             </div>
 
-            {Object.keys(colorPalette).length > 0 && (
-              <div className="border-t border-white/20 pt-4">
-                <h3 className="font-bold text-[#f1f5f9] mb-3">Color Palette</h3>
-                <div className="flex gap-2 flex-wrap">
-                  {Object.values(colorPalette).map((color, i) => (
-                    <div key={i} className="w-10 h-10 rounded-lg border border-white/45" style={{ backgroundColor: color }} />
-                  ))}
-                </div>
+            <div className="mt-auto border-t border-white/20 pt-4">
+              <div className="grid grid-cols-2 gap-2">
+                {cityDetailStats.map((stat) => (
+                  <div key={stat.label} className="rounded-lg border border-white/10 bg-[#0a0a0f]/45 p-2.5 min-h-[64px]">
+                    <div className="flex items-center gap-1.5 mb-1">
+                      <stat.icon className={`w-3.5 h-3.5 ${stat.color}`} />
+                      <span className="text-[10px] text-[#64748b] uppercase tracking-wider truncate">{stat.label}</span>
+                    </div>
+                    <div className="text-sm font-bold text-[#f1f5f9]">{stat.value}</div>
+                  </div>
+                ))}
               </div>
-            )}
+            </div>
           </div>
 
           {/* Col 4: Gift History */}
