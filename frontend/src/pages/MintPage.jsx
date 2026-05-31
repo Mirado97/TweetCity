@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Sparkles, Loader2, AlertCircle, ArrowRight, ExternalLink, CheckCircle2 } from "lucide-react";
+import { Sparkles, Loader2, AlertCircle, ArrowRight, ExternalLink, CheckCircle2, Building2 } from "lucide-react";
 import { API_BASE, LEVEL_NAMES } from "../lib/contract";
 import { createWalletAuth, walletAuthParams } from "../lib/walletAuth";
 import CityRendererV2 from "../components/CityRendererV2";
@@ -103,6 +103,7 @@ export default function MintPage({ address, signer, onConnect, onMinted }) {
   } : null;
 
   const handle = linked?.cityHandle || "";
+  const existingTokenId = linked?.tokenId || null;
   const currentStep = STEPS[step];
 
   return (
@@ -181,7 +182,9 @@ export default function MintPage({ address, signer, onConnect, onMinted }) {
               </div>
 
               <p className="text-sm text-[#94a3b8]">
-                We'll analyze your last tweets, generate a unique city with AI, upload to IPFS, and mint the NFT on Mantle.
+                {existingTokenId
+                  ? "This X account already has a city NFT. Minting is disabled for existing cities."
+                  : "We'll analyze your last tweets, generate a unique city with AI, upload to IPFS, and mint the NFT on Mantle."}
               </p>
 
               <AnimatePresence>
@@ -194,11 +197,21 @@ export default function MintPage({ address, signer, onConnect, onMinted }) {
               </AnimatePresence>
 
               <motion.button
-                onClick={mint} disabled={loading}
-                className="w-full flex items-center justify-center gap-2 px-6 py-3 rounded-xl bg-gradient-to-r from-[#00d4ff] to-[#a855f7] text-white font-semibold shadow-lg shadow-[#00d4ff]/25 disabled:opacity-50 disabled:cursor-not-allowed"
-                whileHover={{ scale: 1.01 }} whileTap={{ scale: 0.99 }}
+                onClick={existingTokenId ? undefined : mint}
+                disabled={loading || !!existingTokenId}
+                className={`w-full flex items-center justify-center gap-2 px-6 py-3 rounded-xl text-white font-semibold disabled:cursor-not-allowed ${
+                  existingTokenId
+                    ? "bg-[#1f2937] border border-white/10 text-[#94a3b8] shadow-none"
+                    : "bg-gradient-to-r from-[#00d4ff] to-[#a855f7] shadow-lg shadow-[#00d4ff]/25 disabled:opacity-50"
+                }`}
+                whileHover={existingTokenId ? undefined : { scale: 1.01 }}
+                whileTap={existingTokenId ? undefined : { scale: 0.99 }}
               >
-                {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <><span>Mint My City</span><ArrowRight className="w-4 h-4" /></>}
+                {existingTokenId
+                  ? <><Building2 className="w-4 h-4" /><span>City Already Minted #{existingTokenId}</span></>
+                  : loading
+                    ? <Loader2 className="w-5 h-5 animate-spin" />
+                    : <><span>Mint My City</span><ArrowRight className="w-4 h-4" /></>}
               </motion.button>
             </div>
           )}

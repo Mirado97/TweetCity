@@ -16,6 +16,7 @@ const express = require("express");
 const crypto = require("node:crypto");
 const oauthStore = require("../storage/oauthStore");
 const { verifyWalletAuth } = require("../utils/walletAuth");
+const { getTokenIdByHandleInsensitive } = require("../services/contract");
 
 // Optional proxy for restricted networks (RU dev).
 if (process.env.HTTPS_PROXY || process.env.HTTP_PROXY) {
@@ -34,7 +35,7 @@ router.get("/ping", (_req, res) => res.json({ ok: true, route: "auth" }));
 
 // Whether a cityHandle (or owner wallet) has linked their X account. Public.
 // Accepts ?cityHandle=... OR ?address=0x...
-router.get("/twitter/status", (req, res) => {
+router.get("/twitter/status", async (req, res) => {
   const cityHandle = String(req.query.cityHandle || "").trim().replace(/^@/, "").toLowerCase();
   const address    = String(req.query.address    || "").trim().toLowerCase();
   if (!cityHandle && !address) {
@@ -42,9 +43,15 @@ router.get("/twitter/status", (req, res) => {
   }
   const rec = cityHandle ? oauthStore.get(cityHandle) : oauthStore.findVerifiedByAddress(address);
   if (!rec) return res.json({ linked: false });
+  const handle = String(rec.cityHandle || cityHandle || "").trim().replace(/^@/, "").toLowerCase();
+  const tokenId = handle
+    ? await getTokenIdByHandleInsensitive(handle).catch(() => 0)
+    : 0;
   res.json({
     linked:        true,
-    cityHandle:    rec.cityHandle || cityHandle,
+    cityHandle:    handle,
+    tokenId:       tokenId ? String(tokenId) : null,
+    alreadyMinted: !!tokenId,
   });
 });
 
