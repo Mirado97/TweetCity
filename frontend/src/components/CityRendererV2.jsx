@@ -532,11 +532,11 @@ function GiftItem({ gift, slot, tokenId }) {
 }
 
 const SLOT_PREFS = {
-  0: ["wall", "roadEdge", "plaza"],
-  1: ["plaza", "roadEdge", "wall"],
-  2: ["plaza", "roadEdge", "block"],
-  3: ["roadEdge", "roof", "plaza"],
-  4: ["plaza", "block"],
+  0: ["roadEdge"],
+  1: ["roadEdge"],
+  2: ["roadEdge"],
+  3: ["roadEdge"],
+  4: ["monument"],
   5: ["district"],
 };
 
@@ -548,13 +548,13 @@ function giftSlotFree(slot, radius, occupied) {
   return !occupied.some((p) => Math.hypot(p.x - slot.x, p.z - slot.z) < p.radius + radius + 3);
 }
 
-function districtSlot(index, seed, citySize) {
-  const side = Math.floor(seed % 4);
+function districtSlot(index, seed, baseCitySize) {
+  const side = (Math.floor(seed % 4) + index) % 4;
   const lane = Math.floor(index / 4);
   const step = PERIOD;
-  const half = citySize / 2;
+  const blockMax = (baseCitySize - 24) / 2 - PERIOD / 2;
   const spread = (index % 4 - 1.5) * step;
-  const offset = half + 24 + lane * step;
+  const offset = blockMax + PERIOD + lane * step;
   if (side === 0) return { x: spread, z: -offset, rotY: 0, radius: 18 };
   if (side === 1) return { x: offset, z: spread, rotY: -Math.PI / 2, radius: 18 };
   if (side === 2) return { x: spread, z: offset, rotY: Math.PI, radius: 18 };
@@ -582,21 +582,10 @@ function pickGiftSlot(giftSlots, gift, tokenId, citySize, occupied, districtInde
       return candidate;
     }
   }
-  const angle = (Number(gift.id) || 0) * 2.39996;
-  const fallbackDistance = citySize * 0.46;
-  for (let i = 0; i < 24; i++) {
-    const a = angle + i * 0.618;
-    const x = Math.cos(a) * fallbackDistance;
-    const z = Math.sin(a) * fallbackDistance;
-    const candidate = { x, z, rotY: Math.atan2(-x, -z), radius };
-    if (!giftSlotFree(candidate, radius, occupied)) continue;
-    occupied.push({ x, z, radius });
-    return candidate;
-  }
-  const x = Math.cos(angle) * (citySize * 0.58);
-  const z = Math.sin(angle) * (citySize * 0.58);
-  occupied.push({ x, z, radius });
-  return { x, z, rotY: Math.atan2(-x, -z) };
+
+  // No free valid slot means the city is too dense for this gift type.
+  // Keep it hidden instead of floating outside the city or clipping a model.
+  return null;
 }
 
 function Gifts({ gifts, giftSlots, citySize, tokenId }) {
@@ -608,8 +597,9 @@ function Gifts({ gifts, giftSlots, citySize, tokenId }) {
       const type = Number(gift.giftType);
       const slot = pickGiftSlot(giftSlots, gift, tokenId, citySize, occupied, districtIndex);
       if (type === 5) districtIndex++;
+      if (!slot) return null;
       return { gift, slot };
-    });
+    }).filter(Boolean);
   }, [gifts, giftSlots, citySize, tokenId]);
   return (
     <>
@@ -634,7 +624,7 @@ export function V2Scene({ metrics, tokenId, gifts = [] }) {
     const gr    = Math.max(gridR, 1);
 
     const models = [];
-    const giftSlots = { wall: [], roadEdge: [], plaza: [], roof: [], block: [], blockers: [] };
+    const giftSlots = { wall: [], roadEdge: [], plaza: [], roof: [], block: [], monument: [], blockers: [] };
     const addBlocker = (x, z, radius) => {
       giftSlots.blockers.push({ x, z, radius });
     };
@@ -743,10 +733,22 @@ export function V2Scene({ metrics, tokenId, gifts = [] }) {
 
         giftSlots.block.push({ x: cx, z: cz, rotY: Math.atan2(-cx, -cz), pack, zone, radius: 7 });
         giftSlots.plaza.push({ x: cx + 11, z: cz - 11, rotY: Math.atan2(-cx, -cz), pack, zone, radius: 5 });
-        if (bc_row > -gridR) giftSlots.roadEdge.push({ x: cx, z: cz - PERIOD / 2 + S * 0.55, rotY: 0, pack, zone, radius: 5 });
-        if (bc_row <  gridR) giftSlots.roadEdge.push({ x: cx, z: cz + PERIOD / 2 - S * 0.55, rotY: Math.PI, pack, zone, radius: 5 });
-        if (bc_col > -gridR) giftSlots.roadEdge.push({ x: cx - PERIOD / 2 + S * 0.55, z: cz, rotY: Math.PI / 2, pack, zone, radius: 5 });
-        if (bc_col <  gridR) giftSlots.roadEdge.push({ x: cx + PERIOD / 2 - S * 0.55, z: cz, rotY: -Math.PI / 2, pack, zone, radius: 5 });
+        if (bc_row > -gridR) {
+          giftSlots.roadEdge.push({ x: cx - 8, z: cz - PERIOD / 2 + S * 0.62, rotY: Math.PI / 2, pack, zone, radius: 4.5 });
+          giftSlots.roadEdge.push({ x: cx + 8, z: cz - PERIOD / 2 + S * 0.62, rotY: Math.PI / 2, pack, zone, radius: 4.5 });
+        }
+        if (bc_row < gridR) {
+          giftSlots.roadEdge.push({ x: cx - 8, z: cz + PERIOD / 2 - S * 0.62, rotY: Math.PI / 2, pack, zone, radius: 4.5 });
+          giftSlots.roadEdge.push({ x: cx + 8, z: cz + PERIOD / 2 - S * 0.62, rotY: Math.PI / 2, pack, zone, radius: 4.5 });
+        }
+        if (bc_col > -gridR) {
+          giftSlots.roadEdge.push({ x: cx - PERIOD / 2 + S * 0.62, z: cz - 8, rotY: 0, pack, zone, radius: 4.5 });
+          giftSlots.roadEdge.push({ x: cx - PERIOD / 2 + S * 0.62, z: cz + 8, rotY: 0, pack, zone, radius: 4.5 });
+        }
+        if (bc_col < gridR) {
+          giftSlots.roadEdge.push({ x: cx + PERIOD / 2 - S * 0.62, z: cz - 8, rotY: 0, pack, zone, radius: 4.5 });
+          giftSlots.roadEdge.push({ x: cx + PERIOD / 2 - S * 0.62, z: cz + 8, rotY: 0, pack, zone, radius: 4.5 });
+        }
 
         let clusterOffsets, clusterScale;
 
@@ -922,10 +924,10 @@ export function V2Scene({ metrics, tokenId, gifts = [] }) {
       models.push({ url: MODELS.trees[treeRng()>0.5?0:1], x, z, rotY: treeRng()*Math.PI*2, scale: 9.0+treeRng()*6.0 });
       addBlocker(x, z, 4);
     }
-    addBlocker(0, 0, 9);
-    giftSlots.plaza.push({ x: 0, z: -15, rotY: 0, pack: 'center', zone: 0, radius: 5 });
-    giftSlots.plaza.push({ x: 15, z: 0, rotY: -Math.PI / 2, pack: 'center', zone: 0, radius: 5 });
-    giftSlots.plaza.push({ x: -15, z: 0, rotY: Math.PI / 2, pack: 'center', zone: 0, radius: 5 });
+    addBlocker(0, 0, 7);
+    giftSlots.monument.push({ x: 0, z: -11, rotY: 0, pack: 'center', zone: 0, radius: 6 });
+    giftSlots.monument.push({ x: 11, z: 0, rotY: -Math.PI / 2, pack: 'center', zone: 0, radius: 6 });
+    giftSlots.monument.push({ x: -11, z: 0, rotY: Math.PI / 2, pack: 'center', zone: 0, radius: 6 });
 
     const baseCitySize = (2 * gr + 1) * PERIOD + 24;
     const districtLanes = Math.ceil(districtCount / 4);
