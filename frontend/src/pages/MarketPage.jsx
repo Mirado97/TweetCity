@@ -233,13 +233,17 @@ export default function MarketPage({ onCityClick, signer, address, onConnect }) 
   useEffect(() => { loadListings(); }, [loadListings]);
 
   useEffect(() => {
-    if (!giftsAddr || listings.length === 0) return;
+    if (!giftsAddr) return;
     let cancelled = false;
     async function loadPrices() {
       try {
         const provider = readProvider();
         const gc = getGiftsContract(giftsAddr, provider);
-        const ids = [...new Set(listings.map((x) => String(x.tokenId)))];
+        const ids = [...new Set([
+          ...listings.map((x) => String(x.tokenId)),
+          ...(postTokenId.trim() ? [postTokenId.trim()] : []),
+        ])];
+        if (ids.length === 0) return;
         const pairs = await Promise.all(ids.map(async (id) => {
           try {
             const prices = await gc.getPrices(id);
@@ -253,7 +257,7 @@ export default function MarketPage({ onCityClick, signer, address, onConnect }) 
     }
     loadPrices();
     return () => { cancelled = true; };
-  }, [giftsAddr, listings]);
+  }, [giftsAddr, listings, postTokenId]);
 
   async function publishListing() {
     setPostMessage("");
