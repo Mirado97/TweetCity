@@ -125,7 +125,7 @@ export default function App() {
           )}
           {page === "market" && (
             <motion.div key="market" className="w-full" variants={pageVariants} initial="initial" animate="animate" exit="exit" transition={{ duration: 0.35 }}>
-              <MarketPage onCityClick={(id) => nav("city", id)} />
+              <MarketPage onCityClick={(id) => nav("city", id)} signer={signer} address={address} onConnect={connect} />
             </motion.div>
           )}
           {page === "guide" && (

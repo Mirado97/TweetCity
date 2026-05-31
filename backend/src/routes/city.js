@@ -4,6 +4,7 @@ const { ethers } = require("ethers");
 
 const TwitterOAuthProvider = require("../services/twitter/TwitterOAuthProvider");
 const oauthStore = require("../storage/oauthStore");
+const marketStore = require("../storage/marketStore");
 let _oauth = null;
 function getOAuth() {
   if (!_oauth) _oauth = new TwitterOAuthProvider();
@@ -286,6 +287,81 @@ router.get("/cities", heavyReadLimiter, async (req, res) => {
   } catch (err) {
     console.error("[/cities]", err.message);
     res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── Market listings ─────────────────────────────────────────────────────
+
+router.get("/market/listings", heavyReadLimiter, async (req, res) => {
+  try {
+    const hidden = loadHidden();
+    const kind = String(req.query.kind || "").toLowerCase();
+    let listings = marketStore.list().filter((x) => !hidden[String(x.tokenId)]);
+    if (kind === "administrator" || kind === "resident") {
+      listings = listings.filter((x) => x.kind === kind);
+    }
+    res.json(listings);
+  } catch (err) {
+    console.error("[market/listings]", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post("/market/listings", async (req, res) => {
+  try {
+    const { kind, tokenId, postUrl, walletAddress, walletTimestamp, walletSignature } = req.body || {};
+    if (!tokenId || !walletAddress) return res.status(400).json({ error: "tokenId and walletAddress required" });
+    if (!ethers.isAddress(walletAddress)) return res.status(400).json({ error: "Invalid wallet address" });
+
+    const auth = verifyWalletAuth({
+      address: walletAddress,
+      action: `market-listing:${tokenId}:${kind === "resident" ? "resident" : "administrator"}`,
+      timestamp: walletTimestamp,
+      signature: walletSignature,
+    });
+    if (!auth.ok) return res.status(auth.status).json({ error: auth.error });
+
+    const managerWallet = await getCityManagerWallet(tokenId);
+    if (!managerWallet || managerWallet.toLowerCase() !== auth.address) {
+      return res.status(403).json({ error: "Only this city's manager can post a market listing" });
+    }
+
+    const [cityData, twitterHandle] = await Promise.all([
+      getCityData(tokenId),
+      getHandleByTokenId(tokenId),
+    ]);
+
+    const listing = marketStore.upsert({
+      kind,
+      tokenId,
+      ownerAddress: auth.address,
+      twitterHandle,
+      followers: cityData.city?.followers || 0,
+      postUrl,
+    });
+    res.json({ ok: true, listing });
+  } catch (err) {
+    console.error("[market/listings:post]", err.message);
+    res.status(err.status || 500).json({ error: err.message });
+  }
+});
+
+router.delete("/market/listings/:id", async (req, res) => {
+  try {
+    const { walletAddress, walletTimestamp, walletSignature } = req.body || {};
+    if (!walletAddress) return res.status(400).json({ error: "walletAddress required" });
+    const auth = verifyWalletAuth({
+      address: walletAddress,
+      action: `market-listing-delete:${req.params.id}`,
+      timestamp: walletTimestamp,
+      signature: walletSignature,
+    });
+    if (!auth.ok) return res.status(auth.status).json({ error: auth.error });
+    const ok = marketStore.deactivate(req.params.id, auth.address);
+    res.json({ ok });
+  } catch (err) {
+    console.error("[market/listings:delete]", err.message);
+    res.status(err.status || 500).json({ error: err.message });
   }
 });
 
