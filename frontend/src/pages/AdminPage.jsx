@@ -3,7 +3,7 @@ import { motion } from "framer-motion";
 import { ethers } from "ethers";
 import {
   Shield, BarChart3, FileCode, Building2, Server, Gift,
-  Loader2, AlertTriangle, CheckCircle2, RefreshCw, EyeOff, Eye, ExternalLink, Zap,
+  Loader2, AlertTriangle, CheckCircle2, RefreshCw, EyeOff, Eye, ExternalLink, Zap, Cuboid,
 } from "lucide-react";
 import { getContract, getGiftsContract, fetchConfig as fetchPublicConfig, GIFT_TYPES, LEVEL_NAMES } from "../lib/contract";
 import {
@@ -11,6 +11,7 @@ import {
   fetchCities, hideCity, unhideCity, triggerSweep,
   fetchGifts, checkGift, forceVerifyGift,
 } from "../lib/adminApi";
+import TestV2Page from "./TestV2Page";
 
 const TABS = [
   { id: "stats",     label: "Stats",     icon: BarChart3 },
@@ -18,6 +19,7 @@ const TABS = [
   { id: "cities",    label: "Cities",    icon: Building2 },
   { id: "gifts",     label: "Gifts",     icon: Gift },
   { id: "backend",   label: "Backend",   icon: Server },
+  { id: "v2",        label: "V2",        icon: Cuboid },
 ];
 
 const GIFT_STATUS_LABELS = ["Pending", "Accepted", "Verified", "Rejected", "Expired"];
@@ -683,6 +685,7 @@ export default function AdminPage({ address, signer, onConnect }) {
             {tab === "cities"    && <CitiesTab signer={signer} />}
             {tab === "gifts"     && <GiftsTab signer={signer} />}
             {tab === "backend"   && <BackendTab signer={signer} />}
+            {tab === "v2"        && <TestV2Page embedded />}
           </div>
         </>
       )}

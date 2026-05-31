@@ -11,7 +11,6 @@ import LeaderboardPage from "./pages/LeaderboardPage";
 import MarketPage from "./pages/MarketPage";
 import GuidePage from "./pages/GuidePage";
 import AdminPage from "./pages/AdminPage";
-import TestV2Page from "./pages/TestV2Page";
 import "./App.css";
 
 const LS_TOKEN = "tweetcity_my_token";
@@ -145,11 +144,6 @@ export default function App() {
           {page === "admin" && (
             <motion.div key="admin" className="w-full" variants={pageVariants} initial="initial" animate="animate" exit="exit" transition={{ duration: 0.35 }}>
               <AdminPage address={address} signer={signer} onConnect={connect} />
-            </motion.div>
-          )}
-          {page === "testv2" && (
-            <motion.div key="testv2" className="w-full" variants={pageVariants} initial="initial" animate="animate" exit="exit" transition={{ duration: 0.35 }}>
-              <TestV2Page />
             </motion.div>
           )}
         </AnimatePresence>

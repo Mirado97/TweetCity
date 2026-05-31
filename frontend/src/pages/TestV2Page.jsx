@@ -14,9 +14,9 @@ const TEST_ACCOUNTS = [
   { label: "World Capital",sub: "2 000 000 followers",  city: { followers: 2000000, tweetCount: 100000,following: 10000,engagement: 10.0 }, tokenId: 10 },
 ];
 
-export default function TestV2Page() {
+export default function TestV2Page({ embedded = false }) {
   return (
-    <div style={{ padding: "24px 32px", background: "#111", minHeight: "100vh" }}>
+    <div style={{ padding: embedded ? 0 : "24px 32px", background: embedded ? "transparent" : "#111", minHeight: embedded ? "auto" : "100vh" }}>
       <h1 style={{ color: "#fff", fontFamily: "monospace", marginBottom: 4 }}>City V2 — All 10 Levels</h1>
       <p style={{ color: "#666", fontFamily: "monospace", fontSize: 12, marginBottom: 32 }}>
         Hamlet → World Capital · Kenney GLB tiles · commercial / industrial / suburban zones

@@ -108,14 +108,6 @@ export function Navbar({ currentPage, onNavigate, tokenId, address, onConnect, o
                 )}
               </motion.button>
             )}
-            {/* Dev: V2 test page */}
-            <motion.button
-              onClick={() => onNavigate('testv2')}
-              className="relative flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium text-[#64748b] hover:text-[#94a3b8] transition-colors"
-              whileHover={{ scale: 1.02 }}
-            >
-              V2
-            </motion.button>
           </div>
 
           {/* Wallet */}

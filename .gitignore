@@ -11,6 +11,17 @@ frontend/build/
 backend/node_modules/
 backend/.env
 backend/data/
+backend/ipfs-cache.json
 oauth-test.log
 PLAN.md
 CLAUDE.md
+SECURITY_FIX_TODO.md
+screenshot.png
+frontend/railway.json
+frontend/src/main.ts
+frontend/src/counter.ts
+frontend/src/style.css
+frontend/src/assets/hero.png
+frontend/src/assets/typescript.svg
+frontend/src/assets/vite.svg
+twitter-scraper/
