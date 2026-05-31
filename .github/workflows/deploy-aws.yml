@@ -26,11 +26,16 @@ jobs:
           test -n "$EC2_SSH_KEY" || (echo "Missing EC2_SSH_KEY" && exit 1)
 
           install -m 700 -d ~/.ssh
-          printf '%s\n' "$EC2_SSH_KEY" > ~/.ssh/ec2_deploy_key
+          printf '%s\n' "$EC2_SSH_KEY" | tr -d '\r' > ~/.ssh/ec2_deploy_key
           chmod 600 ~/.ssh/ec2_deploy_key
-          ssh-keyscan -H "$EC2_HOST" >> ~/.ssh/known_hosts
+          ssh-keyscan -T 20 -H "$EC2_HOST" >> ~/.ssh/known_hosts
 
-          ssh -i ~/.ssh/ec2_deploy_key "$EC2_USER@$EC2_HOST" 'bash -s' <<'REMOTE'
+          SSH_OPTS="-i ~/.ssh/ec2_deploy_key -o IdentitiesOnly=yes -o BatchMode=yes -o ConnectTimeout=20 -o ServerAliveInterval=15 -o ServerAliveCountMax=3"
+
+          echo "Checking SSH access to $EC2_USER@$EC2_HOST..."
+          ssh $SSH_OPTS "$EC2_USER@$EC2_HOST" 'echo "SSH OK: $(hostname)"'
+
+          ssh $SSH_OPTS "$EC2_USER@$EC2_HOST" 'bash -s' <<'REMOTE'
           set -euo pipefail
 
           export PATH="/usr/local/bin:/usr/bin:/bin:$PATH"
