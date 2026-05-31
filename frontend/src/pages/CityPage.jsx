@@ -4,7 +4,7 @@ import { ethers } from "ethers";
 import {
   Heart, RefreshCw, Share2, ExternalLink,
   Loader2, AlertCircle, TrendingUp, Users, MessageSquare, Activity,
-  Gift, Settings, X, Inbox
+  Gift, Settings, X, Inbox, ChevronLeft, ChevronRight
 } from "lucide-react";
 import { API_BASE, LEVEL_NAMES, GIFT_TYPES, getContract, getGiftsContract, fetchConfig } from "../lib/contract";
 import { createWalletAuth, walletAuthParams } from "../lib/walletAuth";
@@ -39,6 +39,7 @@ export default function CityPage({ tokenId, signer, address, onOwnerConfirmed })
   const [pendingGifts, setPendingGifts] = useState([]);
   const [myGifts, setMyGifts] = useState([]);
   const [giftHistory, setGiftHistory] = useState([]);
+  const [giftHistoryPage, setGiftHistoryPage] = useState(0);
   const [claimingId, setClaimingId] = useState(null);
   const [giftStats, setGiftStats] = useState(null);
   const [showGiftPanel, setShowGiftPanel] = useState(false);
@@ -76,7 +77,6 @@ export default function CityPage({ tokenId, signer, address, onOwnerConfirmed })
           tweetUrl: g.tweetUrl,
         }))
         .sort((a, b) => Number(b.id) - Number(a.id))
-        .slice(0, 8)
       );
       setGiftStats({ totalGifts: stats[0], totalEarned: stats[1], pendingCount: stats[2] });
     } catch {}
@@ -165,6 +165,7 @@ export default function CityPage({ tokenId, signer, address, onOwnerConfirmed })
   }
 
   useEffect(() => { loadCity(); }, [tokenId]);
+  useEffect(() => { setGiftHistoryPage(0); }, [tokenId, giftHistory.length]);
 
   // Recompute ownership whenever the wallet address changes (e.g. user connects MetaMask
   // after page load) or after the city's managerWallet is loaded.
@@ -315,6 +316,13 @@ export default function CityPage({ tokenId, signer, address, onOwnerConfirmed })
     3: "text-rose-400",
     4: "text-[#64748b]",
   };
+  const giftHistoryPageSize = 10;
+  const giftHistoryPages = Math.max(1, Math.ceil(giftHistory.length / giftHistoryPageSize));
+  const giftHistorySafePage = Math.min(giftHistoryPage, giftHistoryPages - 1);
+  const giftHistoryPageItems = giftHistory.slice(
+    giftHistorySafePage * giftHistoryPageSize,
+    giftHistorySafePage * giftHistoryPageSize + giftHistoryPageSize
+  );
 
   const shareText = `My Twitter became a ${cityStyle} ${LEVEL_NAMES[level]} called ${cityName} on Mantle! Every tweet builds the city 🏙️`;
 
@@ -393,7 +401,7 @@ export default function CityPage({ tokenId, signer, address, onOwnerConfirmed })
           className="grid lg:grid-cols-2 xl:grid-cols-[1.1fr_1.1fr_0.58fr_0.9fr] gap-6 mb-8 items-stretch">
 
           {/* Col 1: 3D City */}
-          <div className="relative glass rounded-2xl overflow-hidden">
+          <div className="relative glass rounded-2xl overflow-hidden h-[320px]">
             <div className="absolute -inset-1 bg-gradient-to-r from-[#00d4ff]/20 to-[#a855f7]/20 rounded-2xl blur-xl opacity-50 pointer-events-none" />
             <div className="relative h-full">
               <CityRendererV2 city={rendererCity} tokenId={tokenId} gifts={activeGifts} />
@@ -401,7 +409,7 @@ export default function CityPage({ tokenId, signer, address, onOwnerConfirmed })
           </div>
 
           {/* Col 2: Buttons + Set Gift Prices panel (always rendered for height) */}
-          <div className="glass rounded-2xl p-5 flex flex-col gap-4">
+          <div className="glass rounded-2xl p-5 flex flex-col gap-4 h-[320px]">
             {/* Buttons at top */}
             <div className="flex flex-col gap-2">
               {isOwner && (
@@ -499,7 +507,7 @@ export default function CityPage({ tokenId, signer, address, onOwnerConfirmed })
           </div>
 
           {/* Col 3: compact City Details + Color Palette */}
-          <div className="glass rounded-2xl p-5 flex flex-col gap-4">
+          <div className="glass rounded-2xl p-5 flex flex-col gap-4 h-[320px]">
             <div>
               <h3 className="font-bold text-[#f1f5f9] mb-3">City Details</h3>
               <div className="space-y-2.5 text-sm">
@@ -530,26 +538,26 @@ export default function CityPage({ tokenId, signer, address, onOwnerConfirmed })
           </div>
 
           {/* Col 4: Gift History */}
-          <div className="glass rounded-2xl p-5 flex flex-col min-h-[260px]">
+          <div className="glass rounded-2xl p-5 flex flex-col h-[320px]">
             <div className="flex items-center justify-between gap-3 mb-4">
               <h3 className="font-bold text-[#f1f5f9]">Gift History</h3>
               {giftStats && giftStats.totalGifts > 0n && (
                 <span className="text-xs font-mono text-[#64748b]">{giftStats.totalGifts.toString()} total</span>
               )}
             </div>
-            <div className="space-y-3 overflow-hidden">
+            <div className="space-y-2.5 overflow-y-auto pr-1 flex-1 min-h-0">
               {giftHistory.length === 0 ? (
                 <div className="h-28 flex items-center justify-center text-sm text-[#64748b] border border-white/10 rounded-xl bg-[#0a0a0f]/35">
                   No gifts yet
                 </div>
-              ) : giftHistory.map(g => {
+              ) : giftHistoryPageItems.map(g => {
                 const t = GIFT_TYPES[g.giftType];
                 return (
-                  <div key={g.id.toString()} className="flex items-center gap-3 rounded-xl bg-[#0a0a0f]/45 border border-white/10 px-3 py-2.5">
-                    <div className="w-8 h-8 rounded-lg bg-white/5 border border-white/10 flex items-center justify-center text-lg shrink-0">{t?.icon || "🎁"}</div>
+                  <div key={g.id.toString()} className="flex items-center gap-3 rounded-xl bg-[#0a0a0f]/45 border border-white/10 px-3 py-2">
+                    <div className="w-7 h-7 rounded-lg bg-white/5 border border-white/10 flex items-center justify-center text-base shrink-0">{t?.icon || "🎁"}</div>
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2 min-w-0">
-                        <span className="text-sm font-semibold text-[#f1f5f9] truncate">{t?.name || "Gift"}</span>
+                        <span className="text-xs font-semibold text-[#f1f5f9] truncate">{t?.name || "Gift"}</span>
                         <span className="text-[10px] font-mono text-[#64748b] shrink-0">#{g.id.toString()}</span>
                       </div>
                       <div className="text-[11px] text-[#64748b] font-mono truncate">
@@ -563,6 +571,27 @@ export default function CityPage({ tokenId, signer, address, onOwnerConfirmed })
                 );
               })}
             </div>
+            {giftHistory.length > giftHistoryPageSize && (
+              <div className="flex items-center justify-between gap-3 pt-3 mt-3 border-t border-white/10">
+                <button
+                  onClick={() => setGiftHistoryPage(p => Math.max(0, p - 1))}
+                  disabled={giftHistorySafePage === 0}
+                  className="p-1.5 rounded-lg border border-white/10 bg-[#0a0a0f]/60 text-[#94a3b8] hover:text-[#f1f5f9] disabled:opacity-35 disabled:hover:text-[#94a3b8] transition-colors"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                </button>
+                <span className="text-xs font-mono text-[#64748b]">
+                  {giftHistorySafePage + 1} / {giftHistoryPages}
+                </span>
+                <button
+                  onClick={() => setGiftHistoryPage(p => Math.min(giftHistoryPages - 1, p + 1))}
+                  disabled={giftHistorySafePage >= giftHistoryPages - 1}
+                  className="p-1.5 rounded-lg border border-white/10 bg-[#0a0a0f]/60 text-[#94a3b8] hover:text-[#f1f5f9] disabled:opacity-35 disabled:hover:text-[#94a3b8] transition-colors"
+                >
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+              </div>
+            )}
           </div>
         </motion.div>
 
