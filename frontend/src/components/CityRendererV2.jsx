@@ -541,11 +541,11 @@ const SLOT_PREFS = {
 };
 
 function giftRadius(type) {
-  return [5.5, 7.5, 4.5, 6.5, 7.0, 18.0][type] || 6;
+  return [3.0, 3.5, 2.8, 4.0, 6.0, 18.0][type] || 4;
 }
 
 function giftSlotFree(slot, radius, occupied) {
-  return !occupied.some((p) => Math.hypot(p.x - slot.x, p.z - slot.z) < p.radius + radius + 3);
+  return !occupied.some((p) => Math.hypot(p.x - slot.x, p.z - slot.z) < p.radius + radius + 1.5);
 }
 
 function districtSlot(index, seed, baseCitySize) {
@@ -574,8 +574,9 @@ function pickGiftSlot(giftSlots, gift, tokenId, citySize, occupied, districtInde
   const prefs = SLOT_PREFS[type] || ["plaza", "block", "roadEdge"];
   for (const key of prefs) {
     const arr = giftSlots?.[key] || [];
+    const start = arr.length ? seed % arr.length : 0;
     for (let i = 0; i < arr.length; i++) {
-      const slot = arr[(seed + i * 7) % arr.length];
+      const slot = arr[(start + i) % arr.length];
       const candidate = { ...slot, radius: slot.radius || radius };
       if (!giftSlotFree(candidate, radius, occupied)) continue;
       occupied.push({ x: candidate.x, z: candidate.z, radius });
@@ -680,6 +681,24 @@ export function V2Scene({ metrics, tokenId, gifts = [] }) {
       }
     }
 
+    // Gift curb slots: sit just outside the road edge with a 1-2 unit setback,
+    // always parallel to the road direction.
+    const curbSetback = S / 2 + 1.5;
+    for (const rz of roadPos) {
+      for (let x = -tileHalfSpan + S; x <= tileHalfSpan - S + 0.001; x += S) {
+        if (roadPos.some(rx => Math.abs(rx - x) < S * 0.8)) continue;
+        giftSlots.roadEdge.push({ x, z: rz - curbSetback, rotY: 0, pack: 'road', zone: 0, radius: 2.5 });
+        giftSlots.roadEdge.push({ x, z: rz + curbSetback, rotY: Math.PI, pack: 'road', zone: 0, radius: 2.5 });
+      }
+    }
+    for (const rx of roadPos) {
+      for (let z = -tileHalfSpan + S; z <= tileHalfSpan - S + 0.001; z += S) {
+        if (roadPos.some(rz => Math.abs(rz - z) < S * 0.8)) continue;
+        giftSlots.roadEdge.push({ x: rx - curbSetback, z, rotY: Math.PI / 2, pack: 'road', zone: 0, radius: 2.5 });
+        giftSlots.roadEdge.push({ x: rx + curbSetback, z, rotY: -Math.PI / 2, pack: 'road', zone: 0, radius: 2.5 });
+      }
+    }
+
     // Street lights at every other intersection
     for (let ri = 0; ri < roadPos.length; ri++) {
       for (let rj = 0; rj < roadPos.length; rj++) {
@@ -733,23 +752,6 @@ export function V2Scene({ metrics, tokenId, gifts = [] }) {
 
         giftSlots.block.push({ x: cx, z: cz, rotY: Math.atan2(-cx, -cz), pack, zone, radius: 7 });
         giftSlots.plaza.push({ x: cx + 11, z: cz - 11, rotY: Math.atan2(-cx, -cz), pack, zone, radius: 5 });
-        if (bc_row > -gridR) {
-          giftSlots.roadEdge.push({ x: cx - 8, z: cz - PERIOD / 2 + S * 0.62, rotY: Math.PI / 2, pack, zone, radius: 4.5 });
-          giftSlots.roadEdge.push({ x: cx + 8, z: cz - PERIOD / 2 + S * 0.62, rotY: Math.PI / 2, pack, zone, radius: 4.5 });
-        }
-        if (bc_row < gridR) {
-          giftSlots.roadEdge.push({ x: cx - 8, z: cz + PERIOD / 2 - S * 0.62, rotY: Math.PI / 2, pack, zone, radius: 4.5 });
-          giftSlots.roadEdge.push({ x: cx + 8, z: cz + PERIOD / 2 - S * 0.62, rotY: Math.PI / 2, pack, zone, radius: 4.5 });
-        }
-        if (bc_col > -gridR) {
-          giftSlots.roadEdge.push({ x: cx - PERIOD / 2 + S * 0.62, z: cz - 8, rotY: 0, pack, zone, radius: 4.5 });
-          giftSlots.roadEdge.push({ x: cx - PERIOD / 2 + S * 0.62, z: cz + 8, rotY: 0, pack, zone, radius: 4.5 });
-        }
-        if (bc_col < gridR) {
-          giftSlots.roadEdge.push({ x: cx + PERIOD / 2 - S * 0.62, z: cz - 8, rotY: 0, pack, zone, radius: 4.5 });
-          giftSlots.roadEdge.push({ x: cx + PERIOD / 2 - S * 0.62, z: cz + 8, rotY: 0, pack, zone, radius: 4.5 });
-        }
-
         let clusterOffsets, clusterScale;
 
         if (pack === 'commercial' || pack === 'skyscraper') {
@@ -789,7 +791,7 @@ export function V2Scene({ metrics, tokenId, gifts = [] }) {
             scale:    clusterScale * (0.9 + rng() * 0.2),
             colorIdx: pack === 'suburban' ? Math.floor(rng() * SUBURBAN_PALETTE_COUNT) : undefined,
           });
-          addBlocker(bx, bz, pack === 'industrial' ? 11 : pack === 'commercial' || pack === 'skyscraper' ? 9 : 8);
+          addBlocker(bx, bz, pack === 'industrial' ? 9 : pack === 'commercial' || pack === 'skyscraper' ? 7.5 : 6.5);
         }
 
         // Props
