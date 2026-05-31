@@ -534,7 +534,7 @@ function GiftItem({ gift, slot, tokenId }) {
 const SLOT_PREFS = {
   0: ["wall", "roadEdge", "plaza"],
   1: ["plaza", "roadEdge", "wall"],
-  2: ["roof", "plaza", "block"],
+  2: ["plaza", "roadEdge", "block"],
   3: ["roadEdge", "roof", "plaza"],
   4: ["plaza", "block"],
   5: ["district"],
@@ -545,7 +545,7 @@ function giftRadius(type) {
 }
 
 function giftSlotFree(slot, radius, occupied) {
-  return !occupied.some((p) => Math.hypot(p.x - slot.x, p.z - slot.z) < p.radius + radius + 2);
+  return !occupied.some((p) => Math.hypot(p.x - slot.x, p.z - slot.z) < p.radius + radius + 3);
 }
 
 function districtSlot(index, seed, citySize) {
@@ -583,9 +583,18 @@ function pickGiftSlot(giftSlots, gift, tokenId, citySize, occupied, districtInde
     }
   }
   const angle = (Number(gift.id) || 0) * 2.39996;
-  const fallbackDistance = citySize * 0.42;
-  const x = Math.cos(angle) * fallbackDistance;
-  const z = Math.sin(angle) * fallbackDistance;
+  const fallbackDistance = citySize * 0.46;
+  for (let i = 0; i < 24; i++) {
+    const a = angle + i * 0.618;
+    const x = Math.cos(a) * fallbackDistance;
+    const z = Math.sin(a) * fallbackDistance;
+    const candidate = { x, z, rotY: Math.atan2(-x, -z), radius };
+    if (!giftSlotFree(candidate, radius, occupied)) continue;
+    occupied.push({ x, z, radius });
+    return candidate;
+  }
+  const x = Math.cos(angle) * (citySize * 0.58);
+  const z = Math.sin(angle) * (citySize * 0.58);
   occupied.push({ x, z, radius });
   return { x, z, rotY: Math.atan2(-x, -z) };
 }
@@ -593,7 +602,7 @@ function pickGiftSlot(giftSlots, gift, tokenId, citySize, occupied, districtInde
 function Gifts({ gifts, giftSlots, citySize, tokenId }) {
   if (!gifts || gifts.length === 0) return null;
   const placements = useMemo(() => {
-    const occupied = [];
+    const occupied = [...(giftSlots?.blockers || [])];
     let districtIndex = 0;
     return gifts.map((gift) => {
       const type = Number(gift.giftType);
@@ -625,7 +634,10 @@ export function V2Scene({ metrics, tokenId, gifts = [] }) {
     const gr    = Math.max(gridR, 1);
 
     const models = [];
-    const giftSlots = { wall: [], roadEdge: [], plaza: [], roof: [], block: [] };
+    const giftSlots = { wall: [], roadEdge: [], plaza: [], roof: [], block: [], blockers: [] };
+    const addBlocker = (x, z, radius) => {
+      giftSlots.blockers.push({ x, z, radius });
+    };
 
     // Block center positions (multiples of PERIOD)
     const blockPos = [];
@@ -729,12 +741,12 @@ export function V2Scene({ metrics, tokenId, gifts = [] }) {
         const list   = MODELS[pack];
         const baseScale = ZONE_SCALE[pack];
 
-        giftSlots.block.push({ x: cx, z: cz, rotY: Math.atan2(-cx, -cz), pack, zone });
-        giftSlots.plaza.push({ x: cx + 5, z: cz - 5, rotY: Math.atan2(-cx, -cz), pack, zone });
-        if (bc_row > -gridR) giftSlots.roadEdge.push({ x: cx, z: cz - PERIOD / 2 + S * 0.35, rotY: 0, pack, zone });
-        if (bc_row <  gridR) giftSlots.roadEdge.push({ x: cx, z: cz + PERIOD / 2 - S * 0.35, rotY: Math.PI, pack, zone });
-        if (bc_col > -gridR) giftSlots.roadEdge.push({ x: cx - PERIOD / 2 + S * 0.35, z: cz, rotY: Math.PI / 2, pack, zone });
-        if (bc_col <  gridR) giftSlots.roadEdge.push({ x: cx + PERIOD / 2 - S * 0.35, z: cz, rotY: -Math.PI / 2, pack, zone });
+        giftSlots.block.push({ x: cx, z: cz, rotY: Math.atan2(-cx, -cz), pack, zone, radius: 7 });
+        giftSlots.plaza.push({ x: cx + 11, z: cz - 11, rotY: Math.atan2(-cx, -cz), pack, zone, radius: 5 });
+        if (bc_row > -gridR) giftSlots.roadEdge.push({ x: cx, z: cz - PERIOD / 2 + S * 0.55, rotY: 0, pack, zone, radius: 5 });
+        if (bc_row <  gridR) giftSlots.roadEdge.push({ x: cx, z: cz + PERIOD / 2 - S * 0.55, rotY: Math.PI, pack, zone, radius: 5 });
+        if (bc_col > -gridR) giftSlots.roadEdge.push({ x: cx - PERIOD / 2 + S * 0.55, z: cz, rotY: Math.PI / 2, pack, zone, radius: 5 });
+        if (bc_col <  gridR) giftSlots.roadEdge.push({ x: cx + PERIOD / 2 - S * 0.55, z: cz, rotY: -Math.PI / 2, pack, zone, radius: 5 });
 
         let clusterOffsets, clusterScale;
 
@@ -775,17 +787,27 @@ export function V2Scene({ metrics, tokenId, gifts = [] }) {
             scale:    clusterScale * (0.9 + rng() * 0.2),
             colorIdx: pack === 'suburban' ? Math.floor(rng() * SUBURBAN_PALETTE_COUNT) : undefined,
           });
+          addBlocker(bx, bz, pack === 'industrial' ? 11 : pack === 'commercial' || pack === 'skyscraper' ? 9 : 8);
         }
 
         // Props
         if (pack === 'industrial' && rng() < 0.35) {
-          models.push({ url: MODELS.chimneys[Math.floor(rng() * MODELS.chimneys.length)], x: cx + (rng()-0.5)*8, z: cz + (rng()-0.5)*8, rotY: rng()*Math.PI*2, scale: 2.0 });
+          const x = cx + (rng()-0.5)*8;
+          const z = cz + (rng()-0.5)*8;
+          models.push({ url: MODELS.chimneys[Math.floor(rng() * MODELS.chimneys.length)], x, z, rotY: rng()*Math.PI*2, scale: 2.0 });
+          addBlocker(x, z, 2.5);
         }
         if (pack === 'suburban' && rng() < 0.35) {
-          models.push({ url: MODELS.driveways[Math.floor(rng() * MODELS.driveways.length)], x: cx+(rng()-0.5)*6, z: cz+(rng()-0.5)*6, rotY: Math.floor(rng()*4)*Math.PI/2, scale: 5.0 });
+          const x = cx+(rng()-0.5)*6;
+          const z = cz+(rng()-0.5)*6;
+          models.push({ url: MODELS.driveways[Math.floor(rng() * MODELS.driveways.length)], x, z, rotY: Math.floor(rng()*4)*Math.PI/2, scale: 5.0 });
+          addBlocker(x, z, 4);
         }
         if ((pack === 'commercial' || pack === 'skyscraper') && rng() < 0.4) {
-          models.push({ url: MODELS.commercialDetails[Math.floor(rng()*MODELS.commercialDetails.length)], x: cx+(rng()-0.5)*6, z: cz+(rng()-0.5)*6, rotY: Math.floor(rng()*4)*Math.PI/2, scale: 3.5 });
+          const x = cx+(rng()-0.5)*6;
+          const z = cz+(rng()-0.5)*6;
+          models.push({ url: MODELS.commercialDetails[Math.floor(rng()*MODELS.commercialDetails.length)], x, z, rotY: Math.floor(rng()*4)*Math.PI/2, scale: 3.5 });
+          addBlocker(x, z, 4);
         }
         // Trees by zone: suburban 2-3 (bigger houses leave less room),
         // industrial 2-3, commercial/skyscraper 0.
@@ -804,13 +826,16 @@ export function V2Scene({ metrics, tokenId, gifts = [] }) {
           }
           for (let t = 0; t < Math.min(numTrees, spots.length); t++) {
             const [ox, oz] = spots[t];
+            const x = cx + ox + (rng() - 0.5) * 1.5;
+            const z = cz + oz + (rng() - 0.5) * 1.5;
             models.push({
               url:   MODELS.trees[rng() > 0.5 ? 0 : 1],
-              x:     cx + ox + (rng() - 0.5) * 1.5,
-              z:     cz + oz + (rng() - 0.5) * 1.5,
+              x,
+              z,
               rotY:  rng() * Math.PI * 2,
               scale: 8.0 + rng() * 6.0,
             });
+            addBlocker(x, z, 3.5);
           }
         }
 
@@ -838,6 +863,7 @@ export function V2Scene({ metrics, tokenId, gifts = [] }) {
                 scale: 3.5,
               });
               occupiedPersonPositions.push({ x: wx, z: wz });
+              addBlocker(wx, wz, 1.5);
               break;
             }
           }
@@ -867,11 +893,17 @@ export function V2Scene({ metrics, tokenId, gifts = [] }) {
             const laneOffset = (rng() < 0.5 ? -1 : 1) * (S * 0.18);
             const url = carList[Math.floor(rng() * carList.length)];
             if (r.axis === 'h') {
-              models.push({ url, x: along, z: r.perp + laneOffset,
+              const x = along;
+              const z = r.perp + laneOffset;
+              models.push({ url, x, z,
                 rotY: rng() < 0.5 ? Math.PI / 2 : -Math.PI / 2, scale: 2.5 });
+              addBlocker(x, z, 3.5);
             } else {
-              models.push({ url, x: r.perp + laneOffset, z: along,
+              const x = r.perp + laneOffset;
+              const z = along;
+              models.push({ url, x, z,
                 rotY: rng() < 0.5 ? 0 : Math.PI, scale: 2.5 });
+              addBlocker(x, z, 3.5);
             }
             occupiedCarSegments.push({ axis: r.axis, perp: r.perp, along });
             placed = true;
@@ -885,12 +917,15 @@ export function V2Scene({ metrics, tokenId, gifts = [] }) {
     for (let i = 0; i < parkTrees; i++) {
       const angle = (i / parkTrees) * Math.PI * 2 + treeRng() * 0.3;
       const r     = 8 + treeRng() * 3;
-      models.push({ url: MODELS.trees[treeRng()>0.5?0:1], x: Math.cos(angle)*r, z: Math.sin(angle)*r, rotY: treeRng()*Math.PI*2, scale: 9.0+treeRng()*6.0 });
+      const x = Math.cos(angle)*r;
+      const z = Math.sin(angle)*r;
+      models.push({ url: MODELS.trees[treeRng()>0.5?0:1], x, z, rotY: treeRng()*Math.PI*2, scale: 9.0+treeRng()*6.0 });
+      addBlocker(x, z, 4);
     }
-    giftSlots.plaza.push({ x: 0, z: -12, rotY: 0, pack: 'center', zone: 0 });
-    giftSlots.plaza.push({ x: 12, z: 0, rotY: -Math.PI / 2, pack: 'center', zone: 0 });
-    giftSlots.plaza.push({ x: -12, z: 0, rotY: Math.PI / 2, pack: 'center', zone: 0 });
-    giftSlots.block.push({ x: 0, z: 0, rotY: 0, pack: 'center', zone: 0 });
+    addBlocker(0, 0, 9);
+    giftSlots.plaza.push({ x: 0, z: -15, rotY: 0, pack: 'center', zone: 0, radius: 5 });
+    giftSlots.plaza.push({ x: 15, z: 0, rotY: -Math.PI / 2, pack: 'center', zone: 0, radius: 5 });
+    giftSlots.plaza.push({ x: -15, z: 0, rotY: Math.PI / 2, pack: 'center', zone: 0, radius: 5 });
 
     const baseCitySize = (2 * gr + 1) * PERIOD + 24;
     const districtLanes = Math.ceil(districtCount / 4);
