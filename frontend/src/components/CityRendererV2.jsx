@@ -454,23 +454,58 @@ function DistrictGift({ variant, color }) {
   const accent = variant === 1 ? "#10b981" : variant === 2 ? "#f59e0b" : color;
   return (
     <group>
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.055, 0]}>
-        <ringGeometry args={[7.2, 8.4, 40]} />
-        <meshStandardMaterial color={accent} emissive={accent} emissiveIntensity={0.65} side={2} />
+      <mesh position={[0, 0.02, 0]}>
+        <boxGeometry args={[30, 0.18, 30]} />
+        <meshStandardMaterial color={variant === 1 ? "#8fb596" : variant === 2 ? "#8f96aa" : "#aab0c2"} roughness={0.95} />
       </mesh>
-      {[0, 1, 2, 3].map(i => {
-        const a = i * Math.PI / 2;
-        const x = Math.cos(a) * 5.4, z = Math.sin(a) * 5.4;
-        return (
-          <group key={i} position={[x, 0, z]}>
-            {variant === 1
-              ? <GlbModel url={MODELS.trees[i % MODELS.trees.length]} position={[0, 0, 0]} rotY={a} scale={7} />
-              : <mesh position={[0, 1.2, 0]}><boxGeometry args={[1.1, 2.4, 1.1]} /><meshStandardMaterial color={accent} emissive={accent} emissiveIntensity={0.35} /></mesh>}
-          </group>
-        );
-      })}
-      {variant >= 3 && <mesh position={[0, 2.1, 0]}><torusGeometry args={[3.4, 0.12, 8, 48]} /><meshStandardMaterial color={accent} emissive={accent} emissiveIntensity={0.7} /></mesh>}
-      <pointLight position={[0, 4, 0]} color={accent} intensity={1.8} distance={20} />
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.12, 0]}>
+        <planeGeometry args={[24, 24]} />
+        <meshStandardMaterial color={variant === 0 ? "#d6dae6" : variant === 3 ? "#1f2937" : "#c9cedc"} roughness={0.9} />
+      </mesh>
+
+      {variant === 0 && (
+        <>
+          <mesh position={[0, 0.35, 0]}><cylinderGeometry args={[5.2, 5.2, 0.35, 28]} /><meshStandardMaterial color="#dde3ee" /></mesh>
+          <mesh position={[0, 2.3, 0]}><cylinderGeometry args={[0.8, 1.1, 4.2, 18]} /><meshStandardMaterial color="#8f9aa8" metalness={0.25} /></mesh>
+          <mesh position={[0, 5.1, 0]}><sphereGeometry args={[1.15, 18, 12]} /><meshStandardMaterial color={accent} emissive={accent} emissiveIntensity={0.55} /></mesh>
+          {[[-9,-9],[9,-9],[-9,9],[9,9]].map(([x,z], i) => <GlbModel key={i} url={MODELS.trees[i % MODELS.trees.length]} position={[x, 0, z]} rotY={i} scale={8} />)}
+        </>
+      )}
+      {variant === 1 && (
+        <>
+          <mesh position={[0, 0.18, 0]} rotation={[-Math.PI / 2, 0, 0]}><circleGeometry args={[8, 32]} /><meshStandardMaterial color="#7fbf8f" /></mesh>
+          {[[-8,-6],[-4,7],[5,-8],[9,5],[0,0]].map(([x,z], i) => <GlbModel key={i} url={MODELS.trees[i % MODELS.trees.length]} position={[x, 0, z]} rotY={i * 0.7} scale={9} />)}
+          <mesh position={[0, 0.8, -10]}><boxGeometry args={[8, 1.1, 1]} /><meshStandardMaterial color="#7a5f3f" /></mesh>
+        </>
+      )}
+      {variant === 2 && (
+        <>
+          {[[-6,-5],[0,-5],[6,-5],[-6,3],[0,3],[6,3]].map(([x,z], i) => (
+            <group key={i} position={[x, 0, z]}>
+              <mesh position={[0, 1.1, 0]}><boxGeometry args={[4.2, 2.2, 3.2]} /><meshStandardMaterial color={i % 2 ? "#f8d88a" : "#dbeafe"} /></mesh>
+              <mesh position={[0, 2.45, 0]} rotation={[0, Math.PI / 4, 0]}><coneGeometry args={[2.9, 1.1, 4]} /><meshStandardMaterial color={accent} /></mesh>
+            </group>
+          ))}
+          <TexturedPanel kind="billboard" variant={2} seed={222} color={accent} args={[9, 3]} position={[0, 3.2, 10.5]} emissive={0.5} />
+        </>
+      )}
+      {variant === 3 && (
+        <>
+          <mesh position={[-7, 2.4, 0]}><boxGeometry args={[2.2, 4.8, 2.2]} /><meshStandardMaterial color={accent} emissive={accent} emissiveIntensity={0.45} /></mesh>
+          <mesh position={[7, 2.4, 0]}><boxGeometry args={[2.2, 4.8, 2.2]} /><meshStandardMaterial color={accent} emissive={accent} emissiveIntensity={0.45} /></mesh>
+          <mesh position={[0, 5.2, 0]}><boxGeometry args={[16, 1.2, 1.8]} /><meshStandardMaterial color="#111827" /></mesh>
+          <TexturedPanel kind="billboard" variant={3} seed={333} color={accent} args={[12, 2.5]} position={[0, 5.25, 0.95]} emissive={0.9} />
+          <pointLight position={[0, 5, 2]} color={accent} intensity={2.2} distance={22} />
+        </>
+      )}
+      {variant === 4 && (
+        <>
+          <mesh position={[0, 1.3, 0]}><cylinderGeometry args={[7, 7, 2.6, 6]} /><meshStandardMaterial color="#475569" metalness={0.25} /></mesh>
+          <mesh position={[0, 3.3, 0]}><cylinderGeometry args={[4.5, 5.8, 1.3, 6]} /><meshStandardMaterial color="#94a3b8" metalness={0.35} /></mesh>
+          <mesh position={[0, 4.5, 0]}><torusKnotGeometry args={[1.4, 0.3, 80, 10]} /><meshStandardMaterial color={accent} emissive={accent} emissiveIntensity={0.65} metalness={0.7} /></mesh>
+          {[[-10,0],[10,0],[0,-10],[0,10]].map(([x,z], i) => <mesh key={i} position={[x, 0.7, z]}><boxGeometry args={[1.2, 1.4, 1.2]} /><meshStandardMaterial color={accent} emissive={accent} emissiveIntensity={0.3} /></mesh>)}
+        </>
+      )}
     </group>
   );
 }
@@ -497,35 +532,80 @@ function GiftItem({ gift, slot, tokenId }) {
 }
 
 const SLOT_PREFS = {
-  0: ["wall", "roadEdge", "block"],
-  1: ["wall", "plaza", "block"],
+  0: ["wall", "roadEdge", "plaza"],
+  1: ["plaza", "roadEdge", "wall"],
   2: ["roof", "plaza", "block"],
   3: ["roadEdge", "roof", "plaza"],
   4: ["plaza", "block"],
-  5: ["block", "plaza"],
+  5: ["district"],
 };
 
-function pickGiftSlot(giftSlots, gift, tokenId, citySize) {
+function giftRadius(type) {
+  return [5.5, 7.5, 4.5, 6.5, 7.0, 18.0][type] || 6;
+}
+
+function giftSlotFree(slot, radius, occupied) {
+  return !occupied.some((p) => Math.hypot(p.x - slot.x, p.z - slot.z) < p.radius + radius + 2);
+}
+
+function districtSlot(index, seed, citySize) {
+  const side = Math.floor(seed % 4);
+  const lane = Math.floor(index / 4);
+  const step = PERIOD;
+  const half = citySize / 2;
+  const spread = (index % 4 - 1.5) * step;
+  const offset = half + 24 + lane * step;
+  if (side === 0) return { x: spread, z: -offset, rotY: 0, radius: 18 };
+  if (side === 1) return { x: offset, z: spread, rotY: -Math.PI / 2, radius: 18 };
+  if (side === 2) return { x: spread, z: offset, rotY: Math.PI, radius: 18 };
+  return { x: -offset, z: spread, rotY: Math.PI / 2, radius: 18 };
+}
+
+function pickGiftSlot(giftSlots, gift, tokenId, citySize, occupied, districtIndex) {
   const type = Number(gift.giftType);
-  const prefs = SLOT_PREFS[type] || ["plaza", "block", "roadEdge"];
+  const radius = giftRadius(type);
   const seed = hashGift(tokenId, Number(gift.id) || 0, type, 911);
+  if (type === 5) {
+    const slot = districtSlot(districtIndex, seed, giftSlots?.baseCitySize || citySize);
+    occupied.push({ x: slot.x, z: slot.z, radius });
+    return slot;
+  }
+
+  const prefs = SLOT_PREFS[type] || ["plaza", "block", "roadEdge"];
   for (const key of prefs) {
     const arr = giftSlots?.[key] || [];
-    if (arr.length) return arr[seed % arr.length];
+    for (let i = 0; i < arr.length; i++) {
+      const slot = arr[(seed + i * 7) % arr.length];
+      const candidate = { ...slot, radius: slot.radius || radius };
+      if (!giftSlotFree(candidate, radius, occupied)) continue;
+      occupied.push({ x: candidate.x, z: candidate.z, radius });
+      return candidate;
+    }
   }
   const angle = (Number(gift.id) || 0) * 2.39996;
-  const radius = citySize * 0.42;
-  const x = Math.cos(angle) * radius;
-  const z = Math.sin(angle) * radius;
+  const fallbackDistance = citySize * 0.42;
+  const x = Math.cos(angle) * fallbackDistance;
+  const z = Math.sin(angle) * fallbackDistance;
+  occupied.push({ x, z, radius });
   return { x, z, rotY: Math.atan2(-x, -z) };
 }
 
 function Gifts({ gifts, giftSlots, citySize, tokenId }) {
   if (!gifts || gifts.length === 0) return null;
+  const placements = useMemo(() => {
+    const occupied = [];
+    let districtIndex = 0;
+    return gifts.map((gift) => {
+      const type = Number(gift.giftType);
+      const slot = pickGiftSlot(giftSlots, gift, tokenId, citySize, occupied, districtIndex);
+      if (type === 5) districtIndex++;
+      return { gift, slot };
+    });
+  }, [gifts, giftSlots, citySize, tokenId]);
   return (
     <>
-      {gifts.map((g) => (
-        <GiftItem key={String(g.id)} gift={g} tokenId={tokenId} slot={pickGiftSlot(giftSlots, g, tokenId, citySize)} />
+      {placements.map(({ gift, slot }) => (
+        <GiftItem key={String(gift.id)} gift={gift} tokenId={tokenId} slot={slot} />
       ))}
     </>
   );
@@ -533,6 +613,7 @@ function Gifts({ gifts, giftSlots, citySize, tokenId }) {
 
 export function V2Scene({ metrics, tokenId, gifts = [] }) {
   const { followers = 0 } = metrics;
+  const districtCount = gifts.filter((g) => Number(g.giftType) === 5).length;
 
   const data = useMemo(() => {
     const seed    = (((tokenId | 0) * 9973) + (followers | 0)) >>> 0;
@@ -678,7 +759,12 @@ export function V2Scene({ metrics, tokenId, gifts = [] }) {
           const bx = cx + ox;
           const bz = cz + oz;
           const faceCenter = Math.atan2(-bx, -bz);
-          giftSlots.wall.push({ x: bx + Math.sin(faceCenter) * 3.4, z: bz + Math.cos(faceCenter) * 3.4, rotY: faceCenter, pack, zone });
+          const edgeDirX = ox === 0 ? 0 : Math.sign(ox);
+          const edgeDirZ = oz === 0 ? 0 : Math.sign(oz);
+          const len = Math.hypot(edgeDirX, edgeDirZ) || 1;
+          const wallX = bx + (edgeDirX / len) * 8.2;
+          const wallZ = bz + (edgeDirZ / len) * 8.2;
+          giftSlots.wall.push({ x: wallX, z: wallZ, rotY: Math.atan2(bx - wallX, bz - wallZ), pack, zone, radius: 5.5 });
           if (pack === 'commercial' || pack === 'skyscraper') {
             giftSlots.roof.push({ x: bx, z: bz, rotY: faceCenter, pack, zone });
           }
@@ -806,9 +892,12 @@ export function V2Scene({ metrics, tokenId, gifts = [] }) {
     giftSlots.plaza.push({ x: -12, z: 0, rotY: Math.PI / 2, pack: 'center', zone: 0 });
     giftSlots.block.push({ x: 0, z: 0, rotY: 0, pack: 'center', zone: 0 });
 
-    const citySize = (2 * gr + 1) * PERIOD + 24;
+    const baseCitySize = (2 * gr + 1) * PERIOD + 24;
+    const districtLanes = Math.ceil(districtCount / 4);
+    const citySize = baseCitySize + (districtLanes > 0 ? districtLanes * PERIOD * 2.1 : 0);
+    giftSlots.baseCitySize = baseCitySize;
     return { models, giftSlots, citySize, gridR, level };
-  }, [followers, tokenId]);
+  }, [followers, tokenId, districtCount]);
 
   return (
     <>
@@ -844,10 +933,10 @@ export function V2Scene({ metrics, tokenId, gifts = [] }) {
 
 // ─── Camera ──────────────────────────────────────────────────────────────────
 
-function camPos(followers) {
+function camPos(followers, districtCount = 0) {
   const level = cityLevel(followers);
   const gridR = level >= 9 ? 5 : level >= 7 ? 4 : level >= 5 ? 3 : level >= 3 ? 2 : level >= 1 ? 1 : 0;
-  const d = 40 + gridR * PERIOD * 1.4;
+  const d = 40 + gridR * PERIOD * 1.4 + (districtCount > 0 ? PERIOD * 0.8 : 0);
   return [d, d * 0.75, d];
 }
 
@@ -857,7 +946,8 @@ export default function CityRendererV2({ city, tokenId, gifts = [] }) {
   const [open, setOpen] = useState(false);
   const { followers = 0, tweetCount = 0, following = 0, engagement = 0 } = city || {};
   const metrics = { followers, tweetCount, following, engagement };
-  const cp = camPos(followers);
+  const districtCount = gifts.filter((g) => Number(g.giftType) === 5).length;
+  const cp = camPos(followers, districtCount);
 
   return (
     <>
