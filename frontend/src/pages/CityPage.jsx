@@ -38,6 +38,7 @@ export default function CityPage({ tokenId, signer, address, onOwnerConfirmed })
   const [activeGifts, setActiveGifts] = useState([]);
   const [pendingGifts, setPendingGifts] = useState([]);
   const [myGifts, setMyGifts] = useState([]);
+  const [giftHistory, setGiftHistory] = useState([]);
   const [claimingId, setClaimingId] = useState(null);
   const [giftStats, setGiftStats] = useState(null);
   const [showGiftPanel, setShowGiftPanel] = useState(false);
@@ -52,10 +53,11 @@ export default function CityPage({ tokenId, signer, address, onOwnerConfirmed })
     const gc = getGiftsContract(addr, provider);
     if (!gc) return;
     try {
-      const [p, active, stats] = await Promise.all([
+      const [p, active, stats, all] = await Promise.all([
         gc.getPrices(tokenId),
         gc.getActiveGifts(tokenId),
         gc.getCityStats(tokenId),
+        gc.getAllGifts(tokenId).catch(() => []),
       ]);
       setPrices([...p]);
       // Only Verified gifts (status === 2) get rendered on the city map.
@@ -64,6 +66,18 @@ export default function CityPage({ tokenId, signer, address, onOwnerConfirmed })
         .filter(g => Number(g.status) === 2)
         .map(g => ({ id: g.id, giftType: g.giftType, tweetUrl: g.tweetUrl, buyer: g.buyer, status: g.status }));
       setActiveGifts(visible);
+      setGiftHistory([...all]
+        .map(g => ({
+          id: g.id,
+          giftType: Number(g.giftType),
+          buyer: g.buyer,
+          ownerAmount: g.ownerAmount,
+          status: Number(g.status),
+          tweetUrl: g.tweetUrl,
+        }))
+        .sort((a, b) => Number(b.id) - Number(a.id))
+        .slice(0, 8)
+      );
       setGiftStats({ totalGifts: stats[0], totalEarned: stats[1], pendingCount: stats[2] });
     } catch {}
   }, [tokenId]);
@@ -293,6 +307,14 @@ export default function CityPage({ tokenId, signer, address, onOwnerConfirmed })
   const cityName = city.ipfsData?.name || `City #${tokenId}`;
   const cityStyle = city.ipfsData?.city?.style || "Cyberpunk";
   const colorPalette = city.ipfsData?.city?.colorPalette || {};
+  const statusName = ["Pending", "Accepted", "Verified", "Rejected", "Expired"];
+  const statusColor = {
+    0: "text-[#f59e0b]",
+    1: "text-[#00d4ff]",
+    2: "text-emerald-400",
+    3: "text-rose-400",
+    4: "text-[#64748b]",
+  };
 
   const shareText = `My Twitter became a ${cityStyle} ${LEVEL_NAMES[level]} called ${cityName} on Mantle! Every tweet builds the city 🏙️`;
 
@@ -366,9 +388,9 @@ export default function CityPage({ tokenId, signer, address, onOwnerConfirmed })
           </div>
         </motion.div>
 
-        {/* 3D City + Middle + Sidebar — 3 equal cols, stretch to tallest */}
+        {/* 3D City + actions + compact details/history */}
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}
-          className="grid lg:grid-cols-3 gap-6 mb-8 items-stretch">
+          className="grid lg:grid-cols-2 xl:grid-cols-[1.1fr_1.1fr_0.58fr_0.9fr] gap-6 mb-8 items-stretch">
 
           {/* Col 1: 3D City */}
           <div className="relative glass rounded-2xl overflow-hidden">
@@ -476,11 +498,11 @@ export default function CityPage({ tokenId, signer, address, onOwnerConfirmed })
             </AnimatePresence>
           </div>
 
-          {/* Col 3: City Details + Color Palette */}
+          {/* Col 3: compact City Details + Color Palette */}
           <div className="glass rounded-2xl p-5 flex flex-col gap-4">
             <div>
               <h3 className="font-bold text-[#f1f5f9] mb-3">City Details</h3>
-              <div className="space-y-3 text-sm">
+              <div className="space-y-2.5 text-sm">
                 {[
                   { label: 'Token ID', value: `#${tokenId}`,           mono: true },
                   { label: 'Style',    value: cityStyle },
@@ -505,6 +527,42 @@ export default function CityPage({ tokenId, signer, address, onOwnerConfirmed })
                 </div>
               </div>
             )}
+          </div>
+
+          {/* Col 4: Gift History */}
+          <div className="glass rounded-2xl p-5 flex flex-col min-h-[260px]">
+            <div className="flex items-center justify-between gap-3 mb-4">
+              <h3 className="font-bold text-[#f1f5f9]">Gift History</h3>
+              {giftStats && giftStats.totalGifts > 0n && (
+                <span className="text-xs font-mono text-[#64748b]">{giftStats.totalGifts.toString()} total</span>
+              )}
+            </div>
+            <div className="space-y-3 overflow-hidden">
+              {giftHistory.length === 0 ? (
+                <div className="h-28 flex items-center justify-center text-sm text-[#64748b] border border-white/10 rounded-xl bg-[#0a0a0f]/35">
+                  No gifts yet
+                </div>
+              ) : giftHistory.map(g => {
+                const t = GIFT_TYPES[g.giftType];
+                return (
+                  <div key={g.id.toString()} className="flex items-center gap-3 rounded-xl bg-[#0a0a0f]/45 border border-white/10 px-3 py-2.5">
+                    <div className="w-8 h-8 rounded-lg bg-white/5 border border-white/10 flex items-center justify-center text-lg shrink-0">{t?.icon || "🎁"}</div>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className="text-sm font-semibold text-[#f1f5f9] truncate">{t?.name || "Gift"}</span>
+                        <span className="text-[10px] font-mono text-[#64748b] shrink-0">#{g.id.toString()}</span>
+                      </div>
+                      <div className="text-[11px] text-[#64748b] font-mono truncate">
+                        {g.buyer ? `${g.buyer.slice(0, 6)}...${g.buyer.slice(-4)}` : "unknown"} · {fmt(g.ownerAmount)}
+                      </div>
+                    </div>
+                    <span className={`text-[11px] font-semibold shrink-0 ${statusColor[g.status] || "text-[#64748b]"}`}>
+                      {statusName[g.status] || "Unknown"}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
           </div>
         </motion.div>
 
