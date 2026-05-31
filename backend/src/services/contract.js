@@ -8,8 +8,12 @@ const GIFTS_ABI = [
   "function registerManager(uint256 tokenId, address manager) external",
   "function cityManager(uint256 tokenId) external view returns (address)",
   "function verifyEngagement(uint256 giftId) external",
+  "function verifyResidentCampaignEngagement(uint256 campaignId, uint8 giftType, address worker, bytes32 handleHash) external",
   "function getAllGifts(uint256 tokenId) external view returns (tuple(uint256 id, address buyer, uint256 cityTokenId, uint8 giftType, string tweetUrl, uint256 amount, uint256 ownerAmount, uint8 status, uint64 createdAt, uint64 acceptDeadline, uint64 engageDeadline)[])",
   "function gifts(uint256 giftId) external view returns (uint256 id, address buyer, uint256 cityTokenId, uint8 giftType, string tweetUrl, uint256 amount, uint256 ownerAmount, uint8 status, uint64 createdAt, uint64 acceptDeadline, uint64 engageDeadline)",
+  "function getResidentCampaign(uint256 campaignId) external view returns (tuple(uint256 id, address creator, uint256 cityTokenId, string postUrl, uint256 escrowRemaining, uint256 grossAmount, uint64 createdAt, uint64 deadline, bool active, uint256[6] unitPrices, uint256[6] unitPayouts, uint32[6] totalCounts, uint32[6] remaining))",
+  "function getCityResidentCampaignIds(uint256 tokenId) external view returns (uint256[])",
+  "function hasResidentCampaignClaimed(uint256 campaignId, uint8 giftType, address worker, bytes32 handleHash) external view returns (bool walletClaimed, bool handleClaimed)",
   "function acceptWindow() external view returns (uint64)",
   "function engageWindows(uint256) external view returns (uint64)",
   "function protocolFeeBps() external view returns (uint256)",
@@ -436,6 +440,24 @@ function normalizeGift(g) {
   };
 }
 
+function normalizeCampaign(c) {
+  return {
+    id:              Number(c.id ?? c[0]),
+    creator:         c.creator ?? c[1],
+    cityTokenId:     Number(c.cityTokenId ?? c[2]),
+    postUrl:         c.postUrl ?? c[3],
+    escrowRemaining: (c.escrowRemaining ?? c[4])?.toString?.() ?? String(c.escrowRemaining ?? c[4] ?? 0),
+    grossAmount:     (c.grossAmount ?? c[5])?.toString?.() ?? String(c.grossAmount ?? c[5] ?? 0),
+    createdAt:       Number(c.createdAt ?? c[6]),
+    deadline:        Number(c.deadline ?? c[7]),
+    active:          Boolean(c.active ?? c[8]),
+    unitPrices:      [...(c.unitPrices ?? c[9] ?? [])].map((x) => x.toString()),
+    unitPayouts:     [...(c.unitPayouts ?? c[10] ?? [])].map((x) => x.toString()),
+    totalCounts:     [...(c.totalCounts ?? c[11] ?? [])].map(Number),
+    remaining:       [...(c.remaining ?? c[12] ?? [])].map(Number),
+  };
+}
+
 async function getGiftsForCity(tokenId) {
   const gc = getGiftsContract();
   if (!gc) throw new Error("GIFTS_CONTRACT_ADDRESS not set");
@@ -458,6 +480,39 @@ async function verifyGiftEngagement(giftId) {
   const gc = getGiftsContract();
   if (!gc) throw new Error("GIFTS_CONTRACT_ADDRESS not set");
   const tx = await gc.verifyEngagement(giftId);
+  const receipt = await waitReceipt(_wallet.provider, tx.hash);
+  return { txHash: receipt.hash };
+}
+
+async function getResidentCampaign(campaignId) {
+  const gc = getGiftsContract();
+  if (!gc) throw new Error("GIFTS_CONTRACT_ADDRESS not set");
+  return normalizeCampaign(await gc.getResidentCampaign(campaignId));
+}
+
+async function getResidentCampaignsForCity(tokenId) {
+  const gc = getGiftsContract();
+  if (!gc) throw new Error("GIFTS_CONTRACT_ADDRESS not set");
+  const ids = await gc.getCityResidentCampaignIds(tokenId);
+  const campaigns = await Promise.all([...ids].map((id) => gc.getResidentCampaign(id).then(normalizeCampaign).catch(() => null)));
+  return campaigns.filter(Boolean);
+}
+
+function handleHash(handle) {
+  return ethers.keccak256(ethers.toUtf8Bytes(normalizeHandle(handle)));
+}
+
+async function getResidentCampaignClaimState(campaignId, giftType, workerAddress, workerHandle) {
+  const gc = getGiftsContract();
+  if (!gc) throw new Error("GIFTS_CONTRACT_ADDRESS not set");
+  const [walletClaimed, handleClaimed] = await gc.hasResidentCampaignClaimed(campaignId, giftType, workerAddress, handleHash(workerHandle));
+  return { walletClaimed, handleClaimed };
+}
+
+async function verifyResidentCampaignEngagement(campaignId, giftType, workerAddress, workerHandle) {
+  const gc = getGiftsContract();
+  if (!gc) throw new Error("GIFTS_CONTRACT_ADDRESS not set");
+  const tx = await gc.verifyResidentCampaignEngagement(campaignId, giftType, workerAddress, handleHash(workerHandle));
   const receipt = await waitReceipt(_wallet.provider, tx.hash);
   return { txHash: receipt.hash };
 }
@@ -581,6 +636,9 @@ module.exports = {
   registerCityManager, getCityManagerWallet,
   // gifts oracle
   getGiftsForCity, getGift, verifyGiftEngagement, getTotalCities,
+  getResidentCampaign, getResidentCampaignsForCity,
+  getResidentCampaignClaimState, verifyResidentCampaignEngagement,
+  handleHash,
   // admin
   getTweetCitySettings, getGiftsSettings, getGiftsStats, listAllCities,
   GIFT_STATUS, GIFT_TYPE,

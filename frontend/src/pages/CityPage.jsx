@@ -4,7 +4,7 @@ import { ethers } from "ethers";
 import {
   Heart, RefreshCw, Share2, ExternalLink,
   Loader2, AlertCircle, TrendingUp, Users, MessageSquare, Activity,
-  Gift, Settings, X, Inbox, ChevronLeft, ChevronRight
+  Gift, Settings, X, Inbox, ChevronLeft, ChevronRight, Store, Trash2
 } from "lucide-react";
 import { API_BASE, LEVEL_NAMES, GIFT_TYPES, getContract, getGiftsContract, fetchConfig } from "../lib/contract";
 import { createWalletAuth, walletAuthParams } from "../lib/walletAuth";
@@ -45,6 +45,8 @@ export default function CityPage({ tokenId, signer, address, onOwnerConfirmed, o
   const [showGiftPanel, setShowGiftPanel] = useState(false);
   const [showPriceManager, setShowPriceManager] = useState(false);
   const [showInbox, setShowInbox] = useState(false);
+  const [marketListings, setMarketListings] = useState([]);
+  const [marketBusyId, setMarketBusyId] = useState("");
   const [giftType, setGiftType] = useState(0);
   const [tweetUrl, setTweetUrl] = useState("");
   const [sending, setSending] = useState(false);
@@ -110,6 +112,16 @@ export default function CityPage({ tokenId, signer, address, onOwnerConfirmed, o
     } catch {}
   }, [tokenId, address]);
 
+  const loadMarketListings = useCallback(async () => {
+    try {
+      const r = await fetch(`${API_BASE}/api/market/listings?tokenId=${encodeURIComponent(tokenId)}&includeInactive=true`);
+      const data = await r.json();
+      setMarketListings(Array.isArray(data) ? data : []);
+    } catch {
+      setMarketListings([]);
+    }
+  }, [tokenId]);
+
   async function claimGift(giftId) {
     if (!signer) { setError("Connect wallet first"); return; }
     setClaimingId(String(giftId));
@@ -163,6 +175,7 @@ export default function CityPage({ tokenId, signer, address, onOwnerConfirmed, o
         await loadGifts(provider, addr);
         await loadMyGifts(provider, addr);
       }
+      await loadMarketListings();
     } catch (e) {
       setError(e.message);
     } finally {
@@ -280,6 +293,44 @@ export default function CityPage({ tokenId, signer, address, onOwnerConfirmed, o
       loadPending(giftsContractAddr);
       loadGifts(signer?.provider, giftsContractAddr);
     } catch (e) { alert(e.reason || e.message); }
+  }
+
+  async function removeMarketListing(listing) {
+    if (!signer) { setError("Connect wallet first"); return; }
+    setMarketBusyId(listing.id);
+    setError("");
+    try {
+      const auth = await createWalletAuth(signer, `market-listing-delete:${listing.id}`);
+      const res = await fetch(`${API_BASE}/api/market/listings/${listing.id}`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(auth),
+      });
+      const data = await res.json();
+      if (!res.ok || data.error) throw new Error(data.error || "Failed to remove listing");
+      await loadMarketListings();
+    } catch (e) {
+      setError(e.reason || e.message);
+    } finally {
+      setMarketBusyId("");
+    }
+  }
+
+  async function withdrawCampaign(listing) {
+    if (!signer) { setError("Connect wallet first"); return; }
+    setMarketBusyId(listing.id);
+    setError("");
+    try {
+      const gc = getGiftsContract(giftsContractAddr, signer);
+      if (!gc) throw new Error("Gifts contract not configured");
+      const tx = await gc.withdrawResidentCampaign(listing.campaignId);
+      await tx.wait();
+      await removeMarketListing(listing);
+    } catch (e) {
+      setError(e.reason || e.message);
+    } finally {
+      setMarketBusyId("");
+    }
   }
 
   if (loading) return (
@@ -611,6 +662,101 @@ export default function CityPage({ tokenId, signer, address, onOwnerConfirmed, o
 
         {/* Info & Actions */}
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }} className="space-y-6">
+          {/* Market listings owned by this city */}
+          {isOwner && marketListings.length > 0 && (
+            <div className="glass rounded-2xl p-5">
+              <h3 className="font-bold text-[#f1f5f9] mb-4 flex items-center gap-2">
+                <Store className="w-4 h-4 text-[#00d4ff]" /> Market Publications
+              </h3>
+              <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-3">
+                {marketListings.map((listing) => {
+                  const campaign = listing.campaign;
+                  const isResident = listing.kind === "resident";
+                  const now = Math.floor(Date.now() / 1000);
+                  const expired = isResident && campaign?.deadline && campaign.deadline <= now;
+                  const escrow = campaign ? BigInt(campaign.escrowRemaining || 0) : 0n;
+                  const totalRemaining = campaign?.remaining?.reduce((sum, x) => sum + Number(x || 0), 0) || 0;
+                  const completed = isResident && totalRemaining === 0;
+                  const canWithdraw = isResident && expired && escrow > 0n;
+                  const canRemove = !isResident || listing.active === false || escrow === 0n || completed;
+                  return (
+                    <div key={listing.id} className="rounded-xl border border-white/10 bg-[#0a0a0f]/45 p-4">
+                      <div className="flex items-start justify-between gap-3 mb-3">
+                        <div>
+                          <div className="text-sm font-bold text-[#f1f5f9]">
+                            {isResident ? "City Resident" : "City Administrator"}
+                          </div>
+                          <div className="text-xs text-[#64748b] font-mono">
+                            {isResident ? `Campaign #${listing.campaignId}` : `Listing #${listing.id.slice(0, 8)}`}
+                          </div>
+                        </div>
+                        <span className={`text-[11px] font-semibold ${listing.active === false ? "text-[#64748b]" : completed ? "text-emerald-400" : expired ? "text-[#f59e0b]" : "text-emerald-400"}`}>
+                          {listing.active === false ? "Removed" : completed ? "Completed" : expired ? "Expired" : "Live"}
+                        </span>
+                      </div>
+
+                      {isResident && campaign ? (
+                        <div className="space-y-2">
+                          <a href={listing.postUrl} target="_blank" rel="noreferrer" className="block text-xs text-[#00d4ff] hover:underline truncate">
+                            {listing.postUrl}
+                          </a>
+                          <div className="grid grid-cols-2 gap-2 text-xs">
+                            <div className="rounded-lg bg-[#050509]/70 border border-white/10 p-2">
+                              <div className="text-[#64748b]">Time</div>
+                              <div className="font-mono text-[#f1f5f9]">{expired ? "expired" : timeLeft(campaign.deadline)}</div>
+                            </div>
+                            <div className="rounded-lg bg-[#050509]/70 border border-white/10 p-2">
+                              <div className="text-[#64748b]">Escrow</div>
+                              <div className="font-mono text-[#f1f5f9]">{fmt(escrow)}</div>
+                            </div>
+                          </div>
+                          <div className="grid grid-cols-2 gap-1.5">
+                            {GIFT_TYPES.map((gift, i) => {
+                              const total = Number(campaign.totalCounts?.[i] || 0);
+                              if (total <= 0) return null;
+                              const left = Number(campaign.remaining?.[i] || 0);
+                              return (
+                                <div key={gift.name} className="text-[11px] rounded-lg border border-white/10 bg-[#050509]/50 px-2 py-1.5">
+                                  <span className="mr-1">{gift.icon}</span>
+                                  <span className="text-[#94a3b8]">{left}/{total}</span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                          {totalRemaining === 0 && <div className="text-xs text-emerald-400">Budget spent. Campaign completed.</div>}
+                        </div>
+                      ) : (
+                        <div className="text-xs text-[#94a3b8]">Visible in City Administrator market tab.</div>
+                      )}
+
+                      <div className="mt-4 flex gap-2">
+                        {canWithdraw && (
+                          <button
+                            onClick={() => withdrawCampaign(listing)}
+                            disabled={marketBusyId === listing.id}
+                            className="flex-1 px-3 py-2 rounded-lg bg-gradient-to-r from-[#00d4ff] to-[#a855f7] text-white text-sm font-semibold disabled:opacity-50"
+                          >
+                            {marketBusyId === listing.id ? "Working..." : "Withdraw"}
+                          </button>
+                        )}
+                        {canRemove && listing.active !== false && (
+                          <button
+                            onClick={() => removeMarketListing(listing)}
+                            disabled={marketBusyId === listing.id}
+                            className="flex items-center justify-center gap-2 px-3 py-2 rounded-lg border border-white/10 bg-[#0a0a0f]/60 text-[#94a3b8] hover:text-[#f1f5f9] text-sm disabled:opacity-50"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                            Remove
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           {/* Gift stats */}
           {giftStats && giftStats.totalGifts > 0n && (
             <div className="flex items-center gap-4 text-sm text-[#64748b]">

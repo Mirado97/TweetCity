@@ -16,9 +16,14 @@ const TABS = [
 ];
 
 function fmtWei(wei) {
-  if (!wei || wei === 0n) return "—";
-  const v = Number(ethers.formatEther(wei));
+  const value = typeof wei === "bigint" ? wei : BigInt(wei || 0);
+  if (value === 0n) return "—";
+  const v = Number(ethers.formatEther(value));
   return `${Number.isFinite(v) ? v.toFixed(v >= 1 ? 2 : 4) : "0"} MNT`;
+}
+
+function toBigInt(value) {
+  try { return typeof value === "bigint" ? value : BigInt(value || 0); } catch { return 0n; }
 }
 
 function readMyTokenId() {
@@ -59,6 +64,9 @@ function GiftPriceGrid({ prices, dense = false }) {
 
 function MarketCard({ listing, prices, onOpen, onCityClick }) {
   const isResident = listing.kind === "resident";
+  const campaign = listing.campaign;
+  const secondsLeft = campaign?.deadline ? campaign.deadline - Math.floor(Date.now() / 1000) : 0;
+  const daysLeft = Math.max(0, Math.ceil(secondsLeft / 86400));
   return (
     <motion.div
       layout
@@ -94,18 +102,50 @@ function MarketCard({ listing, prices, onOpen, onCityClick }) {
         </div>
       )}
 
-      <GiftPriceGrid prices={prices} dense />
+      {isResident && campaign ? (
+        <div className="grid grid-cols-2 gap-2">
+          {GIFT_TYPES.map((gift, i) => {
+            const remaining = Number(campaign.remaining?.[i] || 0);
+            if (remaining <= 0) return null;
+            return (
+              <div key={gift.name} className="rounded-lg border border-white/15 bg-[#0a0a0f]/55 px-2.5 py-2">
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <span className="text-base leading-none">{gift.icon}</span>
+                  <span className="text-[11px] font-semibold text-[#f1f5f9] truncate">{gift.name}</span>
+                </div>
+                <div className="mt-1 text-[10px] font-mono text-[#94a3b8]">{remaining} left · {fmtWei(campaign.unitPayouts?.[i])}</div>
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        <GiftPriceGrid prices={prices} dense />
+      )}
+      {isResident && campaign && (
+        <div className="text-[11px] text-[#64748b] font-mono">
+          {daysLeft > 0 ? `${daysLeft}d left` : "ending soon"} · escrow {fmtWei(campaign.escrowRemaining)}
+        </div>
+      )}
     </motion.div>
   );
 }
 
-function GiftOrderModal({ listing, prices, giftsAddr, signer, onClose }) {
+function GiftOrderModal({ listing, prices, giftsAddr, signer, onClose, onChanged }) {
   const [giftType, setGiftType] = useState(0);
   const [tweetUrl, setTweetUrl] = useState(listing?.kind === "resident" ? listing.postUrl || "" : "");
   const [sending, setSending] = useState(false);
   const [error, setError] = useState("");
-  const selectedPrice = prices?.[giftType] || 0n;
+  const campaign = listing?.campaign;
   const isResident = listing?.kind === "resident";
+  const selectedPrice = isResident
+    ? toBigInt(campaign?.unitPayouts?.[giftType])
+    : (prices?.[giftType] || 0n);
+
+  useEffect(() => {
+    if (!isResident || !campaign) return;
+    const first = GIFT_TYPES.findIndex((_, i) => Number(campaign.remaining?.[i] || 0) > 0 && toBigInt(campaign.unitPayouts?.[i]) > 0n);
+    if (first >= 0) setGiftType(first);
+  }, [isResident, campaign]);
 
   async function sendGift() {
     setError("");
@@ -115,9 +155,21 @@ function GiftOrderModal({ listing, prices, giftsAddr, signer, onClose }) {
       if (!tweetUrl.trim()) throw new Error("Tweet/Post URL required");
       if (selectedPrice <= 0n) throw new Error("This gift type is disabled");
       setSending(true);
-      const gc = getGiftsContract(giftsAddr, signer);
-      const tx = await gc.sendGift(listing.tokenId, giftType, tweetUrl.trim(), { value: selectedPrice });
-      await tx.wait();
+      if (isResident) {
+        const auth = await createWalletAuth(signer, `resident-claim:${listing.campaignId}:${giftType}`);
+        const res = await fetch(`${API_BASE}/api/market/campaigns/${listing.campaignId}/claim`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ giftType, ...auth }),
+        });
+        const data = await res.json();
+        if (!res.ok || data.error) throw new Error(data.error || "Claim failed");
+      } else {
+        const gc = getGiftsContract(giftsAddr, signer);
+        const tx = await gc.sendGift(listing.tokenId, giftType, tweetUrl.trim(), { value: selectedPrice });
+        await tx.wait();
+      }
+      await onChanged?.();
       onClose();
     } catch (e) {
       setError(e.reason || e.message);
@@ -154,8 +206,10 @@ function GiftOrderModal({ listing, prices, giftsAddr, signer, onClose }) {
 
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 mb-4">
           {GIFT_TYPES.map((gift, i) => {
-            const price = prices?.[i] || 0n;
-            const enabled = price > 0n;
+            const price = isResident ? toBigInt(campaign?.unitPayouts?.[i]) : (prices?.[i] || 0n);
+            const enabled = isResident
+              ? Number(campaign?.remaining?.[i] || 0) > 0 && price > 0n
+              : price > 0n;
             return (
               <button
                 key={gift.name}
@@ -165,7 +219,9 @@ function GiftOrderModal({ listing, prices, giftsAddr, signer, onClose }) {
               >
                 <div className="text-xl">{gift.icon}</div>
                 <div className="text-xs font-semibold text-[#f1f5f9] mt-1">{gift.name}</div>
-                <div className="text-[11px] font-mono text-[#94a3b8] mt-1">{fmtWei(price)}</div>
+                <div className="text-[11px] font-mono text-[#94a3b8] mt-1">
+                  {isResident ? `${Number(campaign?.remaining?.[i] || 0)} left · ${fmtWei(price)}` : fmtWei(price)}
+                </div>
               </button>
             );
           })}
@@ -190,7 +246,7 @@ function GiftOrderModal({ listing, prices, giftsAddr, signer, onClose }) {
           className="mt-4 w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-gradient-to-r from-[#00d4ff] to-[#a855f7] text-white font-semibold disabled:opacity-50"
         >
           {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-          {sending ? "Sending..." : `Pay ${fmtWei(selectedPrice)}`}
+          {sending ? "Sending..." : isResident ? `Claim ${fmtWei(selectedPrice)}` : `Pay ${fmtWei(selectedPrice)}`}
         </button>
       </motion.div>
     </div>
@@ -210,6 +266,8 @@ export default function MarketPage({ onCityClick, signer, address, onConnect }) 
   const [postTokenId, setPostTokenId] = useState(readMyTokenId());
   const [postCity, setPostCity] = useState(null);
   const [postUrl, setPostUrl] = useState("");
+  const [residentCounts, setResidentCounts] = useState([0, 0, 0, 0, 0, 0]);
+  const [durationDays, setDurationDays] = useState("5");
   const [posting, setPosting] = useState(false);
   const [postMessage, setPostMessage] = useState("");
 
@@ -288,11 +346,50 @@ export default function MarketPage({ onCityClick, signer, address, onConnect }) 
       if (!postTokenId.trim()) throw new Error("My City tokenId required");
       if (postKind === "resident" && !postUrl.trim()) throw new Error("Post URL required for City Resident");
       setPosting(true);
+      let campaignId = "";
+      if (postKind === "resident") {
+        if (!giftsAddr) throw new Error("Gifts contract not configured");
+        const days = Number(durationDays);
+        if (!Number.isFinite(days) || days <= 0) throw new Error("Duration days required");
+        const counts = residentCounts.map((x) => Math.max(0, Number(x || 0)));
+        if (!counts.some((x) => x > 0)) throw new Error("Select at least one gift and quantity");
+        const prices = pricesByToken[String(postTokenId)] || [];
+        const total = counts.reduce((sum, count, i) => sum + (toBigInt(prices[i]) * BigInt(count)), 0n);
+        if (total <= 0n) throw new Error("Selected gifts have no price");
+
+        const gc = getGiftsContract(giftsAddr, signer);
+        const tx = await gc.createResidentCampaign(
+          postTokenId.trim(),
+          postUrl.trim(),
+          Math.floor(days * 86400),
+          counts,
+          { value: total }
+        );
+        const receipt = await tx.wait();
+        for (const log of receipt.logs) {
+          try {
+            const parsed = gc.interface.parseLog(log);
+            if (parsed?.name === "ResidentCampaignCreated") {
+              campaignId = parsed.args.campaignId.toString();
+              break;
+            }
+          } catch {}
+        }
+        if (!campaignId) throw new Error("CampaignCreated event not found");
+      }
       const auth = await createWalletAuth(signer, `market-listing:${postTokenId.trim()}:${postKind}`);
       const res = await fetch(`${API_BASE}/api/market/listings`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ kind: postKind, tokenId: postTokenId.trim(), postUrl: postUrl.trim(), ...auth }),
+        body: JSON.stringify({
+          kind: postKind,
+          tokenId: postTokenId.trim(),
+          postUrl: postUrl.trim(),
+          campaignId,
+          giftCounts: residentCounts,
+          durationDays: Number(durationDays || 0),
+          ...auth,
+        }),
       });
       const data = await res.json();
       if (!res.ok || data.error) throw new Error(data.error || "Failed to publish listing");
@@ -319,6 +416,10 @@ export default function MarketPage({ onCityClick, signer, address, onConnect }) 
   const myCityHandle = postCity?.city?.twitterHandle || postCity?.ipfsData?.twitterHandle || "";
   const myCityFollowers = Number(postCity?.city?.followers || 0);
   const tokenLocked = !!readMyTokenId();
+  const residentTotal = (myPrices || []).reduce(
+    (sum, price, i) => sum + toBigInt(price) * BigInt(Math.max(0, Number(residentCounts[i] || 0))),
+    0n
+  );
 
   return (
     <div className="w-full pt-20 md:pt-24 px-4 sm:px-6 lg:px-8 pb-20 relative">
@@ -377,6 +478,57 @@ export default function MarketPage({ onCityClick, signer, address, onConnect }) 
               {tokenLocked && <div className="text-[11px] text-[#64748b] mb-4">Locked to your saved My City.</div>}
               {postKind === "resident" && (
                 <>
+                  <label className="block text-xs font-semibold text-[#94a3b8] mb-2">Rewards</label>
+                  <div className="grid grid-cols-2 gap-2 mb-4">
+                    {GIFT_TYPES.map((gift, i) => {
+                      const price = toBigInt(myPrices?.[i]);
+                      const enabled = price > 0n;
+                      const count = Number(residentCounts[i] || 0);
+                      return (
+                        <div key={gift.name} className={`rounded-xl border p-2.5 ${count > 0 ? "border-[#00d4ff]/40 bg-[#00d4ff]/10" : "border-white/10 bg-[#0a0a0f]/45"} ${!enabled ? "opacity-45" : ""}`}>
+                          <label className="flex items-center gap-2 text-xs font-semibold text-[#f1f5f9]">
+                            <input
+                              type="checkbox"
+                              checked={count > 0}
+                              disabled={!enabled}
+                              onChange={(e) => setResidentCounts((prev) => {
+                                const next = [...prev];
+                                next[i] = e.target.checked ? Math.max(1, Number(next[i] || 1)) : 0;
+                                return next;
+                              })}
+                            />
+                            <span>{gift.icon}</span>
+                            <span className="truncate">{gift.name}</span>
+                          </label>
+                          <div className="mt-2 flex items-center gap-2">
+                            <input
+                              type="number"
+                              min="0"
+                              step="1"
+                              value={count}
+                              disabled={!enabled}
+                              onChange={(e) => setResidentCounts((prev) => {
+                                const next = [...prev];
+                                next[i] = Math.max(0, Math.floor(Number(e.target.value || 0)));
+                                return next;
+                              })}
+                              className="w-16 px-2 py-1 rounded-lg bg-[#0a0a0f] border border-white/15 text-[#f1f5f9] text-xs focus:outline-none focus:border-[#00d4ff]/50"
+                            />
+                            <span className="text-[10px] font-mono text-[#94a3b8] truncate">{fmtWei(price)} each</span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <label className="block text-xs font-semibold text-[#94a3b8] mb-2">Limit Days</label>
+                  <input
+                    type="number"
+                    min="1"
+                    step="1"
+                    value={durationDays}
+                    onChange={(e) => setDurationDays(e.target.value)}
+                    className="w-full px-3 py-2.5 rounded-xl bg-[#0a0a0f] border border-white/15 text-[#f1f5f9] text-sm placeholder-[#64748b] focus:outline-none focus:border-[#00d4ff]/50 mb-4"
+                  />
                   <label className="block text-xs font-semibold text-[#94a3b8] mb-2">Post URL</label>
                   <input
                     value={postUrl}
@@ -384,6 +536,10 @@ export default function MarketPage({ onCityClick, signer, address, onConnect }) 
                     placeholder="https://x.com/.../status/..."
                     className="w-full px-3 py-2.5 rounded-xl bg-[#0a0a0f] border border-white/15 text-[#f1f5f9] text-sm placeholder-[#64748b] focus:outline-none focus:border-[#00d4ff]/50 mb-4"
                   />
+                  <div className="mb-4 rounded-xl border border-white/10 bg-[#0a0a0f]/45 px-3 py-2 text-sm text-[#f1f5f9] flex items-center justify-between">
+                    <span>Total deposit</span>
+                    <span className="font-mono">{fmtWei(residentTotal)}</span>
+                  </div>
                 </>
               )}
               <button
@@ -415,7 +571,32 @@ export default function MarketPage({ onCityClick, signer, address, onConnect }) 
                 {postKind === "resident" && postUrl && (
                   <div className="mb-4 text-xs text-[#00d4ff] truncate">{postUrl}</div>
                 )}
-                <GiftPriceGrid prices={myPrices} />
+                {postKind === "resident" ? (
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                    {GIFT_TYPES.map((gift, i) => {
+                      const count = Number(residentCounts[i] || 0);
+                      if (count <= 0) return null;
+                      return (
+                        <div key={gift.name} className="rounded-lg border border-white/15 bg-[#0a0a0f]/55 px-2.5 py-2">
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            <span className="text-base leading-none">{gift.icon}</span>
+                            <span className="text-[11px] font-semibold text-[#f1f5f9] truncate">{gift.name}</span>
+                          </div>
+                          <div className="mt-1 text-[10px] font-mono text-[#94a3b8]">{count} slots · {fmtWei(toBigInt(myPrices?.[i]) * BigInt(count))}</div>
+                        </div>
+                      );
+                    })}
+                    {residentTotal === 0n && <div className="text-sm text-[#64748b]">Select rewards to preview.</div>}
+                  </div>
+                ) : (
+                  <GiftPriceGrid prices={myPrices} />
+                )}
+                {postKind === "resident" && (
+                  <div className="mt-4 border-t border-white/10 pt-3 flex items-center justify-between text-sm">
+                    <span className="text-[#94a3b8]">Wallet deposit</span>
+                    <span className="font-mono text-[#f1f5f9]">{fmtWei(residentTotal)}</span>
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -446,6 +627,7 @@ export default function MarketPage({ onCityClick, signer, address, onConnect }) 
             giftsAddr={giftsAddr}
             signer={signer}
             onClose={() => setSelected(null)}
+            onChanged={loadListings}
           />
         )}
       </AnimatePresence>

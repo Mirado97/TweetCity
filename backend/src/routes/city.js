@@ -12,7 +12,7 @@ function getOAuth() {
 }
 const { analyzeCityPersonality, generateLevelUpNarrative } = require("../services/claude");
 const { uploadMetadata, getCachedMetadata } = require("../services/ipfs");
-const { mintCity, updateCity, getCityData, getLeaderboard, getTokenIdByHandleInsensitive, getHandleByTokenId, registerERC8004Agent, recordValidation, getTokenAgentId, registerCityManager, getCityManagerWallet, getGiftsForCity, getGift, listAllCities } = require("../services/contract");
+const { mintCity, updateCity, getCityData, getLeaderboard, getTokenIdByHandleInsensitive, getHandleByTokenId, registerERC8004Agent, recordValidation, getTokenAgentId, registerCityManager, getCityManagerWallet, getGiftsForCity, getGift, listAllCities, getResidentCampaign, getResidentCampaignClaimState, verifyResidentCampaignEngagement } = require("../services/contract");
 const { verifyGiftAction } = require("../services/giftOracle");
 const { checkSyncCooldown, mintLimiter, syncLimiter, heavyReadLimiter, giftCheckLimiter } = require("../middleware/rateLimit");
 const { isHidden, loadHidden } = require("./admin");
@@ -302,9 +302,28 @@ router.get("/market/listings", heavyReadLimiter, async (req, res) => {
   try {
     const hidden = loadHidden();
     const kind = String(req.query.kind || "").toLowerCase();
-    let listings = marketStore.list().filter((x) => !hidden[String(x.tokenId)]);
+    const includeInactive = String(req.query.includeInactive || "") === "true";
+    const tokenId = String(req.query.tokenId || "").trim();
+    let listings = (includeInactive ? marketStore.all() : marketStore.list()).filter((x) => !hidden[String(x.tokenId)]);
     if (kind === "administrator" || kind === "resident") {
       listings = listings.filter((x) => x.kind === kind);
+    }
+    if (tokenId) {
+      listings = listings.filter((x) => String(x.tokenId) === tokenId);
+    }
+
+    const now = Math.floor(Date.now() / 1000);
+    listings = await Promise.all(listings.map(async (x) => {
+      if (x.kind !== "resident" || !x.campaignId) return x;
+      const campaign = await getResidentCampaign(x.campaignId).catch(() => null);
+      return { ...x, campaign };
+    }));
+    if (!includeInactive) {
+      listings = listings.filter((x) => {
+        if (x.active === false) return false;
+        if (x.kind !== "resident") return true;
+        return !!(x.campaign && x.campaign.active && x.campaign.deadline > now && Number(x.campaign.escrowRemaining || 0) > 0);
+      });
     }
     res.json(listings);
   } catch (err) {
@@ -315,7 +334,7 @@ router.get("/market/listings", heavyReadLimiter, async (req, res) => {
 
 router.post("/market/listings", async (req, res) => {
   try {
-    const { kind, tokenId, postUrl, walletAddress, walletTimestamp, walletSignature } = req.body || {};
+    const { kind, tokenId, postUrl, campaignId, giftCounts, durationDays, walletAddress, walletTimestamp, walletSignature } = req.body || {};
     if (!tokenId || !walletAddress) return res.status(400).json({ error: "tokenId and walletAddress required" });
     if (!ethers.isAddress(walletAddress)) return res.status(400).json({ error: "Invalid wallet address" });
 
@@ -332,6 +351,19 @@ router.post("/market/listings", async (req, res) => {
       return res.status(403).json({ error: "Only this city's manager can post a market listing" });
     }
 
+    let campaign = null;
+    if (kind === "resident") {
+      if (!campaignId && campaignId !== 0) return res.status(400).json({ error: "campaignId required" });
+      campaign = await getResidentCampaign(campaignId);
+      if (String(campaign.cityTokenId) !== String(tokenId)) {
+        return res.status(400).json({ error: "Campaign tokenId mismatch" });
+      }
+      if (campaign.creator.toLowerCase() !== auth.address) {
+        return res.status(403).json({ error: "Only the campaign creator can publish this listing" });
+      }
+      if (!campaign.active) return res.status(400).json({ error: "Campaign is not active" });
+    }
+
     const [cityData, twitterHandle] = await Promise.all([
       getCityData(tokenId),
       getHandleByTokenId(tokenId),
@@ -344,10 +376,65 @@ router.post("/market/listings", async (req, res) => {
       twitterHandle,
       followers: cityData.city?.followers || 0,
       postUrl,
+      campaignId,
+      giftCounts,
+      durationDays,
     });
-    res.json({ ok: true, listing });
+    res.json({ ok: true, listing: campaign ? { ...listing, campaign } : listing });
   } catch (err) {
     console.error("[market/listings:post]", err.message);
+    res.status(err.status || 500).json({ error: err.message });
+  }
+});
+
+router.post("/market/campaigns/:campaignId/claim", giftCheckLimiter, async (req, res) => {
+  try {
+    const campaignId = String(req.params.campaignId);
+    const giftType = Number(req.body?.giftType);
+    const { walletAddress, walletTimestamp, walletSignature } = req.body || {};
+    if (!walletAddress) return res.status(400).json({ error: "walletAddress required" });
+    if (!Number.isInteger(giftType) || giftType < 0 || giftType > 5) return res.status(400).json({ error: "Invalid giftType" });
+
+    const auth = verifyWalletAuth({
+      address: walletAddress,
+      action: `resident-claim:${campaignId}:${giftType}`,
+      timestamp: walletTimestamp,
+      signature: walletSignature,
+    });
+    if (!auth.ok) return res.status(auth.status).json({ error: auth.error });
+
+    const link = oauthStore.findVerifiedByAddress(auth.address);
+    if (!link?.cityHandle) {
+      return res.status(403).json({ error: "Connect X and mint a city before claiming resident rewards" });
+    }
+
+    const workerHandle = String(link.cityHandle || "").toLowerCase();
+    const workerTokenId = await getTokenIdByHandleInsensitive(workerHandle);
+    if (!workerTokenId) return res.status(403).json({ error: "Worker X account has no city" });
+
+    const campaign = await getResidentCampaign(campaignId);
+    if (!campaign?.creator || campaign.creator === ethers.ZeroAddress) return res.status(404).json({ error: "Campaign not found" });
+    if (campaign.creator.toLowerCase() === auth.address) return res.status(400).json({ error: "You cannot claim your own campaign" });
+    const now = Math.floor(Date.now() / 1000);
+    if (!campaign.active || campaign.deadline <= now) return res.status(400).json({ error: "Campaign is not active" });
+    if ((campaign.remaining?.[giftType] || 0) <= 0) return res.status(400).json({ error: "No remaining slots for this gift" });
+
+    const claimState = await getResidentCampaignClaimState(campaignId, giftType, auth.address, workerHandle);
+    if (claimState.walletClaimed || claimState.handleClaimed) {
+      return res.status(409).json({ error: "Reward already claimed for this campaign and gift type" });
+    }
+
+    const result = await verifyGiftAction({
+      giftType,
+      tweetUrl: campaign.postUrl,
+      createdAt: campaign.createdAt,
+    }, workerHandle);
+    if (!result.ok) return res.status(422).json({ error: result.reason, verified: false });
+
+    const tx = await verifyResidentCampaignEngagement(campaignId, giftType, auth.address, workerHandle);
+    res.json({ ok: true, verified: true, workerHandle, workerTokenId, ...tx });
+  } catch (err) {
+    console.error("[market/campaigns:claim]", err.message);
     res.status(err.status || 500).json({ error: err.message });
   }
 });

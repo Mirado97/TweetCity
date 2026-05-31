@@ -100,7 +100,7 @@ app.listen(PORT, () => {
   // Keep the service awake via an external pinger (UptimeRobot / cron-job.org)
   // hitting /health every ~5 minutes, otherwise ticks get lost between requests.
   if (process.env.DISABLE_GIFT_ORACLE !== "true" && process.env.GIFTS_CONTRACT_ADDRESS) {
-    const intervalMs = Number(process.env.GIFT_ORACLE_INTERVAL_MS || 10 * 60 * 1000);
+    const intervalMs = Number(process.env.GIFT_ORACLE_INTERVAL_MS || 60 * 60 * 1000);
     const { runSweep } = require("./services/giftOracle");
     let tick = 0;
     setInterval(async () => {

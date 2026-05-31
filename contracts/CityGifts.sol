@@ -55,6 +55,22 @@ contract CityGifts is
         uint64  engageDeadline; // owner must complete engagement by this time
     }
 
+    struct ResidentCampaign {
+        uint256 id;
+        address creator;
+        uint256 cityTokenId;
+        string  postUrl;
+        uint256 escrowRemaining;
+        uint256 grossAmount;
+        uint64  createdAt;
+        uint64  deadline;
+        bool    active;
+        uint256[6] unitPrices;
+        uint256[6] unitPayouts;
+        uint32[6] totalCounts;
+        uint32[6] remaining;
+    }
+
     // ─── Storage ──────────────────────────────────────────────────────────────
     // NOTE: do not reorder, remove, or change types of existing variables.
     // Append new state below the existing ones to keep storage layout compatible.
@@ -84,6 +100,15 @@ contract CityGifts is
     // tokenId → all gift ids ever (including rejected/expired)
     mapping(uint256 => uint256[]) private _cityGiftIds;
 
+    uint256 public nextCampaignId;
+
+    // Resident campaigns invert the normal gift flow:
+    // resident funds escrow up front, other X-city owners claim after verified engagement.
+    mapping(uint256 => ResidentCampaign) public residentCampaigns;
+    mapping(uint256 => uint256[]) private _cityCampaignIds;
+    mapping(uint256 => mapping(uint8 => mapping(address => bool))) public campaignWalletClaimed;
+    mapping(uint256 => mapping(uint8 => mapping(bytes32 => bool))) public campaignHandleClaimed;
+
     // ─── Events ───────────────────────────────────────────────────────────────
 
     event ManagerSet(uint256 indexed tokenId, address indexed manager);
@@ -93,6 +118,9 @@ contract CityGifts is
     event GiftRejected(uint256 indexed giftId, uint256 indexed tokenId);
     event GiftVerified(uint256 indexed giftId, uint256 indexed tokenId, address cityOwner, uint256 payout);
     event GiftExpired(uint256 indexed giftId, uint256 indexed tokenId, address refundedTo);
+    event ResidentCampaignCreated(uint256 indexed campaignId, uint256 indexed tokenId, address indexed creator, uint256 grossAmount, uint256 escrowAmount);
+    event ResidentCampaignClaimed(uint256 indexed campaignId, uint8 indexed giftType, address indexed worker, bytes32 handleHash, uint256 payout);
+    event ResidentCampaignWithdrawn(uint256 indexed campaignId, address indexed creator, uint256 amount);
     event OracleChanged(address indexed oldOracle, address indexed newOracle);
     event AcceptWindowChanged(uint64 oldWindow, uint64 newWindow);
     event EngageWindowChanged(uint8 indexed giftType, uint64 oldWindow, uint64 newWindow);
@@ -230,6 +258,77 @@ contract CityGifts is
     }
 
     /**
+     * @notice Resident funds a reward campaign for other X-city owners.
+     *         Counts select which gift actions are open. Prices come from My City.
+     */
+    function createResidentCampaign(
+        uint256 tokenId,
+        string calldata postUrl,
+        uint64 durationSeconds,
+        uint32[6] calldata counts
+    )
+        external
+        payable
+        nonReentrant
+        onlyCityOwner(tokenId)
+    {
+        require(bytes(postUrl).length > 0, "CityGifts: empty post URL");
+        require(durationSeconds > 0, "CityGifts: zero duration");
+
+        uint256[6] memory unitPrices;
+        uint256[6] memory unitPayouts;
+        uint256 grossAmount;
+        uint256 escrowAmount;
+        uint256 totalSlots;
+
+        for (uint8 i; i < 6; i++) {
+            uint32 count = counts[i];
+            if (count == 0) continue;
+
+            uint256 price = cityPrices[tokenId][i];
+            require(price > 0, "CityGifts: gift type not enabled by owner");
+
+            uint256 payout = price - ((price * protocolFeeBps) / 10000);
+            require(payout > 0, "CityGifts: zero payout");
+
+            unitPrices[i] = price;
+            unitPayouts[i] = payout;
+            grossAmount += price * count;
+            escrowAmount += payout * count;
+            totalSlots += count;
+        }
+
+        require(totalSlots > 0, "CityGifts: empty campaign");
+        require(msg.value == grossAmount, "CityGifts: wrong payment");
+
+        uint256 fee = grossAmount - escrowAmount;
+        if (fee > 0) {
+            (bool ok,) = owner().call{value: fee}("");
+            require(ok, "CityGifts: fee transfer failed");
+        }
+
+        uint256 campaignId = nextCampaignId++;
+        ResidentCampaign storage c = residentCampaigns[campaignId];
+        c.id = campaignId;
+        c.creator = msg.sender;
+        c.cityTokenId = tokenId;
+        c.postUrl = postUrl;
+        c.escrowRemaining = escrowAmount;
+        c.grossAmount = grossAmount;
+        c.createdAt = uint64(block.timestamp);
+        c.deadline = uint64(block.timestamp) + durationSeconds;
+        c.active = true;
+        c.unitPrices = unitPrices;
+        c.unitPayouts = unitPayouts;
+        c.totalCounts = counts;
+        c.remaining = counts;
+
+        _cityCampaignIds[tokenId].push(campaignId);
+
+        emit ResidentCampaignCreated(campaignId, tokenId, msg.sender, grossAmount, escrowAmount);
+    }
+
+    /**
      * @notice Buyer reclaims funds when:
      *         - Owner never responded within acceptWindow (Pending → Expired), or
      *         - Owner accepted but didn't engage within engage window (Accepted → Expired).
@@ -272,6 +371,71 @@ contract CityGifts is
     }
 
     /**
+     * @notice Oracle pays a worker after verifying their X action for a resident campaign.
+     *         Each wallet and each X handle can claim a campaign/giftType only once.
+     */
+    function verifyResidentCampaignEngagement(
+        uint256 campaignId,
+        uint8 giftType,
+        address worker,
+        bytes32 handleHash
+    )
+        external
+        onlyOracle
+        nonReentrant
+    {
+        require(giftType < 6, "CityGifts: invalid gift type");
+        require(worker != address(0), "CityGifts: zero worker");
+        require(handleHash != bytes32(0), "CityGifts: zero handle");
+
+        ResidentCampaign storage c = residentCampaigns[campaignId];
+        require(c.creator != address(0), "CityGifts: unknown campaign");
+        require(c.active, "CityGifts: campaign inactive");
+        require(block.timestamp <= c.deadline, "CityGifts: campaign expired");
+        require(c.remaining[giftType] > 0, "CityGifts: no slots");
+        require(!campaignWalletClaimed[campaignId][giftType][worker], "CityGifts: wallet claimed");
+        require(!campaignHandleClaimed[campaignId][giftType][handleHash], "CityGifts: handle claimed");
+
+        uint256 payout = c.unitPayouts[giftType];
+        require(payout > 0, "CityGifts: zero payout");
+        require(c.escrowRemaining >= payout, "CityGifts: insufficient escrow");
+
+        campaignWalletClaimed[campaignId][giftType][worker] = true;
+        campaignHandleClaimed[campaignId][giftType][handleHash] = true;
+        c.remaining[giftType] -= 1;
+        c.escrowRemaining -= payout;
+
+        if (_campaignRemainingTotal(c) == 0 || c.escrowRemaining == 0) {
+            c.active = false;
+        }
+
+        (bool ok,) = worker.call{value: payout}("");
+        require(ok, "CityGifts: payout failed");
+
+        emit ResidentCampaignClaimed(campaignId, giftType, worker, handleHash, payout);
+    }
+
+    /**
+     * @notice Creator withdraws unused escrow after campaign deadline.
+     */
+    function withdrawResidentCampaign(uint256 campaignId) external nonReentrant {
+        ResidentCampaign storage c = residentCampaigns[campaignId];
+        require(c.creator == msg.sender, "CityGifts: not campaign creator");
+        require(block.timestamp > c.deadline, "CityGifts: campaign not expired");
+
+        uint256 amount = c.escrowRemaining;
+        require(amount > 0, "CityGifts: nothing to withdraw");
+
+        c.active = false;
+        c.escrowRemaining = 0;
+
+        (bool ok,) = msg.sender.call{value: amount}("");
+        require(ok, "CityGifts: withdraw failed");
+
+        emit ResidentCampaignWithdrawn(campaignId, msg.sender, amount);
+    }
+
+    /**
      * @notice Oracle registers the city manager (minter wallet) for a city.
      */
     function registerManager(uint256 tokenId, address manager) external onlyOracle {
@@ -288,6 +452,26 @@ contract CityGifts is
 
     function getGift(uint256 giftId) external view returns (Gift memory) {
         return gifts[giftId];
+    }
+
+    function getResidentCampaign(uint256 campaignId) external view returns (ResidentCampaign memory) {
+        return residentCampaigns[campaignId];
+    }
+
+    function getCityResidentCampaignIds(uint256 tokenId) external view returns (uint256[] memory) {
+        return _cityCampaignIds[tokenId];
+    }
+
+    function hasResidentCampaignClaimed(
+        uint256 campaignId,
+        uint8 giftType,
+        address worker,
+        bytes32 handleHash
+    ) external view returns (bool walletClaimed, bool handleClaimed) {
+        return (
+            campaignWalletClaimed[campaignId][giftType][worker],
+            campaignHandleClaimed[campaignId][giftType][handleHash]
+        );
     }
 
     /** All gifts ever sent to this city (all statuses). */
@@ -382,5 +566,11 @@ contract CityGifts is
                 result[j++] = gifts[ids[i]];
         }
         return result;
+    }
+
+    function _campaignRemainingTotal(ResidentCampaign storage c) internal view returns (uint256 total) {
+        for (uint8 i; i < 6; i++) {
+            total += c.remaining[i];
+        }
     }
 }

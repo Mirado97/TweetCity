@@ -54,18 +54,26 @@ function list() {
     .sort((a, b) => new Date(b.updatedAt || b.createdAt || 0) - new Date(a.updatedAt || a.createdAt || 0));
 }
 
-function upsert({ kind, tokenId, ownerAddress, twitterHandle, followers, postUrl }) {
+function all() {
+  return [...load()]
+    .filter(Boolean)
+    .sort((a, b) => new Date(b.updatedAt || b.createdAt || 0) - new Date(a.updatedAt || a.createdAt || 0));
+}
+
+function upsert({ kind, tokenId, ownerAddress, twitterHandle, followers, postUrl, campaignId, giftCounts, durationDays }) {
   load();
   const normalizedKind = kind === "resident" ? "resident" : "administrator";
   const token = String(tokenId);
   const post = normalizedKind === "resident" ? cleanUrl(postUrl) : "";
   if (normalizedKind === "resident" && !post) throw new Error("Valid postUrl required");
+  const campaign = normalizedKind === "resident" ? String(campaignId || "") : "";
+  if (normalizedKind === "resident" && !/^\d+$/.test(campaign)) throw new Error("campaignId required");
 
   const existing = cache.find((x) =>
     x.active !== false &&
     x.kind === normalizedKind &&
     String(x.tokenId) === token &&
-    (normalizedKind === "administrator" || x.postUrl === post)
+    (normalizedKind === "administrator" || String(x.campaignId) === campaign)
   );
 
   const now = new Date().toISOString();
@@ -76,6 +84,9 @@ function upsert({ kind, tokenId, ownerAddress, twitterHandle, followers, postUrl
     twitterHandle: String(twitterHandle || "").replace(/^@/, ""),
     followers: Number(followers || 0),
     postUrl: post,
+    campaignId: campaign,
+    giftCounts: Array.isArray(giftCounts) ? giftCounts.map((x) => Number(x || 0)).slice(0, 6) : null,
+    durationDays: Number(durationDays || 0),
     active: true,
     updatedAt: now,
   };
@@ -107,4 +118,4 @@ function deactivate(id, ownerAddress) {
   return true;
 }
 
-module.exports = { list, upsert, deactivate, _path: FILE_PATH };
+module.exports = { list, all, upsert, deactivate, _path: FILE_PATH };

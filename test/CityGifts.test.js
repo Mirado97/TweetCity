@@ -367,6 +367,118 @@ describe("CityGifts (UUPS)", function () {
 
   // ─── admin ────────────────────────────────────────────────────────────────
 
+  describe("resident campaigns", function () {
+    const DAY = 24 * 3600;
+    const HANDLE_HASH = ethers.keccak256(ethers.toUtf8Bytes("buyer"));
+    const OTHER_HASH = ethers.keccak256(ethers.toUtf8Bytes("other"));
+
+    beforeEach(async function () {
+      await gifts.connect(cityOwner).setPrices(TOKEN_ID,
+        [PRICE, PRICE * 2n, 0n, 0n, 0n, 0n]);
+    });
+
+    it("creates a funded campaign and sends 10% fee to admin", async function () {
+      const counts = [2, 1, 0, 0, 0, 0];
+      const gross = PRICE * 2n + PRICE * 2n;
+      const escrow = gross - gross / 10n;
+      const adminBefore = await ethers.provider.getBalance(admin.address);
+
+      await expect(
+        gifts.connect(cityOwner).createResidentCampaign(TOKEN_ID, TWEET, DAY, counts, { value: gross })
+      ).to.emit(gifts, "ResidentCampaignCreated");
+
+      const c = await gifts.getResidentCampaign(0);
+      expect(c.creator).to.equal(cityOwner.address);
+      expect(c.cityTokenId).to.equal(TOKEN_ID);
+      expect(c.postUrl).to.equal(TWEET);
+      expect(c.active).to.equal(true);
+      expect(c.grossAmount).to.equal(gross);
+      expect(c.escrowRemaining).to.equal(escrow);
+      expect(c.remaining[0]).to.equal(2);
+      expect(c.remaining[1]).to.equal(1);
+      expect(c.unitPayouts[0]).to.equal(PRICE - PRICE / 10n);
+
+      const ids = await gifts.getCityResidentCampaignIds(TOKEN_ID);
+      expect(ids.map(Number)).to.deep.equal([0]);
+
+      const adminAfter = await ethers.provider.getBalance(admin.address);
+      expect(adminAfter - adminBefore).to.equal(gross / 10n);
+    });
+
+    it("rejects wrong funding and disabled gift types", async function () {
+      await expect(
+        gifts.connect(cityOwner).createResidentCampaign(TOKEN_ID, TWEET, DAY, [1, 0, 0, 0, 0, 0], { value: PRICE - 1n })
+      ).to.be.revertedWith("CityGifts: wrong payment");
+
+      await expect(
+        gifts.connect(cityOwner).createResidentCampaign(TOKEN_ID, TWEET, DAY, [0, 0, 1, 0, 0, 0], { value: PRICE })
+      ).to.be.revertedWith("CityGifts: gift type not enabled by owner");
+    });
+
+    it("oracle verifies a worker claim and prevents wallet/handle reclaims", async function () {
+      await gifts.connect(cityOwner).createResidentCampaign(TOKEN_ID, TWEET, DAY, [2, 0, 0, 0, 0, 0], { value: PRICE * 2n });
+      const payout = PRICE - PRICE / 10n;
+
+      const before = await ethers.provider.getBalance(buyer.address);
+      await expect(
+        gifts.connect(oracle).verifyResidentCampaignEngagement(0, 0, buyer.address, HANDLE_HASH)
+      ).to.emit(gifts, "ResidentCampaignClaimed")
+        .withArgs(0, 0, buyer.address, HANDLE_HASH, payout);
+      const after = await ethers.provider.getBalance(buyer.address);
+      expect(after - before).to.equal(payout);
+
+      let c = await gifts.getResidentCampaign(0);
+      expect(c.remaining[0]).to.equal(1);
+      expect(c.escrowRemaining).to.equal(payout);
+      expect((await gifts.hasResidentCampaignClaimed(0, 0, buyer.address, HANDLE_HASH))[0]).to.equal(true);
+
+      await expect(
+        gifts.connect(oracle).verifyResidentCampaignEngagement(0, 0, buyer.address, OTHER_HASH)
+      ).to.be.revertedWith("CityGifts: wallet claimed");
+
+      await expect(
+        gifts.connect(oracle).verifyResidentCampaignEngagement(0, 0, other.address, HANDLE_HASH)
+      ).to.be.revertedWith("CityGifts: handle claimed");
+
+      await gifts.connect(oracle).verifyResidentCampaignEngagement(0, 0, other.address, OTHER_HASH);
+      c = await gifts.getResidentCampaign(0);
+      expect(c.remaining[0]).to.equal(0);
+      expect(c.escrowRemaining).to.equal(0);
+      expect(c.active).to.equal(false);
+    });
+
+    it("only oracle can verify and cannot verify after deadline", async function () {
+      await gifts.connect(cityOwner).createResidentCampaign(TOKEN_ID, TWEET, 10, [1, 0, 0, 0, 0, 0], { value: PRICE });
+
+      await expect(
+        gifts.connect(other).verifyResidentCampaignEngagement(0, 0, buyer.address, HANDLE_HASH)
+      ).to.be.revertedWith("CityGifts: not oracle");
+
+      await time.increase(11);
+      await expect(
+        gifts.connect(oracle).verifyResidentCampaignEngagement(0, 0, buyer.address, HANDLE_HASH)
+      ).to.be.revertedWith("CityGifts: campaign expired");
+    });
+
+    it("creator withdraws unused escrow after deadline", async function () {
+      await gifts.connect(cityOwner).createResidentCampaign(TOKEN_ID, TWEET, 10, [2, 0, 0, 0, 0, 0], { value: PRICE * 2n });
+      await gifts.connect(oracle).verifyResidentCampaignEngagement(0, 0, buyer.address, HANDLE_HASH);
+      await time.increase(11);
+
+      const cBefore = await gifts.getResidentCampaign(0);
+      const ownerBefore = await ethers.provider.getBalance(cityOwner.address);
+      const tx = await gifts.connect(cityOwner).withdrawResidentCampaign(0);
+      const r = await tx.wait();
+      const gasUsed = r.gasUsed * r.gasPrice;
+      const ownerAfter = await ethers.provider.getBalance(cityOwner.address);
+
+      expect(ownerAfter - ownerBefore + gasUsed).to.equal(cBefore.escrowRemaining);
+      const cAfter = await gifts.getResidentCampaign(0);
+      expect(cAfter.active).to.equal(false);
+      expect(cAfter.escrowRemaining).to.equal(0);
+    });
+  });
+
   describe("admin", function () {
     it("owner can update oracle", async function () {
       await gifts.connect(admin).setOracle(other.address);

@@ -77,7 +77,7 @@ router.get("/admin/config", (req, res) => {
     twitterProvider:        "x-oauth",
     skipGiftVerify:         process.env.SKIP_GIFT_VERIFY === "true",
     disableGiftOracle:      process.env.DISABLE_GIFT_ORACLE === "true",
-    giftOracleIntervalMs:   Number(process.env.GIFT_ORACLE_INTERVAL_MS || 600000),
+    giftOracleIntervalMs:   Number(process.env.GIFT_ORACLE_INTERVAL_MS || 3600000),
     frontendUrl:            process.env.FRONTEND_URL || "",
     port:                   process.env.PORT || 3001,
     keys: {
